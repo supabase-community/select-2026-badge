@@ -50,13 +50,24 @@ are load-bearing:
 BUTTON CONVENTIONS (``docs/badge-button-rules.md``, guidelines not laws):
 B is the primary action on every screen (B1/B2); UP and DOWN move the selection
 by one and wrap (B3); A is the labelled way back and **commits nothing** (I2) —
-here it always returns to the Settings menu WITHOUT emitting a pairstate event,
-so a pair flow already in the air keeps running and the wearer can leave a live
-QR to read the network row and come back to it. The flow's own cancel/decline
-labels stay where pairview put them, on B and C.
+it returns to the Settings menu WITHOUT emitting a pairstate event, so a pair
+flow already in the air keeps running and the wearer can leave a live QR to read
+the network row and come back to it. The flow's own cancel/decline labels stay
+where pairview put them, on B and C.
+
+**ONE SCREEN DECLARES A DEVIATION, and it is this tile's first.** On BRIGHTNESS
+(owner ruling, 2026-08-24) A and C are the two ENDS of an ordered ladder and B
+carries the way back, which is §9.2(b) of the button rules rather than an
+exception to them — and it is the same bar the wearer met while the row lived in
+``badgecard``. :func:`bright_view` states what bounds it, and
+``settings/README.md`` § "Brightness" records it. (There is no deviation TABLE in
+that README -- `badgecard` and `identity` keep registers, this tile does not --
+so the section is the record, and this pointer is exact on purpose: a reference to
+a table that does not exist reads as coverage nobody wrote.)
 """
 
 
+import backlight
 import settings_copy
 
 
@@ -78,6 +89,13 @@ PUSH = "push"
 #: the panel is about to go dark and the wearer is owed one second of copy
 #: saying what happened and how to undo it.
 SLEEP = "sleep"
+#: The brightness ladder's screen (owner ruling, 2026-08-24). A SCREEN rather
+#: than an in-place edit on the menu row, and that is forced rather than chosen:
+#: the ladder needs two keys, and on the menu UP and DOWN already move the
+#: selection while B opens. It arrives here whole from `badgecard`, where it
+#: lived for a day -- same rungs, same store, same one-press-per-rung
+#: motion -- so the only thing this app had to decide was the bar.
+BRIGHT = "bright"
 
 # Row identifiers. The tile is general-purpose on purpose: the owner's reasoning
 # for one Settings tile over a tile per need was that other settings-shaped needs
@@ -87,18 +105,21 @@ ROW_PAIR = "pair"
 ROW_NETWORK = "network"
 ROW_PUSH = "push"
 ROW_SLEEP = "sleep"
+ROW_BRIGHT = "bright"
 
 ROW_LABELS = {
     ROW_PAIR: settings_copy.ROW_PAIR_LABEL,
     ROW_NETWORK: settings_copy.ROW_NETWORK_LABEL,
     ROW_PUSH: settings_copy.ROW_PUSH_LABEL,
     ROW_SLEEP: settings_copy.ROW_SLEEP_LABEL,
+    ROW_BRIGHT: settings_copy.ROW_BRIGHT_LABEL,
 }
 ROW_SCREENS = {
     ROW_PAIR: PAIR,
     ROW_NETWORK: NETWORK,
     ROW_PUSH: PUSH,
     ROW_SLEEP: SLEEP,
+    ROW_BRIGHT: BRIGHT,
 }
 #: Menu order. Pair first: it is the entry point decision #2 exists to ship.
 #:
@@ -117,11 +138,31 @@ ROW_SCREENS = {
 #: yes/no screen would not have told them. Sorting last still applies, because
 #: B3's lists wrap and the first UP from the top of the menu lands here -- so
 #: the note is also what protects a blind UP-then-B.
-ROWS = (ROW_PAIR, ROW_NETWORK, ROW_SLEEP)
+#:
+#: BRIGHTNESS SITS DIRECTLY ABOVE SLEEP (owner ruling, 2026-08-24: *"Take
+#: brightness out of badgecard. That should only exist in settings."*), and the
+#: position is the one thing about the move this tile had to decide.
+#:
+#: It goes BELOW the network rows because it is the first row here that is about
+#: the badge in the wearer's hand rather than about the server, and Sleep is the
+#: other one: the menu reads as the connected things, then the two panel things.
+#:
+#: It does NOT take the last slot, and the temptation was real. `badgecard`'s
+#: menu put this row last on exactly the argument above -- the first blind UP
+#: from the top lands on the last row, and B7 wants that to be a harmless one; a
+#: ladder is reversible in one press and destroys nothing, while Sleep blanks
+#: the panel. Taking the slot would still have been wrong: Sleep's last place is
+#: a recorded owner design decision whose mitigation is already built and
+#: already tested, and the note protects a blind UP-then-B whether or not a
+#: ladder exists. Trading a documented protection for an undocumented one is not
+#: an improvement.
+ROWS = (ROW_PAIR, ROW_NETWORK, ROW_BRIGHT, ROW_SLEEP)
 #: The Updates row is CONDITIONAL: it appears only when the boot pump actually
 #: has a doorbell to control. A row that describes a transport this badge does
 #: not carry is a row that lies, and the tile already refuses to invent state.
-ROWS_WITH_PUSH = (ROW_PAIR, ROW_NETWORK, ROW_PUSH, ROW_SLEEP)
+#: Brightness is conditional on nothing: every badge has a panel, so it is the
+#: second row after Sleep that means the same thing on an unprovisioned badge.
+ROWS_WITH_PUSH = (ROW_PAIR, ROW_NETWORK, ROW_PUSH, ROW_BRIGHT, ROW_SLEEP)
 
 #: HOW LONG THE NOTE STAYS UP before `badge.sleep()` is called.
 #:
@@ -345,6 +386,49 @@ def push_view(mode, library=True, controllable=False, enabled=None):
     }
 
 
+def bright_view(percent):
+    """The ladder, as this app's page: a title, one line and a three-key bar.
+
+    THE BAR IS `identity`'s D2 SHAPE AND IT IS A DECLARED DEVIATION HERE.
+    A is one rung DOWN, C is one rung UP, and B carries the way back -- so A is
+    NOT the labelled retreat on this one screen, which is the only place in this
+    tile that is true. `docs/badge-button-rules.md` §9.2(b) is the rule being
+    followed rather than broken: brightness is an ordered ladder, I1 puts the
+    low end on A and the high end on C, and B2 explicitly allows B to carry the
+    way out when A is a direction. The alternative -- keeping A as BACK and
+    putting the two directions on B and C -- would have made the SAME wearer
+    press different keys for the same control they met in `badgecard` the day
+    before, to buy back a retreat that B already provides.
+
+    WHAT BOUNDS THE DEVIATION, and each half is a test rather than a promise:
+    the ladder CLAMPS, so a blind run of A stops at the lowest OFFERED level and
+    can never turn the panel off (which is the trap the floor exists to close);
+    and every change reverses with one press of the opposite key.
+
+    EVERY LABEL NAMES THE VALUE THE PRESS WILL PRODUCE rather than a direction.
+    The wearer reads the outcome before pressing, which a direction arrow could
+    not offer -- and a key at the end of its ladder can do nothing, so it draws
+    NOTHING and its event is empty. An empty slot is already this app's word for
+    an inert key, and I5 forbids a label over a key that cannot act.
+    """
+    percent = backlight.clamp(percent)
+    down = backlight.step(percent, -1)
+    up = backlight.step(percent, 1)
+    return {
+        "screen": BRIGHT,
+        "title": settings_copy.BRIGHT_TITLE,
+        "brightness": percent,
+        "reboot": False,
+        "lines": [settings_copy.ascii_fold(settings_copy.bright_line(percent))],
+        "softkeys": ("" if down == percent else backlight.name(down),
+                     settings_copy.BACK,
+                     "" if up == percent else backlight.name(up)),
+        "softkey_events": ("" if down == percent else "brightness_down",
+                           "",
+                           "" if up == percent else "brightness_up"),
+    }
+
+
 def sleep_view():
     """The one-second note, and the last thing on the panel before it goes dark.
 
@@ -423,7 +507,7 @@ class Settings:
 
     def __init__(self, pairview=None, pairstate=None, driver=None, base_url=None,
                  pair_state=None, transport=None, network_control=None,
-                 push_control=None):
+                 push_control=None, brightness=None):
         if (pairview is None) != (pairstate is None):
             raise ValueError("pairview and pairstate must be supplied together")
         self._pairview = pairview
@@ -436,6 +520,24 @@ class Settings:
         self.screen = MENU
         self.index = 0
         self.rows = ROWS_WITH_PUSH if push_control is not None else ROWS
+        #: THE WEARER'S PANEL LEVEL, SEEDED FROM THE FILE AND HELD HERE.
+        #:
+        #: A plain value rather than a controller object, which is the opposite
+        #: of how `network_control` and `push_control` work, and the difference
+        #: is where the authority sits. Those two DESCRIBE a live transport, so
+        #: the model must read them back on every build or it would be reporting
+        #: a state assumed from the last press. This one is the wearer's own
+        #: choice and nothing else can change it while the tile is open: no
+        #: server, no timer, and no other app -- because leaving an app is
+        #: `machine.reset()`, so no other app is running.
+        #:
+        #: `None` is a seam that did not read the store (every fixture that is
+        #: not about brightness), and it resolves to the factory level rather
+        #: than to an end of the ladder, for the same reason `backlight.clamp`
+        #: does: a badge whose file was hand-edited gets the level a new badge
+        #: has, not the dimmest one.
+        self.brightness = backlight.clamp(
+            backlight.DEFAULT if brightness is None else brightness)
         #: Milliseconds left on the sleep note, or None when it is not up.
         #: `tick` counts it down and emits the one action that ends the session.
         self._sleep_ms = None
@@ -508,6 +610,11 @@ class Settings:
                 return settings_copy.PAIR_VALUE_REVOKED
             return (settings_copy.PAIR_VALUE_LINKED if self.pair.get("paired")
                     else settings_copy.PAIR_VALUE_UNLINKED)
+        if row == ROW_BRIGHT:
+            # THE WORD, NOT THE NUMBER. `HIGH` is what the wearer chose and `80`
+            # is how the panel is driven; a row that reported the second would
+            # be asking somebody to learn a scale to read a status line.
+            return backlight.name(self.brightness)
         return ""
 
     def menu_view(self):
@@ -617,6 +724,8 @@ class Settings:
             )
         if self.screen == SLEEP:
             return sleep_view()
+        if self.screen == BRIGHT:
+            return bright_view(self.brightness)
         return self.pair_view()
 
     # -- input ---------------------------------------------------------------
@@ -644,6 +753,13 @@ class Settings:
                 if self.screen == SLEEP:
                     self._sleep_ms = SLEEP_NOTE_MS
             return []
+        if self.screen == BRIGHT:
+            # BEFORE THE GENERIC `A` BRANCH BELOW, WHICH IS THE WHOLE POINT OF
+            # PUTTING IT HERE. A is a DIRECTION on this screen (see
+            # `bright_view` for the rule and the deviation it declares), so
+            # falling through to "A returns to the menu" would leave the wearer
+            # with a ladder they can only climb.
+            return self._bright_key(key)
         if key == "A":
             # Labelled, commits nothing, and never touches the pair flow.
             self.screen = MENU
@@ -680,7 +796,53 @@ class Settings:
         if self.screen == MENU:
             # By one, and wrapping, per B3.
             self.index = (self.index + delta) % len(self.rows)
+        # UP AND DOWN ARE INERT ON THE BRIGHTNESS SCREEN and that falls out of
+        # this shape rather than needing a branch: there is no list there to
+        # move. It is worth stating because the OTHER obvious wiring -- the
+        # ladder on UP/DOWN, which is where a scroll key's meaning would suggest
+        # putting it -- is the one arrangement that could not work: UP and DOWN
+        # are the only keys in this app that auto-repeat (`ui.Axis`, button rule
+        # B4), and auto-repeat on a value that WRITES FLASH turns a lean on a
+        # key into a burst of 185 ms stalls.
         return []
+
+    def _bright_key(self, key):
+        """One rung, or the way back. Returns the action the seam performs.
+
+        ONE PRESS PER RUNG, CLAMPED, NEVER CYCLING. `backlight.step` is the
+        motion and its docstring carries the argument: brightness used to cycle
+        on one key, so coming back one level from FULL cost four presses and the
+        wearer had to remember the order.
+
+        AN END-OF-LADDER PRESS DOES NOTHING AT ALL -- no action, so no panel
+        write and no flash write. Its key draws no label, so this is reachable
+        only from a hand-edited file, and a write with no change is a stall the
+        wearer paid for nothing.
+
+        THE MODEL MOVES FIRST AND THE SEAM PERFORMS SECOND, which is how the
+        panel gets ahead of the file (button rule B6: update the screen first,
+        write later). The seam's ordering is pinned in
+        `settings/tests/test_settings_brightness.py`, because it is the half of
+        the feel that this pure module cannot enforce.
+        """
+        if key == "B":
+            # A and C have already applied everything, so there is nothing to
+            # commit and nothing to undo: B is a labelled way back and no more.
+            # It lands on the MENU with the selection untouched, so a wearer
+            # stepping the ladder twice does not have to find the row again.
+            self.screen = MENU
+            return []
+        if key == "A":
+            direction = -1
+        elif key == "C":
+            direction = 1
+        else:
+            return []
+        level = backlight.step(self.brightness, direction)
+        if level == self.brightness:
+            return []
+        self.brightness = level
+        return [{"type": "brightness_set", "level": level}]
 
     def _pair_key(self, key):
         if key == "B":

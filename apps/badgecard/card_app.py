@@ -6,10 +6,13 @@ global.  The clock arrives as an argument, input arrives as an object with
 `pressed(key)` and `held(key)`, persistence arrives as an injected callable, and
 the wallpaper baker arrives as three more.  `badgecard/tests/test_card_purity.py`
 walks this file's AST and fails if it ever imports anything but `card_model`,
-`card_faces`, `backlight`, the two catalogues and `ui` -- and from `ui` it may
-name only `Repeat` and `Saver`, which are the two pure classes in that module.
-(`backlight` joined on 2026-08-23 with the BRIGHTNESS row; it is the shared
-ladder and it imports nothing at all, so it costs the purity claim nothing.)
+`card_faces`, the two catalogues and `ui` -- and from `ui` it may name only
+`Repeat` and `Saver`, which are the two pure classes in that module.
+(`backlight` was on that list from 2026-08-23 to 2026-08-24, for the BRIGHTNESS
+row; the owner moved that row to `settings`, so this controller no longer names
+the ladder at all.  The `brightness` FIELD is still in `card_model`'s schema --
+it is the one store every reader shares -- and this module simply never touches
+it.)
 
 `identity` proves the shape works: its controller is pure enough that a
 four-figure test count runs on CPython in seconds, and every one of those tests
@@ -20,7 +23,6 @@ module mutates state and draws nothing.  Neither can be wrong about the other in
 a way a test cannot see, because the thing between them is a dict.
 """
 
-import backlight
 import card_faces as faces
 import card_model as model
 import effects
@@ -79,18 +81,17 @@ class CardApp:
 
     def __init__(self, state, write, bake=None, unbake=None, recipe=None,
                  now_ms=0, load_status="loaded", ticks_diff=None,
-                 logical=(0, 0), brightness=None):
+                 logical=(0, 0)):
         self.state = state
         self._write = write
         self._bake = bake
         self._unbake = unbake
         self._recipe = recipe
-        # THE PANEL, INJECTED LIKE THE BAKER AND FOR THE SAME REASON: this class
-        # is pure and `test_card_purity` proves it, so the one impure thing the
-        # BRIGHTNESS row does -- putting a level on real hardware -- arrives as a
-        # callable.  None is a controller with no panel, which is every fast-lane
-        # test that is not about brightness.
-        self._brightness = brightness
+        # THERE IS NO PANEL CALLABLE HERE ANY MORE.  One was injected from
+        # 2026-08-23 to 2026-08-24 so the BRIGHTNESS row could reach real
+        # hardware without making this class impure; the owner moved that row to
+        # `settings`, so the seam's `idle.Panel` is now the only thing in this
+        # app that writes the backlight -- at open, and on the idle dim.
         self._diff = ticks_diff if ticks_diff is not None else _plain_diff
         self.load_status = load_status
 
@@ -304,8 +305,6 @@ class CardApp:
             self._route_confirm(now_ms, buttons)
         elif view == model.BAKING:
             self._route_baking(now_ms, buttons)
-        elif view == model.BRIGHT:
-            self._route_bright(now_ms, buttons)
         elif view == model.EFFECT:
             self._route_effect(now_ms, buttons)
         return self.plan(now_ms)
@@ -355,75 +354,15 @@ class CardApp:
             self._goto(model.MARKS)
         elif row == model.MENU_CARDS:
             self._goto(model.CARDS)
-        elif row == model.MENU_BRIGHT:
-            self._goto(model.BRIGHT)
         elif row == model.MENU_EFFECT:
             self._browse_effect()
         # EXPLICIT, WHERE THIS USED TO BE A BARE `else`.  With five rows the
-        # fall-through was unambiguous; with seven an unhandled row would have
+        # fall-through was unambiguous; with more an unhandled row would have
         # SAVED THE WALLPAPER, which is the loudest wrong answer available -- and
-        # two lanes added a row on the same day, which is exactly the situation
-        # a bare `else` turns into a silent bake.
+        # the menu has both gained and lost a row since, which is exactly the
+        # churn a bare `else` turns into a silent bake.
         elif row == model.MENU_HOME:
             self._save_home(now_ms)
-
-    # -- brightness ----------------------------------------------------------
-
-    def _route_bright(self, now_ms, buttons):
-        """The wearer's brightness, on A and C.  `identity`'s D2, adopted.
-
-        ONE PRESS PER RUNG, CLAMPED, NEVER CYCLING.  `backlight.step` is the
-        motion and its docstring carries the whole argument: brightness used to
-        cycle on one key, so coming back one level from FULL cost four presses
-        and the wearer had to remember the order.
-
-        NO `ui.Repeat` ON THIS SCREEN, deliberately.  The ladder is five rungs,
-        so a hold could never buy more than the four presses that cross it by
-        hand, and auto-repeat on a value that WRITES FLASH would turn a lean on
-        a key into a burst of 185 ms stalls.  Every other repeat in this app
-        drives a scroll, which persists nothing.
-
-        AND EVERY STEP COMMITS, WHICH IS THIS APP'S RULE RATHER THAN AN
-        EXCEPTION TO IT.  `on_exit` says there is nothing to flush because every
-        commit is written at the press that made it; a brightness step is a
-        discrete action like the other five, not a continuously dragged value,
-        so there is no burst to coalesce and no window in which HOME can lose
-        the wearer's choice.  Deferring the write to B would have created
-        exactly that window and made `on_exit`'s claim false.
-        """
-        if buttons.pressed("B"):
-            # A and C already applied everything, so there is nothing to commit
-            # and nothing to undo -- B is a labelled way back and no more.  It
-            # lands ON the row it came from rather than at the top of the menu,
-            # because `_goto` resets the index and a wearer stepping the ladder
-            # twice should not have to find the row again.
-            self._goto(model.MENU)
-            self.index = model.MENU_ITEMS.index(model.MENU_BRIGHT)
-            return
-        if buttons.pressed("A"):
-            self._step_brightness(-1)
-        elif buttons.pressed("C"):
-            self._step_brightness(1)
-
-    def _step_brightness(self, direction):
-        """One rung, applied to the panel first and then persisted.
-
-        THE PANEL BEFORE THE FLASH, which is B6's "update the screen first,
-        write later" at the smallest possible scale: the write stalls up to
-        185 ms (measured) and the wearer is looking at the thing the press
-        changed.
-        """
-        level = backlight.step(self.state["brightness"], direction)
-        if level == self.state["brightness"]:
-            # An end-of-ladder press.  Its key draws no label, so this is only
-            # reachable from a fake or a hand-edited value, and doing nothing is
-            # the honest answer -- a write with no change is a flash stall the
-            # wearer paid for nothing.
-            return
-        self.state["brightness"] = level
-        if self._brightness is not None:
-            self._brightness(level)
-        self._commit()
 
     # -- the name ------------------------------------------------------------
 
@@ -916,13 +855,10 @@ class CardApp:
             rows = effects.COUNT
         else:
             rows = 0
-        brightness = self.state["brightness"]
         return {
             "view": view,
             "labels": model.softkeys(view, self.index,
-                                     len(self.state["badges"]), installed,
-                                     brightness),
-            "brightness": brightness,
+                                     len(self.state["badges"]), installed),
             "state": self.state,
             "badge": badge,
             "index": self.index,

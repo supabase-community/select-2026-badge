@@ -71,11 +71,11 @@ MAX_WRAP_LINES = 2
 
 # ── THE FRESHNESS MARK'S GEOMETRY ────────────────────────────────────────────
 #
-# OWNER RULING, 2026-08-25: the freshness text banners were too loud. What
+# OWNER RULING, 2026-08-24: the freshness text banners were too loud. What
 # replaces them is "not super obvious, but easy to tell someone what it means if
 # it matters" — so a glyph in the header, and no words anywhere.
 #
-# THE HEADER'S TOP-LEFT, AND THIS COMMENT SAID "RIGHT CORNER" UNTIL 2026-08-25.
+# THE HEADER'S TOP-LEFT, AND THIS COMMENT SAID "RIGHT CORNER" UNTIL 2026-08-24.
 # The right corner WAS the first draft and the captures killed it: the offline
 # dash sat beside `11:50 PST` and read as a hyphen belonging to the clock. The
 # mark leads the row now (`_draw_bar`), the event name follows it, and the clock
@@ -98,7 +98,7 @@ MARK_UNITS = 5
 # ── THE SOFTKEY BAR'S PHYSICAL GEOMETRY ──────────────────────────────────────
 #
 # READ THIS BEFORE THE BAR LOOKS UNDER-USED. It is `config.SOFTKEYS = False` by
-# default since 2026-08-25 and the reason is the clock ruling, not a change of
+# default since 2026-08-24 and the reason is the clock ruling, not a change of
 # mind about labelling. §9.6's case for the bar was that B WROTE THE HARDWARE
 # CLOCK while unlabelled; B is now bound to nothing, so the bar's middle slot is
 # empty and the whole 26 px band exists to name A and C — two keys that move
@@ -256,7 +256,7 @@ class ScheduleView:
         # the mistake this app's own layout cache exists to avoid.
         self.hint = "A/C"
         self.hint_w = int(self._measure(self.hint)[0] + 0.5)
-        # THE CLOCK CORNER SAYS ONE THING OR NOTHING, since the 2026-08-25 clock
+        # THE CLOCK CORNER SAYS ONE THING OR NOTHING, since the 2026-08-24 clock
         # ruling collapsed the three trust states into two presentations. It used
         # to have three candidates and two of them were the problem: a
         # `SUN 16 AUG` day-template for an off-day clock, and a `--:--`
@@ -332,7 +332,7 @@ class ScheduleView:
             if self.softkeys else 0
         )
         # THE CHEVRON GUTTER IS UNCONDITIONAL, AND DECOUPLING IT FROM THE BAR IS
-        # PART OF THE 2026-08-25 DENSITY CALL. It used to be `pad if softkeys
+        # PART OF THE 2026-08-24 DENSITY CALL. It used to be `pad if softkeys
         # else 0`, so `SOFTKEYS = False` reproduced the pre-bar geometry EXACTLY
         # — including having no scroll affordance at all. That was defensible
         # while the bar was the default and the dense build was a comparison
@@ -349,7 +349,7 @@ class ScheduleView:
                 previous = self.stages[(index - 1) % count]["short"]
                 following = self.stages[(index + 1) % count]["short"]
                 # B'S SLOT IS EMPTY, and that is the honest bar. It read `TIME`
-                # and opened the clock dial; the dial is deleted (2026-08-25) and
+                # and opened the clock dial; the dial is deleted (2026-08-24) and
                 # B is bound to nothing, so a label there would teach the wearer
                 # that a dead key does something. `_draw_softkeys` already draws
                 # nothing for an empty slot — the one-stage case has always
@@ -527,7 +527,7 @@ class ScheduleView:
         built once per second here rather than on each of the ~44 frames it was
         true for. The mark has no relative reading in it at all, so the caller
         now hands over an interned constant and the concern is gone -- which is a
-        real if small win of the 2026-08-25 freshness ruling.
+        real if small win of the 2026-08-24 freshness ruling.
         """
         self.freshness = mark or MARK_OFFLINE
 
@@ -588,7 +588,7 @@ class ScheduleView:
     def visible_count(self):
         """How many blocks the current scroll position actually shows.
 
-        AN EXACT MIRROR OF `draw`'s LOOP, and it was not one until 2026-08-25.
+        AN EXACT MIRROR OF `draw`'s LOOP, and it was not one until 2026-08-24.
         It used to accumulate heights and stop when the total REACHED `list_h`,
         counting the block that crossed the boundary; `draw` stops when the next
         block's TOP is past `list_bottom`, and the two answers differ whenever a
@@ -635,7 +635,7 @@ class ScheduleView:
         )
 
     def _clock_reading(self):
-        """`11:50 PST`, or NOTHING. Two answers since 2026-08-25, and that is the
+        """`11:50 PST`, or NOTHING. Two answers since 2026-08-24, and that is the
         whole clock ruling on one screen.
 
         The owner's words are "we either get a real time from a server or don't
@@ -666,7 +666,7 @@ class ScheduleView:
 
         THE LEFT SLOT HAS NOW HELD THREE THINGS and the third is the point. It
         read `AGENDA` (the name of the app the wearer had just opened), then the
-        freshness SENTENCE, and the 2026-08-25 ruling took the sentence away
+        freshness SENTENCE, and the 2026-08-24 ruling took the sentence away
         again. The event name is what went back in: it is real information, it
         comes from the data rather than from a literal, and it cannot be a time
         claim under any clock state — where `AGENDA` was redundant and a date
@@ -700,12 +700,12 @@ class ScheduleView:
     def _draw_fresh_mark(self, x, mid_y):
         """Five glyphs, one cell, no words. `schedule/README.md` has the table.
 
-        THE OWNER'S BRIEF, 2026-08-25: "not super obvious, but easy to tell
+        THE OWNER'S BRIEF, 2026-08-24: "not super obvious, but easy to tell
         someone what it means if it matters." So each mark is a primitive a
         person can describe out loud in one clause — a filled blob, an up
         triangle, a hollow ring, a plus, a dash — and SHAPE carries the whole
         meaning. (This sentence read "one dot, two dots, an empty dot, a dash, a
-        triangle" until 2026-08-25: a draft vocabulary that never shipped, and
+        triangle" until 2026-08-24: a draft vocabulary that never shipped, and
         the two-dots mark never existed at all. The five below are the language,
         and `schedule/README.md`'s table uses the same five words.) Colour
         agrees with it and is never the only difference between two marks,
@@ -789,7 +789,7 @@ class ScheduleView:
                 for dot in range(self.tab_x[index], self.tab_x[index] + width, step):
                     screen.rectangle(dot, bottom, self.underline_h, self.underline_h)
         if len(self.stages) > 1 and not self.softkeys:
-            # THE DEFAULT BUILD'S A/C LABELLING SINCE 2026-08-25, and no longer a
+            # THE DEFAULT BUILD'S A/C LABELLING SINCE 2026-08-24, and no longer a
             # fallback. With the bar on, A and C are named at the bottom with the
             # stage they move TO, which is strictly more than this hint says;
             # keeping both would be two labellings of one key. With the bar off
@@ -1018,7 +1018,7 @@ class ScheduleView:
           Clamping costs 13 px (4.9 mm) of adjacency and buys being in the right
           region.
 
-        DRAWN WHETHER OR NOT THE BAR IS ON, since 2026-08-25. It used to return
+        DRAWN WHETHER OR NOT THE BAR IS ON, since 2026-08-24. It used to return
         early on `not self.softkeys`, because the no-bar build existed only to
         reproduce the pre-bar geometry exactly for a side-by-side. That build
         SHIPS now, so the early return would have left UP and DOWN -- the two
@@ -1074,7 +1074,7 @@ class ScheduleView:
     #
     # `draw_dial` drew `SET EVENT TIME`, a panel-height `HH:MM`, a `BACK`/`SET`/
     # `+1 H` bar and `-5`/`+5` beside the two scroll buttons. The owner deleted
-    # the feature on 2026-08-25: "we either get a real time from a server or
+    # the feature on 2026-08-24: "we either get a real time from a server or
     # don't assume we know time." A dial is a human asserting a time the badge
     # has no way to verify, so a badge that took one would show a NOW marker
     # backed by nothing but somebody's watch.

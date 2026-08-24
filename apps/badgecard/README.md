@@ -1,7 +1,7 @@
-# badgecard -- the badge editor and the worn badge itself: name, skin, stickers, effect, brightness
+# badgecard -- the badge editor and the worn badge itself: name, skin, stickers, effect
 
 At rest it draws the wearer's badge with no chrome at all: artwork, stickers, name, and a
-whole-surface effect filter. Any key opens a seven-row menu that edits all of it, and
+whole-surface effect filter. Any key opens a six-row menu that edits all of it, and
 `SAVE TO HOME` bakes the finished card into a launcher wallpaper film. It is the only
 writer of the badge state; `poster` and the launcher are read-only consumers of the same
 files. It arrives in four staged paints (dark field, name, artwork, marks), each wrapped,
@@ -10,9 +10,8 @@ so a failure leaves the last good stage on the panel instead of a crash modal.
 **Controls.** Resting badge: any of A/B/C/UP/DOWN opens the menu and does nothing else.
 Menu: UP/DOWN scroll (auto-repeat), A back to the badge, B open the row, C clear (on the
 `SAVE TO HOME` row only). Inside a row A is always back and B is always apply; `STICKERS`
-adds C to delete and uses A/C/UP/DOWN to nudge a placement; `BRIGHTNESS` is A dimmer,
-C brighter, clamped rather than wrapping. On the delete-a-badge confirm, B is deliberately
-inert: B may not destroy anything. HOME leaves to the launcher.
+adds C to delete and uses A/C/UP/DOWN to nudge a placement. On the delete-a-badge confirm,
+B is deliberately inert: B may not destroy anything. HOME leaves to the launcher.
 
 **Non-obvious.** HIRES 320x240, unconditionally, and `tests/test_card_resolution.py` walks
 the package AST and fails if any module names a panel mode at all -- everything downstream

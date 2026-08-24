@@ -1,7 +1,7 @@
 # `shared/` -- the canonical copies
 
 **Nothing on the badge imports this directory.** It is not installed, and
-it is not on any `sys.path`. It is here so that a reader who finds 12
+it is not on any `sys.path`. It is here so that a reader who finds 9
 byte-identical copies of `backlight.py` under `apps/` can tell which one a human
 edits.
 
@@ -21,9 +21,9 @@ canonical file, so if this table is wrong the export does not build.
 | module | canonical copy | shipped into |
 |---|---|---|
 | `backdrop.py` | `shared/backdrop.py` | `badgecard`, `poster` |
-| `backlight.py` | `shared/backlight.py` | `badgecard`, `breakout`, `flappy`, `glyph`, `menu`, `pacman`, `pet`, `pong`, `poster`, `schedule`, `settings`, `snake` |
+| `backlight.py` | `shared/backlight.py` | `badgecard`, `flappy`, `glyph`, `menu`, `pet`, `poster`, `schedule`, `settings`, `snake` |
 | `effects.py` | `shared/effects.py` | `badgecard`, `poster` |
-| `game_palette.py` | `shared/game_palette.py` | `breakout`, `flappy`, `pacman`, `pong`, `snake` |
+| `game_palette.py` | `shared/game_palette.py` | `flappy`, `snake` |
 | `glyphskin.py` | *not here* | `badgecard`, `poster` |
 | `glyphskins.gpk` | *not here* | `badgecard`, `poster` |
 | `identity_catalogue.py` | `apps/badgecard/identity_catalogue.py` | `poster` |
@@ -33,10 +33,10 @@ canonical file, so if this table is wrong the export does not build.
 | `idle.py` | `shared/idle.py` | `badgecard`, `menu` |
 | `kb_shell.py` | `shared/kb_shell.py` | `badgecard` |
 | `kbqwerty_board.py` | *not here* | `badgecard` |
-| `loading.py` | `shared/loading.py` | `badgecard`, `breakout`, `flappy`, `glyph`, `menu`, `pacman`, `pet`, `pong`, `schedule`, `snake` |
-| `loading_sql.py` | `shared/loading_sql.py` | `badgecard`, `breakout`, `flappy`, `glyph`, `menu`, `pacman`, `pet`, `pong`, `schedule`, `snake` |
+| `loading.py` | `shared/loading.py` | `badgecard`, `flappy`, `glyph`, `menu`, `pet`, `schedule`, `snake` |
+| `loading_sql.py` | `shared/loading_sql.py` | `badgecard`, `flappy`, `glyph`, `menu`, `pet`, `schedule`, `snake` |
 | `poster.py` | `shared/poster.py` | `badgecard`, `poster` |
-| `score_sink.py` | `shared/score_sink.py` | `breakout`, `flappy`, `pacman`, `pong`, `snake` |
+| `score_sink.py` | `shared/score_sink.py` | `flappy`, `snake` |
 | `skins.py` | *not here* | `badgecard`, `poster` |
 | `stickers-36-p8.png` | *not here* | `badgecard`, `poster` |
 | `ui.py` | `shared/ui.py` | `badgecard`, `pet`, `poster`, `settings` |

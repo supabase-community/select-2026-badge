@@ -39,7 +39,7 @@ import loading  # noqa: E402
 # and the fourteen-session layout measurement one session at a time.
 _load = loading.begin(4)
 
-# `machine` IS NO LONGER IMPORTED HERE, and that absence is the 2026-08-25 clock
+# `machine` IS NO LONGER IMPORTED HERE, and that absence is the 2026-08-24 clock
 # ruling.  It was pulled in for one caller -- the dial's commit, which wrote
 # `machine.RTC().datetime(...)` and then the external PCF -- and this app writes
 # no clock now.  The comment it replaces explained that a builtin module costs
@@ -285,7 +285,7 @@ def _refresh_clock(force=False):
     # FRESHNESS DOES NOT NEED THE EVENT WINDOW, only a believable clock: the age
     # of the agenda file is a wall-clock question, so a badge reading a real date
     # three days before the event can still judge how old its copy is.  The AGE
-    # no longer reaches the panel -- the 2026-08-25 ruling replaced every
+    # no longer reaches the panel -- the 2026-08-24 ruling replaced every
     # freshness sentence with a glyph -- but it is still what decides FRESH_STALE
     # against the 12-hour threshold, so it is still computed here and it is still
     # in the serial marker's change key.
@@ -315,7 +315,7 @@ def _refresh_clock(force=False):
         print(
             "SCHEDULE_CLOCK trusted={} minute={} stage={} current={} next={}"
             # THE DIAGNOSIS THAT USED TO BE ON THE PANEL LIVES HERE NOW.  Two
-            # readings left the screen on 2026-08-25 and both were diagnostic:
+            # readings left the screen on 2026-08-24 and both were diagnostic:
             # the day an off-day clock believed, and the age behind
             # `UPDATED 30 MIN AGO`.  `state=` and `age=` are them, on the channel
             # where the person who can act on them is standing.  A wearer cannot
@@ -344,7 +344,7 @@ def _switch_stage(delta):
     )
 
 
-# THE OFFLINE TIME DIAL IS DELETED.  OWNER RULING, 2026-08-25:
+# THE OFFLINE TIME DIAL IS DELETED.  OWNER RULING, 2026-08-24:
 #
 #     "we either get a real time from a server or don't assume we know time"
 #
@@ -434,7 +434,7 @@ print(
         # the fix to the badges" is unverifiable after the fact.
         _schedule_source,
         # WHEN THE AGENDA ON SCREEN WAS BUILT, which used to be readable on the
-        # panel as `OFFLINE COPY 14 AUG` until the 2026-08-25 freshness ruling
+        # panel as `OFFLINE COPY 14 AUG` until the 2026-08-24 freshness ruling
         # replaced the sentence with a glyph.  The glyph says WHICH KIND of copy
         # it is; the date is the follow-up question, and this is where it is
         # answered now.  `None` on an agenda that carries no `generated_at`.

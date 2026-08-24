@@ -1,0 +1,7 @@
+# What tools/build.py creates locally. Build output is never committed to this
+# repository: the export is SOURCE, MANIFEST.json hashes every published file,
+# and a compiled artifact beside the source would be stale the moment either
+# the source or the compiler pin moved.
+build/
+__pycache__/
+*.pyc

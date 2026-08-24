@@ -10,11 +10,13 @@ retry" instruction, because a badge stopped on a 403 holds until the next boot
 (#14; `polltransport._enter_revoked`).
 
 WHAT IS HERE AND WHAT IS ELSEWHERE. This file is the hardware seam and nothing
-else: the mode, the guarded imports, the boot read of the durable pair state, the
-poll loop and `run(update)`. Every decision is in `settings_model` (pure,
-CPython-tested) and every pixel is in `settings_view`. The Pair and Confirm
-screens are Card E's landed `badgelink.pairview` view-models, consumed and not
-reimplemented. **There is no badge-side unpair in v2** and this app offers none.
+else: the mode, the guarded imports, the boot reads (the durable pair state, and
+the wearer's panel level), the two impure things the rows ask for — `badge.sleep`
+and `display.backlight` — the poll loop and `run(update)`. Every decision is in
+`settings_model` (pure, CPython-tested) and every pixel is in `settings_view`.
+The Pair and Confirm screens are Card E's landed `badgelink.pairview`
+view-models, consumed and not reimplemented. **There is no badge-side unpair in
+v2** and this app offers none.
 
 THE THREE GUARDED IMPORTS, AND WHY NONE OF THEM IS A BROWSER ACCOMMODATION.
 
@@ -73,6 +75,7 @@ badge.mode(HIRES | VSYNC)
 badge.caselights(0)
 
 import backlight  # noqa: E402
+import brightness_store  # noqa: E402
 import settings_model  # noqa: E402
 import settings_view  # noqa: E402
 import ui  # noqa: E402
@@ -137,6 +140,11 @@ if _network is not None:
             print("SETTINGS_PUSH unavailable={}".format(
                 _push_error.__class__.__name__))
 
+# THE WEARER'S PANEL LEVEL, READ FROM THE ONE STORE BEFORE THE FIRST FRAME.
+# `brightness_store.read` is total by contract, so a missing or hostile file
+# gives the factory level rather than an exception on the launch path.
+_brightness = brightness_store.read()
+
 app = settings_model.Settings(
     pairview=pairview,
     pairstate=pairstate,
@@ -144,9 +152,18 @@ app = settings_model.Settings(
     transport=_network,
     network_control=_network,
     push_control=_push_control,
+    brightness=_brightness,
 )
 chrome = settings_view.build(pairview.qr_layout if pairview is not None else None)
-display.backlight(backlight.fraction(backlight.NORMAL))
+# THE STORED LEVEL, NOT `backlight.NORMAL`, and that changed with the BRIGHTNESS
+# row (owner ruling, 2026-08-24). This tile inherited the shared 85 % that every
+# app which predates the wearer's ladder still opens at; hosting the CONTROL
+# makes that a lie the wearer can see. A badge set to DIM would have jumped to
+# 85 % on opening Settings and then shown a screen reading "The screen is set to
+# DIM" -- and the first press of the ladder would have looked like a jump DOWN
+# rather than one rung. The launcher, `poster` and `badgecard` already open at
+# the stored level; this is the fourth reader agreeing with them.
+display.backlight(backlight.fraction(_brightness))
 
 BUTTONS = (
     ("UP", BUTTON_UP),
@@ -160,8 +177,11 @@ BUTTONS = (
 # repeat, which is why A/B/C are read as bare edges below.
 _scroll = ui.Axis(BUTTON_UP, BUTTON_DOWN)
 
-print("SETTINGS_OPEN library={} rows={} canvas={}x{}".format(
-    1 if app.library else 0, len(app.rows), screen.width, screen.height))
+# `bright=` is APPENDED rather than inserted, because three documents and three
+# browser assertions match the head of this line as a substring.
+print("SETTINGS_OPEN library={} rows={} canvas={}x{} bright={}".format(
+    1 if app.library else 0, len(app.rows), screen.width, screen.height,
+    _brightness))
 
 _last_ms = time.ticks_ms()
 _last_screen = None
@@ -240,6 +260,42 @@ def _sleep():
         app.sleep_failed()
 
 
+def _set_brightness(level):
+    """One rung: the PANEL first, then the file. Never raises.
+
+    THE ORDER IS THE WHOLE OF THE FEEL (button rule B6, "update the screen
+    first, write later"). The flash write stalls up to 185 ms (measured) and the
+    wearer is looking at the exact thing the press changed, so a write that went
+    first would put a fifth of a second between the press and the light.
+
+    THE STORE IS `/state/badgecard.json` AND THERE MUST NEVER BE A SECOND ONE.
+    Leaving an app is `machine.reset()`, so nothing about this level reaches the
+    launcher, `poster` or `badgecard` in RAM -- persistence is the only way a
+    level can hold, and all four apps read that one file.
+    `brightness_store`'s docstring has the refusal rules that keep a brightness
+    press from destroying five saved badges.
+
+    NEITHER HALF MAY RAISE. A backlight call that throws inside `update()`
+    reaches `fatal_error`, which draws a modal and resets the badge: the wearer
+    would get a crash for asking for a dimmer screen. A failed WRITE is a
+    smaller failure and is reported as itself -- the level is on the panel for
+    this session and will not survive the next reset -- because the alternative
+    (a rollback to keep the panel and the file in step) would take away the
+    thing the wearer just asked for to preserve a consistency they cannot see.
+    """
+    try:
+        display.backlight(backlight.fraction(level))
+    except Exception as error:  # noqa: BLE001
+        print("SETTINGS_BRIGHT_FAIL stage=panel error={!r}".format(error))
+    stored = None
+    try:
+        stored = brightness_store.write(level)
+    except Exception as error:  # noqa: BLE001
+        print("SETTINGS_BRIGHT_FAIL stage=store error={!r}".format(error))
+    print("SETTINGS_BRIGHT level={} stored={}".format(
+        level, 1 if stored is not None else 0))
+
+
 def update():
     global _last_ms, _last_screen
     now = time.ticks_ms()
@@ -273,6 +329,8 @@ def update():
                 elif action.get("type") == "push_set":
                     print("SETTINGS_PUSH enabled={} mode={}".format(
                         1 if action.get("enabled") else 0, app.push_mode()))
+                elif action.get("type") == "brightness_set":
+                    _set_brightness(action.get("level"))
 
     if _network is not None:
         _network.set_active(app.screen in (settings_model.NETWORK,

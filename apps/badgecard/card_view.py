@@ -34,7 +34,6 @@ docstring named for two weeks does not exist, which is the kind of citation a
 reader trusts and then cannot find.)
 """
 
-import backlight
 import card_board
 import card_faces as faces
 import card_model as model
@@ -470,8 +469,6 @@ class CardView:
             self.confirm_screen(plan)
         elif view == model.BAKING:
             self.baking_screen(plan)
-        elif view == model.BRIGHT:
-            self.bright_screen(plan)
         self._toast(plan)
         # THE BAR IS DRAWN LAST, over everything, because "no content in the
         # band" is unshippable on a canvas this small: something always reaches
@@ -553,10 +550,6 @@ class CardView:
             "%d OF %d" % (len(state["badges"]), model.MAX_BADGES),
             effects.label(badge["effect"]),
             "ON" if home_ready else model.SAVE,
-            # THE WORD, NOT THE NUMBER.  `HIGH` is what the wearer chose and
-            # `80` is how the panel is driven; a menu that reported the second
-            # would be asking somebody to learn a scale to read a status line.
-            backlight.name(plan["brightness"]),
         )
         self._rows(plan, top, model.MENU_ITEMS, values,
                    button=-1 if home_ready
@@ -874,53 +867,6 @@ class CardView:
                           chrome.width - 2 * self.text_x, pens[index],
                           align=(self.image.CENTER, self.image.MIDDLE))
             row += self.row_h
-
-    # -- brightness -----------------------------------------------------------
-
-    def bright_screen(self, plan):
-        """The ladder, over the wearer's own badge.
-
-        THE BADGE IS BEHIND IT ON PURPOSE, where a settings screen would
-        normally draw over a plate: brightness is the one setting whose effect
-        is not on the screen but IN it, so the wearer has to be looking at their
-        own artwork at their own brightness to judge it.  The scrim `_behind`
-        applies is the same one every list screen uses, so what moves between
-        rungs is the PANEL rather than the picture.
-
-        FIVE PIPS AND A WORD.  The pips are the ladder made visible -- five
-        rungs, the current one filled, so "how much further can this go" is
-        answered without pressing anything, which is what the softkey labels
-        cannot do (they name the next value in each direction and nothing
-        beyond).  The word is the same one the menu row shows, so the two
-        screens agree by construction.
-        """
-        chrome = self.chrome
-        percent = plan["brightness"]
-        self._behind(plan)
-        top = self._header(model.MENU_BRIGHT, "%d%%" % percent)
-        levels = backlight.LEVELS
-        # The pip row, centred in the content area under the header.
-        pip = self.row_h - 2 * self.scale
-        gap = pip // 2
-        span = len(levels) * pip + (len(levels) - 1) * gap
-        x = (chrome.width - span) // 2
-        y = top + (chrome.content_h - top - pip - self.row_h) // 2
-        for level in levels:
-            filled = level <= percent
-            self.screen.pen = self.accent if filled else self.rule
-            self.screen.rectangle(x, y, pip, pip)
-            if not filled:
-                # An outline rather than a fill, so an unreached rung reads as a
-                # place the ladder can still go rather than as a dead cell.
-                self.screen.pen = self.plate
-                self.screen.rectangle(x + self.scale, y + self.scale,
-                                      pip - 2 * self.scale,
-                                      pip - 2 * self.scale)
-            x += pip + gap
-        self.screen.font = chrome.font
-        self._bounded(backlight.name(percent), self.text_x, y + pip + self.scale,
-                      chrome.width - 2 * self.text_x, self.white,
-                      align=(self.image.CENTER, self.image.MIDDLE))
 
     # -- the wallpaper's progress modal ---------------------------------------
 

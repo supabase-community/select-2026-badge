@@ -10,19 +10,19 @@
     },
     {
       "asset_profile": null,
+      "files": 14,
+      "hidden": false,
+      "name": "poster",
+      "path": "apps/poster",
+      "source": "poster/badge/poster"
+    },
+    {
+      "asset_profile": null,
       "files": 9,
       "hidden": false,
       "name": "schedule",
       "path": "apps/schedule",
       "source": "schedule/badge/schedule"
-    },
-    {
-      "asset_profile": "full",
-      "files": 53,
-      "hidden": false,
-      "name": "glyph",
-      "path": "apps/glyph",
-      "source": "glyph/badge/glyph"
     },
     {
       "asset_profile": null,
@@ -34,38 +34,6 @@
     },
     {
       "asset_profile": null,
-      "files": 17,
-      "hidden": false,
-      "name": "pet",
-      "path": "apps/pet",
-      "source": "pet/badge/pet"
-    },
-    {
-      "asset_profile": null,
-      "files": 14,
-      "hidden": false,
-      "name": "poster",
-      "path": "apps/poster",
-      "source": "poster/badge/poster"
-    },
-    {
-      "asset_profile": null,
-      "files": 10,
-      "hidden": false,
-      "name": "pong",
-      "path": "apps/pong",
-      "source": "pong/badge/pong"
-    },
-    {
-      "asset_profile": null,
-      "files": 10,
-      "hidden": false,
-      "name": "breakout",
-      "path": "apps/breakout",
-      "source": "breakout/badge/breakout"
-    },
-    {
-      "asset_profile": null,
       "files": 12,
       "hidden": false,
       "name": "flappy",
@@ -74,15 +42,23 @@
     },
     {
       "asset_profile": null,
-      "files": 10,
+      "files": 17,
       "hidden": false,
-      "name": "pacman",
-      "path": "apps/pacman",
-      "source": "pacman/badge/pacman"
+      "name": "pet",
+      "path": "apps/pet",
+      "source": "pet/badge/pet"
+    },
+    {
+      "asset_profile": "full",
+      "files": 53,
+      "hidden": false,
+      "name": "glyph",
+      "path": "apps/glyph",
+      "source": "glyph/badge/glyph"
     },
     {
       "asset_profile": null,
-      "files": 7,
+      "files": 8,
       "hidden": false,
       "name": "settings",
       "path": "apps/settings",
@@ -99,8 +75,10 @@
   ],
   "documents": [
     "README.md",
+    "AGENTS.md",
+    "NETWORKING.md",
     "MANIFEST.json",
-    "CLEANUP-CENSUS.md",
+    "CONTRIBUTING.md",
     "ARCHITECTURE.md",
     "BUILDING.md"
   ],
@@ -134,6 +112,11 @@
       "name": "benchmark_app",
       "reason": "Dev instrument. Also the one app that cannot be pure bytecode (@micropython.native in runner.py), so shipping it would put .py beside .mpy on a production badge.",
       "source": "benchmark/badge/benchmark_app"
+    },
+    {
+      "name": "breakout",
+      "reason": "OFF THE PRODUCTION LIST, owner ruling 2026-08-24: minimal distribution for now. [quotation removed].",
+      "source": "breakout/badge/breakout"
     },
     {
       "name": "glyph2x_lab",
@@ -182,13 +165,23 @@
     },
     {
       "name": "kbgrid",
-      "reason": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING, having already been RULED OUT of `production` before that. Sam: [quotation removed].",
+      "reason": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING, having already been RULED OUT of `production` before that. [quotation removed].",
       "source": "kbgrid/badge/kbgrid"
     },
     {
       "name": "kbqwerty",
-      "reason": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING \u2014 and this is the entry that CLOSES the keyboard question rather than deferring it. Sam: [quotation removed].",
+      "reason": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING \u2014 and this is the entry that CLOSES the keyboard question rather than deferring it. [quotation removed].",
       "source": "kbqwerty/badge/kbqwerty"
+    },
+    {
+      "name": "pacman",
+      "reason": "OFF THE PRODUCTION LIST, owner ruling 2026-08-24: minimal distribution for now. Same ruling, same shape and same reversibility as `breakout` above: move the name back to `apps` and restore its description line ([quotation removed]).",
+      "source": "pacman/badge/pacman"
+    },
+    {
+      "name": "pong",
+      "reason": "OFF THE PRODUCTION LIST, owner ruling 2026-08-24: minimal distribution for now. Same ruling, same shape and same reversibility as `breakout` above: move the name back to `apps` and restore its description line ([quotation removed]).",
+      "source": "pong/badge/pong"
     },
     {
       "name": "profile",
@@ -202,7 +195,7 @@
     },
     {
       "name": "snake2x",
-      "reason": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING -- the one entry here that was decided by a person playing the badge rather than by consolidation or a technique verdict. Sam, after the LORES visual passes landed on all five games: \"squirrel needs to go and 2x snake needs to go ...",
+      "reason": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING -- the one entry here that was decided by a person playing the badge rather than by consolidation or a technique verdict. [quotation removed].",
       "source": "snake2x/badge/snake2x"
     },
     {
@@ -225,11 +218,25 @@
   ],
   "files": [
     {
-      "bytes": 15164,
+      "bytes": 301,
+      "generated": true,
+      "note": "export-only: repository furniture for the published mirror",
+      "path": ".gitignore",
+      "sha256": "195546f658b6308a1b64d85f78bc32d382e90cf19aab8cc5257cd012b3ed65f5"
+    },
+    {
+      "bytes": 4415,
+      "generated": true,
+      "note": "export-only: orientation for AI agents reading this package",
+      "path": "AGENTS.md",
+      "sha256": "20ddebf298a51ebe27a8babc2e91128918ebe27bf6a16d24c23f5e230c5bf527"
+    },
+    {
+      "bytes": 15191,
       "note": "export-only",
       "origin": "docs/source-export/ARCHITECTURE.md",
       "path": "ARCHITECTURE.md",
-      "sha256": "239e151bed4fde4995aeeeadf97f4c566d765d38c3ecd4efc024f37c4ddedece"
+      "sha256": "e7c51e1b89a91010c8056712688bb71406361b650cd6a4ab8c34bb8cd7f32c7f"
     },
     {
       "bytes": 15611,
@@ -239,38 +246,45 @@
       "sha256": "834481957e14b80b78b072dfb3512e479874d7cc7e789f42ea43e009dae18283"
     },
     {
-      "bytes": 10416,
+      "bytes": 981,
       "generated": true,
-      "note": "export-only: the internal-exhaust census, a decision input",
-      "path": "CLEANUP-CENSUS.md",
-      "sha256": "2138d53a6ffac4693feabbdc20cfbd0ccde7660eb432ceebf2dc25a323d9f5fa"
+      "note": "export-only: the backflow contract for outside contributors",
+      "path": "CONTRIBUTING.md",
+      "sha256": "4c07cc6487b7cd0bfc4189400f93f715798f6b05773ba0f595969132dbcfaa4f"
     },
     {
-      "bytes": 17559,
+      "bytes": 4796,
+      "generated": true,
+      "note": "export-only: why the fleet ships with networking off",
+      "path": "NETWORKING.md",
+      "sha256": "d2b6361176ae8095f78c88a3b1a50701d12dee37187359ef3f23738ff6229042"
+    },
+    {
+      "bytes": 20598,
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "03bf4c2c8e842bda92c9982ee05ea08fc847a994599c9f558f7bcccc8b36d5c2"
+      "sha256": "d2162b7799a036febb6fa4b52c118a3380f4a59f62c8683187885618056d6b10"
     },
     {
-      "bytes": 7417,
+      "bytes": 7626,
       "generated": true,
       "note": "export-only: the lineup contract tools/build.py reads",
       "path": "apps-roster.json",
-      "sha256": "a1a2c66f17553598e994b857777f09afc866250053a4f072195913984235c541"
+      "sha256": "25db0173c31fb6b103b7a9b642284e585d571fec1536e54417161fcdec25da74"
     },
     {
-      "bytes": 2369,
+      "bytes": 2287,
       "generated": true,
       "note": "export-only",
       "path": "apps/badgecard/README.md",
-      "sha256": "0d5ea48580795c25943579be11ff1f2fe5b868c2758394da1dc9b6891662ace5"
+      "sha256": "4e68b4430bb820bae22bb1c3400f9b25fa96c9ab3eeb8e07aaf4ab72dee34a25"
     },
     {
-      "bytes": 18409,
+      "bytes": 18796,
       "origin": "badgecard/badge/badgecard/__init__.py",
       "path": "apps/badgecard/__init__.py",
-      "sha256": "85cf193a8b0ce95e2e1bcca5c67f75e91c98bc69aceca97d1e10df7c55a2a1f4"
+      "sha256": "9518a830be8c14a78a7bc9972e55f0fc99e411479582afa843c78f30b975bc09"
     },
     {
       "bytes": 385468,
@@ -291,16 +305,16 @@
       "sha256": "be2598cb18a1d291d0544261f2068de736c3d4723edec5b4b0f7c7538ec62fea"
     },
     {
-      "bytes": 9407,
+      "bytes": 9950,
       "origin": "badgecard/badge/badgecard/backlight.py",
       "path": "apps/badgecard/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
+      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
     },
     {
-      "bytes": 43056,
+      "bytes": 39881,
       "origin": "badgecard/badge/badgecard/card_app.py",
       "path": "apps/badgecard/card_app.py",
-      "sha256": "06a62b8019017c60532aa40e7a7009b0c278ad53d0a56186003018f7687b3ffd"
+      "sha256": "38ec7e50ede6d1a7cca62cd9194abf9a374b81f4a0a452509ef7412672c085f9"
     },
     {
       "bytes": 50389,
@@ -327,10 +341,10 @@
       "sha256": "cd4f4708feb237a9bfc3b81ad8930b09f8ec39122fe96f8f27607da9522b236e"
     },
     {
-      "bytes": 34645,
+      "bytes": 33742,
       "origin": "badgecard/badge/badgecard/card_model.py",
       "path": "apps/badgecard/card_model.py",
-      "sha256": "1f2a36fcb0de635f3f89b2bea191d3237e58df704c5fdbcce63958c5872b7134"
+      "sha256": "470c04782cf90b43ee322de7ce45f3683b6abe6a247a444f2b9e7541e2be2f7f"
     },
     {
       "bytes": 6934,
@@ -339,10 +353,10 @@
       "sha256": "567459a8dc5b10f294b0857771d606d423d2659c92607b0715038eca17a7f2d4"
     },
     {
-      "bytes": 47615,
+      "bytes": 44828,
       "origin": "badgecard/badge/badgecard/card_view.py",
       "path": "apps/badgecard/card_view.py",
-      "sha256": "2f769cbfbbcd81d91fd41e82cf6fea9a608a0a1098ea17d5db30e6f03a9c1deb"
+      "sha256": "9942eea4ea732a9b41d1e9d2e81ea1c6f6168fd4aee31bc3d4c43cc44b5e401c"
     },
     {
       "bytes": 14415,
@@ -441,73 +455,6 @@
       "sha256": "988d44bc0ed4e33c2dbcef30330a6906a8a6baced91e88caab36e2bfdb1b897d"
     },
     {
-      "bytes": 1338,
-      "generated": true,
-      "note": "export-only",
-      "path": "apps/breakout/README.md",
-      "sha256": "4ceaae6352117e8110576169606937c08fb33303a23ea249877737375bcc5aa1"
-    },
-    {
-      "bytes": 14895,
-      "origin": "breakout/badge/breakout/__init__.py",
-      "path": "apps/breakout/__init__.py",
-      "sha256": "41ce4029396588a798e3a6c9cf91b025d3a78b29c37dbc9bc241b58fe8d0dff0"
-    },
-    {
-      "bytes": 9407,
-      "origin": "breakout/badge/breakout/backlight.py",
-      "path": "apps/breakout/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
-    },
-    {
-      "bytes": 31880,
-      "origin": "breakout/badge/breakout/breakout_model.py",
-      "path": "apps/breakout/breakout_model.py",
-      "sha256": "aeec1f491c0753ccb04dde67cf428df8c34e00e978f7a708988de1cf8e7e6765"
-    },
-    {
-      "bytes": 1848,
-      "origin": "breakout/badge/breakout/breakout_store.py",
-      "path": "apps/breakout/breakout_store.py",
-      "sha256": "b79742fb522d4464ffca4c1f4c09d98d26c4db43ae9758362cc932dc611d55d9"
-    },
-    {
-      "bytes": 30345,
-      "origin": "breakout/badge/breakout/breakout_view.py",
-      "path": "apps/breakout/breakout_view.py",
-      "sha256": "e8eddc412b3aa33f0397145649c306021f9e9c8d49ede5c82d4d7530c610091e"
-    },
-    {
-      "bytes": 8514,
-      "origin": "breakout/badge/breakout/game_palette.py",
-      "path": "apps/breakout/game_palette.py",
-      "sha256": "1f0f19b61cceb16634ae9ffd596b6bcea8fcf88b7d87cdda391d81c003d549d8"
-    },
-    {
-      "bytes": 188,
-      "origin": "breakout/badge/breakout/icon.png",
-      "path": "apps/breakout/icon.png",
-      "sha256": "80e3639f29fd14a9b69cae082c171b25920d2e6518dfa9fa77c0dab633a69837"
-    },
-    {
-      "bytes": 21016,
-      "origin": "breakout/badge/breakout/loading.py",
-      "path": "apps/breakout/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
-    },
-    {
-      "bytes": 13207,
-      "origin": "breakout/badge/breakout/loading_sql.py",
-      "path": "apps/breakout/loading_sql.py",
-      "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
-    },
-    {
-      "bytes": 12115,
-      "origin": "breakout/badge/breakout/score_sink.py",
-      "path": "apps/breakout/score_sink.py",
-      "sha256": "2766875fb9214527188347497c7b0fdb8917cb39b6a819253d0ab7bdb7d616da"
-    },
-    {
       "bytes": 3083,
       "note": "export-only: the attribution record",
       "origin": "docs/source-export/provenance/flappy.md",
@@ -522,10 +469,10 @@
       "sha256": "b5c9abe4041b768e258b121ca2b6b1ec51cb3f0ae6bd8b47521984a4ea3eede1"
     },
     {
-      "bytes": 14313,
+      "bytes": 15754,
       "origin": "flappy/badge/flappy/__init__.py",
       "path": "apps/flappy/__init__.py",
-      "sha256": "2bcee638073600749db569cffa403cccb99d020cf7559b1ee4dbd0bdb54e2978"
+      "sha256": "f3a152e49c6b2ef05effde748ec8a3959f7c88f415ca702c9c7c3ebec1b89b59"
     },
     {
       "bytes": 290,
@@ -534,10 +481,10 @@
       "sha256": "73b59abf7c2b41f28dff0761e323ba0f80a812dea5fa1b2a231e421036cb38af"
     },
     {
-      "bytes": 9407,
+      "bytes": 9950,
       "origin": "flappy/badge/flappy/backlight.py",
       "path": "apps/flappy/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
+      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
     },
     {
       "bytes": 19844,
@@ -841,10 +788,10 @@
       "sha256": "b9e394da4828dd9255456e5d0a9852d358ccd2192fa11af87dcd66473f687b15"
     },
     {
-      "bytes": 9407,
+      "bytes": 9950,
       "origin": "glyph/badge/glyph/backlight.py",
       "path": "apps/glyph/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
+      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
     },
     {
       "bytes": 4030,
@@ -933,10 +880,10 @@
       "sha256": "7f457235fa5a18ff39d1db70ce3a8e17e70c9fc75214a96eab7144acf5c060c9"
     },
     {
-      "bytes": 9407,
+      "bytes": 9950,
       "origin": "launcher/menu/backlight.py",
       "path": "apps/menu/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
+      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
     },
     {
       "bytes": 66749,
@@ -963,11 +910,11 @@
       "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
     },
     {
-      "bytes": 79,
+      "bytes": 58,
       "generated": true,
       "note": "the grid order, from the production lineup",
       "path": "apps/menu/order.txt",
-      "sha256": "2b5ebb8ae082e1545136a10793503038c70d75c0172b18948986b7062f2fc86c"
+      "sha256": "58b5cd8844ee2ff081286f658ebd4f7919d869e8402a7faceca6c5623d43ad43"
     },
     {
       "bytes": 91011,
@@ -980,73 +927,6 @@
       "origin": "launcher/menu/wallpaper.py",
       "path": "apps/menu/wallpaper.py",
       "sha256": "988d44bc0ed4e33c2dbcef30330a6906a8a6baced91e88caab36e2bfdb1b897d"
-    },
-    {
-      "bytes": 1474,
-      "generated": true,
-      "note": "export-only",
-      "path": "apps/pacman/README.md",
-      "sha256": "b4e1fc96a08ca95a29bd709922dc9a1ca3057db0e7fba97f09f5b9946ff35b24"
-    },
-    {
-      "bytes": 16611,
-      "origin": "pacman/badge/pacman/__init__.py",
-      "path": "apps/pacman/__init__.py",
-      "sha256": "fd2e9fc66e04d7528680ab0aa73e7b135cede839148d3a595d29c2079c688c67"
-    },
-    {
-      "bytes": 9407,
-      "origin": "pacman/badge/pacman/backlight.py",
-      "path": "apps/pacman/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
-    },
-    {
-      "bytes": 8514,
-      "origin": "pacman/badge/pacman/game_palette.py",
-      "path": "apps/pacman/game_palette.py",
-      "sha256": "1f0f19b61cceb16634ae9ffd596b6bcea8fcf88b7d87cdda391d81c003d549d8"
-    },
-    {
-      "bytes": 211,
-      "origin": "pacman/badge/pacman/icon.png",
-      "path": "apps/pacman/icon.png",
-      "sha256": "3e727e259615c1ec09f904bcd7ca10ae5c3825a8a046fc0e972a116a0f0f67fe"
-    },
-    {
-      "bytes": 21016,
-      "origin": "pacman/badge/pacman/loading.py",
-      "path": "apps/pacman/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
-    },
-    {
-      "bytes": 13207,
-      "origin": "pacman/badge/pacman/loading_sql.py",
-      "path": "apps/pacman/loading_sql.py",
-      "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
-    },
-    {
-      "bytes": 30165,
-      "origin": "pacman/badge/pacman/pacman_model.py",
-      "path": "apps/pacman/pacman_model.py",
-      "sha256": "93455ad043cac85ada8db458727fd23c5ce658135debdd2850e077827b95fda3"
-    },
-    {
-      "bytes": 2065,
-      "origin": "pacman/badge/pacman/pacman_store.py",
-      "path": "apps/pacman/pacman_store.py",
-      "sha256": "aa6c01da410d63ae35d22c601bbade70c7b602767a2384988d7787732606288a"
-    },
-    {
-      "bytes": 37875,
-      "origin": "pacman/badge/pacman/pacman_view.py",
-      "path": "apps/pacman/pacman_view.py",
-      "sha256": "2cefacd966e9777147a36548df0b95756fbeecbe09800dd9651466b32a2a6a77"
-    },
-    {
-      "bytes": 12115,
-      "origin": "pacman/badge/pacman/score_sink.py",
-      "path": "apps/pacman/score_sink.py",
-      "sha256": "2766875fb9214527188347497c7b0fdb8917cb39b6a819253d0ab7bdb7d616da"
     },
     {
       "bytes": 1916,
@@ -1080,10 +960,10 @@
       "sha256": "5a57f980191454fc7e09c789ccd6df4fe85b486d0f66de482346fafa0d7ffd48"
     },
     {
-      "bytes": 9407,
+      "bytes": 9950,
       "origin": "pet/badge/pet/backlight.py",
       "path": "apps/pet/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
+      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
     },
     {
       "bytes": 284,
@@ -1158,73 +1038,6 @@
       "sha256": "3e74801e22379df4ca5338ce3304bdc9a5d62a9fa8787e6f7a3151910571f435"
     },
     {
-      "bytes": 1428,
-      "generated": true,
-      "note": "export-only",
-      "path": "apps/pong/README.md",
-      "sha256": "db6531cf6c576bec5bc6375f59ce86013993dea28dd43f32b1b8551d59a17c54"
-    },
-    {
-      "bytes": 13800,
-      "origin": "pong/badge/pong/__init__.py",
-      "path": "apps/pong/__init__.py",
-      "sha256": "ba2dab234cb0e3f95e9f1a7c065e2d4840d25e45dd3c36c4026fbd09ca447289"
-    },
-    {
-      "bytes": 9407,
-      "origin": "pong/badge/pong/backlight.py",
-      "path": "apps/pong/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
-    },
-    {
-      "bytes": 8514,
-      "origin": "pong/badge/pong/game_palette.py",
-      "path": "apps/pong/game_palette.py",
-      "sha256": "1f0f19b61cceb16634ae9ffd596b6bcea8fcf88b7d87cdda391d81c003d549d8"
-    },
-    {
-      "bytes": 179,
-      "origin": "pong/badge/pong/icon.png",
-      "path": "apps/pong/icon.png",
-      "sha256": "91a0472c8bf8f9b1a0d83b066b2aa54e50e1ad5dd60a07f8633257a549df7277"
-    },
-    {
-      "bytes": 21016,
-      "origin": "pong/badge/pong/loading.py",
-      "path": "apps/pong/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
-    },
-    {
-      "bytes": 13207,
-      "origin": "pong/badge/pong/loading_sql.py",
-      "path": "apps/pong/loading_sql.py",
-      "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
-    },
-    {
-      "bytes": 26697,
-      "origin": "pong/badge/pong/pong_model.py",
-      "path": "apps/pong/pong_model.py",
-      "sha256": "aed4a5bd0a280d98d5f9cab0978dcdf0bbce77ffad55e03b24544e407693c73a"
-    },
-    {
-      "bytes": 1838,
-      "origin": "pong/badge/pong/pong_store.py",
-      "path": "apps/pong/pong_store.py",
-      "sha256": "9031fea7e57ef2c11f6aa90c4bb1f57e2e5a6e362507e926d117e77643eb4647"
-    },
-    {
-      "bytes": 25587,
-      "origin": "pong/badge/pong/pong_view.py",
-      "path": "apps/pong/pong_view.py",
-      "sha256": "dac576ac462156db77545d2882b45857e90cbf7d29c62e6f9c045129c50e089f"
-    },
-    {
-      "bytes": 12115,
-      "origin": "pong/badge/pong/score_sink.py",
-      "path": "apps/pong/score_sink.py",
-      "sha256": "2766875fb9214527188347497c7b0fdb8917cb39b6a819253d0ab7bdb7d616da"
-    },
-    {
       "bytes": 1188,
       "generated": true,
       "note": "export-only",
@@ -1256,10 +1069,10 @@
       "sha256": "be2598cb18a1d291d0544261f2068de736c3d4723edec5b4b0f7c7538ec62fea"
     },
     {
-      "bytes": 9407,
+      "bytes": 9950,
       "origin": "poster/badge/poster/backlight.py",
       "path": "apps/poster/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
+      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
     },
     {
       "bytes": 13660,
@@ -1347,13 +1160,13 @@
       "bytes": 22858,
       "origin": "schedule/badge/schedule/__init__.py",
       "path": "apps/schedule/__init__.py",
-      "sha256": "b040d2c50f4d3b4562a009e8b7e91be48ec71b8b893a0a5ee24160738b236b0f"
+      "sha256": "05b1983e4b132ac578f7dab23d65c8622517ba977caafaee5b175aed39f11b56"
     },
     {
-      "bytes": 9407,
+      "bytes": 9950,
       "origin": "schedule/badge/schedule/backlight.py",
       "path": "apps/schedule/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
+      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
     },
     {
       "bytes": 1396,
@@ -1389,32 +1202,38 @@
       "bytes": 64497,
       "origin": "schedule/badge/schedule/schedule_model.py",
       "path": "apps/schedule/schedule_model.py",
-      "sha256": "2df7dca6ba8f69259cf544976e0493cbc0c8004e770fe221c3527b65c961a51d"
+      "sha256": "db74de2ff416ccc31f5a6182e43aeac3bd48f4e598c9be2a4d3202b7909e9bda"
     },
     {
       "bytes": 54549,
       "origin": "schedule/badge/schedule/schedule_view.py",
       "path": "apps/schedule/schedule_view.py",
-      "sha256": "1bb93ebaea6a061d9d256e143dec5d1ef0be09ac73540140bde0b0b2878159f0"
+      "sha256": "9ba62ac3497557e1f279b5d6fd91e3c307947f842f51a135ddb48728fc2d5c59"
     },
     {
-      "bytes": 1806,
+      "bytes": 2308,
       "generated": true,
       "note": "export-only",
       "path": "apps/settings/README.md",
-      "sha256": "a860c7e35fa0f7430887d8f6dd1925b490e91a6573bd2b091c2223449f61b0d2"
+      "sha256": "cf69d9f21f583f76505d2e20cfbc391af9169cb0c26ef300418c9cdaebc28734"
     },
     {
-      "bytes": 13968,
+      "bytes": 17181,
       "origin": "settings/badge/settings/__init__.py",
       "path": "apps/settings/__init__.py",
-      "sha256": "50a78bd05770edc3c34eed1a2380c993c04cdd58b4006cef6103a2e4104ad1ca"
+      "sha256": "59bb5303719685da2324e02a48c5b91e119d58ace87c201dc6ed3ab87919d952"
     },
     {
-      "bytes": 9407,
+      "bytes": 9950,
       "origin": "settings/badge/settings/backlight.py",
       "path": "apps/settings/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
+      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
+    },
+    {
+      "bytes": 6767,
+      "origin": "settings/badge/settings/brightness_store.py",
+      "path": "apps/settings/brightness_store.py",
+      "sha256": "4560d11805543366791a0b4eb93f05cfc0e851d02249640da57761938ffa96e6"
     },
     {
       "bytes": 182,
@@ -1423,16 +1242,16 @@
       "sha256": "7a4af70ec8182b5a96e026e985150e12955a88c18749dc98ef4ded17e75ee848"
     },
     {
-      "bytes": 20828,
+      "bytes": 23255,
       "origin": "settings/badge/settings/settings_copy.py",
       "path": "apps/settings/settings_copy.py",
-      "sha256": "7fa4060b2bba372bbce0677df72938a6295a3268b995ce906dfda5e075b27aff"
+      "sha256": "b02e1f51321298429cca3952cc6c37cb2398ebb8a0720b8c1d3d8ee2d986cb9f"
     },
     {
-      "bytes": 33808,
+      "bytes": 42986,
       "origin": "settings/badge/settings/settings_model.py",
       "path": "apps/settings/settings_model.py",
-      "sha256": "82975906b3f366e29aece99b363196a37c0fc881f7dc14bbc239a4cc87eb9ec2"
+      "sha256": "fc57f03fbf9725c7aaf6d34074c338f4dac54e017c721db997ee189e08b031e3"
     },
     {
       "bytes": 32373,
@@ -1473,10 +1292,10 @@
       "sha256": "5177c0338e9c65f90f146d4f33c8e41d8462ca7a137262e0c5013e7923f3ec5c"
     },
     {
-      "bytes": 9407,
+      "bytes": 9950,
       "origin": "snake/badge/snake/backlight.py",
       "path": "apps/snake/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
+      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
     },
     {
       "bytes": 8514,
@@ -1560,11 +1379,11 @@
       "sha256": "473af0ba8c39d54cab592b74c260fed6e56028e9faf5bd7343b77fe32dfdd9d6"
     },
     {
-      "bytes": 4782,
+      "bytes": 4631,
       "generated": true,
       "note": "export-only",
       "path": "shared/README.md",
-      "sha256": "d5fb6527cfd1560b86008ce029db067d5698bfb90a1fcfac16754da2610ab873"
+      "sha256": "c0ba0c7a895740fe5bd27f2dc3d4c8b325813115fa3c33c3f66275a01503ae31"
     },
     {
       "bytes": 27931,
@@ -1574,11 +1393,11 @@
       "sha256": "be2598cb18a1d291d0544261f2068de736c3d4723edec5b4b0f7c7538ec62fea"
     },
     {
-      "bytes": 9407,
+      "bytes": 9950,
       "note": "export-only: the canonical copy, not installed on the badge",
       "origin": "shared/backlight.py",
       "path": "shared/backlight.py",
-      "sha256": "6d270f4ba4a8c8d66f671031f3a4b70b59b1efc61b8f538dd7470e0b5d04622a"
+      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
     },
     {
       "bytes": 14415,
@@ -1660,7 +1479,7 @@
   ],
   "gates": [
     {
-      "detail": "231 files scanned; no populated credential, private address or /state content",
+      "detail": "203 files scanned; no populated credential, private address or /state content",
       "gate": "secrets",
       "offenders": [],
       "ok": true
@@ -1696,34 +1515,31 @@
       "ok": true
     },
     {
-      "detail": "72 shipped copies match their canonical source",
+      "detail": "57 shipped copies match their canonical source",
       "gate": "vendored-copies-identical",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "131 modules scanned; every import is local, firmware or guarded",
+      "detail": "105 modules scanned; every import is local, firmware or guarded",
       "gate": "imports-resolve",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "148 .py files compile",
+      "detail": "122 .py files compile",
       "gate": "python-compiles",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "12 app directories: the roster's 11 shipping apps plus the launcher",
+      "detail": "9 app directories: the roster's 8 shipping apps plus the launcher",
       "export": [
         "badgecard",
-        "breakout",
         "flappy",
         "glyph",
         "menu",
-        "pacman",
         "pet",
-        "pong",
         "poster",
         "schedule",
         "settings",
@@ -1733,13 +1549,10 @@
       "ok": true,
       "roster": [
         "badgecard",
-        "breakout",
         "flappy",
         "glyph",
         "menu",
-        "pacman",
         "pet",
-        "pong",
         "poster",
         "schedule",
         "settings",
@@ -1747,13 +1560,13 @@
       ]
     },
     {
-      "detail": "apps-roster.json ships and names the 12 exported directories",
+      "detail": "apps-roster.json ships and names the 9 exported directories",
       "gate": "roster-ships-and-matches",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "44 excluded-app notes carry rationale and no exhaust",
+      "detail": "50 excluded-app notes carry rationale and no exhaust",
       "gate": "manifest-narrative-clean",
       "offenders": [],
       "ok": true
@@ -1777,19 +1590,19 @@
       "ok": true
     },
     {
-      "detail": "BUILDING.md names all 12 pins the exporter read",
+      "detail": "BUILDING.md names all 14 pins the exporter read",
       "gate": "building-md-pins",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "the README's 230 payload files / 9,874,185 bytes and 232 manifest rows all match the manifest",
+      "detail": "the README's 202 payload files / 9,475,939 bytes and 203 manifest rows all match the manifest",
       "gate": "readme-matches-manifest",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "171 text files scanned; every hold duration agrees with HOLD_MS = 1500 ms in apps/menu/ui.py",
+      "detail": "145 text files scanned; every hold duration agrees with HOLD_MS = 1500 ms in apps/menu/ui.py",
       "gate": "hold-contract-consistent",
       "hold_ms": 1500,
       "offenders": [],
@@ -1825,15 +1638,15 @@
         {
           "class": "owner-quotations",
           "fatal": false,
-          "files": 60,
-          "occurrences": 217,
+          "files": 50,
+          "occurrences": 202,
           "what": "a quoted block with an owner attribution beside it"
         },
         {
           "class": "verbatim-ruling-blocks",
           "fatal": false,
-          "files": 27,
-          "occurrences": 48,
+          "files": 24,
+          "occurrences": 45,
           "what": "the `*\"...\"*` verbatim-ruling form, a subset of the line above"
         },
         {
@@ -1846,26 +1659,26 @@
         {
           "class": "repository-doc-paths",
           "fatal": false,
-          "files": 85,
-          "occurrences": 203,
+          "files": 71,
+          "occurrences": 160,
           "what": "a path into `docs/` other than this export's own prose"
         },
         {
           "class": "other-internal-paths",
           "fatal": false,
-          "files": 77,
-          "occurrences": 201,
+          "files": 71,
+          "occurrences": 192,
           "what": "a path into another tree this export omits (`*/host/`, `research/`, ...)"
         }
       ],
-      "detail": "census over 172 text subjects (report-only except device-identifiers): device-identifiers 0/0f!, val-identifiers 14/11f, owner-quotations 217/60f, verbatim-ruling-blocks 48/27f, benchmark-report-paths 23/16f, repository-doc-paths 203/85f, other-internal-paths 201/77f -- per-file counts in CLEANUP-CENSUS.md",
+      "detail": "census over 146 text subjects (report-only except device-identifiers): device-identifiers 0/0f!, val-identifiers 14/11f, owner-quotations 202/50f, verbatim-ruling-blocks 45/24f, benchmark-report-paths 23/16f, repository-doc-paths 160/71f, other-internal-paths 192/71f -- per-file counts kept in a maintainer report outside this package",
       "gate": "internal-exhaust-census",
       "offenders": [],
       "ok": true
     }
   ],
   "provenance": {
-    "commit": "ed557c82b6618c52b9c0d0ba7349fbedf811a8a0",
+    "commit": "52ee4554aaa88c6f0dab1b2b339da68e952957dc",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1877,15 +1690,12 @@
   "roster": {
     "apps": [
       "badgecard",
-      "schedule",
-      "glyph",
-      "snake",
-      "pet",
       "poster",
-      "pong",
-      "breakout",
+      "schedule",
+      "snake",
       "flappy",
-      "pacman",
+      "pet",
+      "glyph",
       "settings"
     ],
     "launcher": "menu",
@@ -1918,6 +1728,7 @@
     "file": "tufty-v3.0.2-micropython.uf2",
     "micropython_branch": "bw-1.28.0-3",
     "micropython_commit": "b29530abbd0550c8ab6963024aef36f3cd6cd278",
+    "micropython_repo": "https://github.com/pimoroni/micropython.git",
     "mpy_format": "6.3",
     "picovector_commit": "a3959e5de8f261af43dad4b3c2668372897d522f",
     "release_commit": "c4abbcd32fef7aa12985635d68daed967b04f594",
@@ -1928,19 +1739,18 @@
     "version": "v3.0.2"
   },
   "totals": {
-    "bytes": 9902160,
-    "files": 232,
+    "bytes": 9496537,
+    "files": 203,
     "payload": {
-      "bytes": 9874185,
+      "bytes": 9475939,
       "excludes": [
         "README.md",
-        "MANIFEST.json",
-        "CLEANUP-CENSUS.md"
+        "MANIFEST.json"
       ],
-      "files": 230
+      "files": 202
     }
   },
-  "tree_hash": "411a0578b0c701f93edcd4c196276ead71fbafd56a92205bf83901ad87fa9108",
+  "tree_hash": "0938cb2bc83105950494a674519605805542cf80234c94691b1b68c629f299ec",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",
@@ -1973,10 +1783,6 @@
           "path": "apps/badgecard/backlight.py"
         },
         {
-          "app": "breakout",
-          "path": "apps/breakout/backlight.py"
-        },
-        {
           "app": "flappy",
           "path": "apps/flappy/backlight.py"
         },
@@ -1989,16 +1795,8 @@
           "path": "apps/menu/backlight.py"
         },
         {
-          "app": "pacman",
-          "path": "apps/pacman/backlight.py"
-        },
-        {
           "app": "pet",
           "path": "apps/pet/backlight.py"
-        },
-        {
-          "app": "pong",
-          "path": "apps/pong/backlight.py"
         },
         {
           "app": "poster",
@@ -2043,10 +1841,6 @@
           "path": "apps/badgecard/loading.py"
         },
         {
-          "app": "breakout",
-          "path": "apps/breakout/loading.py"
-        },
-        {
           "app": "flappy",
           "path": "apps/flappy/loading.py"
         },
@@ -2059,16 +1853,8 @@
           "path": "apps/menu/loading.py"
         },
         {
-          "app": "pacman",
-          "path": "apps/pacman/loading.py"
-        },
-        {
           "app": "pet",
           "path": "apps/pet/loading.py"
-        },
-        {
-          "app": "pong",
-          "path": "apps/pong/loading.py"
         },
         {
           "app": "schedule",
@@ -2090,10 +1876,6 @@
           "path": "apps/badgecard/loading_sql.py"
         },
         {
-          "app": "breakout",
-          "path": "apps/breakout/loading_sql.py"
-        },
-        {
           "app": "flappy",
           "path": "apps/flappy/loading_sql.py"
         },
@@ -2106,16 +1888,8 @@
           "path": "apps/menu/loading_sql.py"
         },
         {
-          "app": "pacman",
-          "path": "apps/pacman/loading_sql.py"
-        },
-        {
           "app": "pet",
           "path": "apps/pet/loading_sql.py"
-        },
-        {
-          "app": "pong",
-          "path": "apps/pong/loading_sql.py"
         },
         {
           "app": "schedule",
@@ -2133,20 +1907,8 @@
       "canonical": "shared/score_sink.py",
       "copies": [
         {
-          "app": "breakout",
-          "path": "apps/breakout/score_sink.py"
-        },
-        {
           "app": "flappy",
           "path": "apps/flappy/score_sink.py"
-        },
-        {
-          "app": "pacman",
-          "path": "apps/pacman/score_sink.py"
-        },
-        {
-          "app": "pong",
-          "path": "apps/pong/score_sink.py"
         },
         {
           "app": "snake",
@@ -2160,20 +1922,8 @@
       "canonical": "shared/game_palette.py",
       "copies": [
         {
-          "app": "breakout",
-          "path": "apps/breakout/game_palette.py"
-        },
-        {
           "app": "flappy",
           "path": "apps/flappy/game_palette.py"
-        },
-        {
-          "app": "pacman",
-          "path": "apps/pacman/game_palette.py"
-        },
-        {
-          "app": "pong",
-          "path": "apps/pong/game_palette.py"
         },
         {
           "app": "snake",

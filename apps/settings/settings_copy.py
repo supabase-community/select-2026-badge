@@ -39,6 +39,9 @@ already set.
 """
 
 
+import backlight
+
+
 #: The vector face this app's chrome resolves through ``ui.CHROME_FACE``. Named
 #: here only so the fit tests and the generator agree with the app about which
 #: face the numbers describe.
@@ -218,6 +221,12 @@ ROW_NETWORK_LABEL = "Network"
 #: wearer cares about is how fast a change from their phone shows up. The row
 #: only exists on a badge whose boot pump actually has a doorbell to control.
 ROW_PUSH_LABEL = "Updates"
+#: The panel's own row (owner ruling, 2026-08-24: *"Take brightness out of
+#: badgecard. That should only exist in settings."*). "Brightness" and not
+#: "Screen" or "Backlight": it is the word the wearer would use, the word the
+#: ladder's own names describe, and the word `badgecard`'s row carried for the
+#: day it lived there -- a wearer who learned it there meets it again.
+ROW_BRIGHT_LABEL = "Brightness"
 #: The only route to OFF (owner design, 2026-08-23; see
 #: `docs/design/idle-and-off.md`). "Sleep" and not "Off" or "Power off",
 #: because that is what the badge does -- `badge.sleep()` is dormancy that any
@@ -253,6 +262,37 @@ PAIR_VALUE_UNLINKED = "Not linked"
 SLEEP_TITLE = "Sleeping"
 SLEEP_LINE_WAKE = "Any button but HOME wakes it"
 SLEEP_LINE_RESTART = "The badge restarts when it wakes"
+
+
+# -- the brightness ladder ---------------------------------------------------
+#
+# THE RUNG NAMES ARE `shared/backlight.py`'s AND THIS FILE DOES NOT RESTATE
+# THEM. DIM / LOW / MID / FULL are a product judgement that was made once, in
+# `identity`, and lifted into the shared ladder when that app was archived
+# precisely so nobody makes it twice. A sentence-case second vocabulary here
+# ("Dim", "Medium", "Brightest") would be two names for one rung, which is the
+# drift the shared module exists to prevent -- and the wearer would meet both,
+# because the ladder's names are what the SOFTKEYS have to say: this bar is
+# uppercase everywhere (BACK, OPEN, SHOW, YES, NO, START, STOP) and a key that
+# names the value it will produce has to name it in the bar's own case.
+#
+# THE SCREEN STATES THE CURRENT LEVEL IN WORDS, because the bar cannot. Each key
+# names the value ONE press away and nothing beyond it, so a wearer at HIGH sees
+# `MID` and `FULL` and has no way to read where they are -- and at either end of
+# the ladder one of those keys is blank, which makes the guess worse rather than
+# better.
+BRIGHT_TITLE = "Brightness"
+BRIGHT_LINE = "The screen is set to {}"
+
+
+def bright_line(percent):
+    """The one body line, for a level that may be BETWEEN two rungs.
+
+    `backlight.name` walks the ladder rather than indexing it, so a hand-edited
+    55 reads as the rung it is nearest rather than raising -- which is the same
+    total-read discipline every other reader of this file applies.
+    """
+    return BRIGHT_LINE.format(backlight.name(percent))
 
 
 # -- the network screen ------------------------------------------------------
@@ -384,9 +424,18 @@ def every_string():
     out.add(ROW_NETWORK_LABEL)
     out.add(ROW_PUSH_LABEL)
     out.add(ROW_SLEEP_LABEL)
+    out.add(ROW_BRIGHT_LABEL)
     out.add(SLEEP_TITLE)
     out.add(SLEEP_LINE_WAKE)
     out.add(SLEEP_LINE_RESTART)
+    out.add(BRIGHT_TITLE)
+    # EVERY RUNG, in all three places a rung name is drawn: the body line, the
+    # composed menu row and the two softkeys. The ladder is five names, so this
+    # is the whole space rather than a sample of it.
+    out.update(backlight.NAMES)
+    for name in backlight.NAMES:
+        out.add(BRIGHT_LINE.format(name))
+        out.add("{}  {}".format(ROW_BRIGHT_LABEL, name))
     out.update(STATUS_WORDS.values())
     out.update(PUSH_WORDS.values())
     out.update((

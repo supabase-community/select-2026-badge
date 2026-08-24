@@ -180,9 +180,15 @@ except Exception as _error:  # noqa: BLE001 - a wallpaper is not worth a reset
 
 # THE PANEL AND THE IDLE CLOCK, one object (`docs/design/idle-and-off.md`).
 #
-# `panel.restore()` is where the BRIGHTNESS row applies; before 2026-08-23 this
-# app never set the backlight at all.  (A paragraph of that history moved to
-# `idle-and-off.md` §5.2 to pay for the one below, under the entry-file cap.)
+# `panel.restore()` PUTS THE WEARER'S STORED LEVEL ON THE PANEL AT OPEN, and
+# since the owner moved the BRIGHTNESS row to `settings` (2026-08-24) that is the
+# only thing this app does with it: it reads `state["brightness"]` and never
+# writes it.  It has to read it -- leaving an app is `machine.reset()`, so the
+# level the wearer chose in `settings` reaches this app through the file and
+# through nothing else, and an app that skipped the restore would open at
+# whatever the last app left on the panel.  (Before 2026-08-23 this app never set
+# the backlight at all; a paragraph of that history is in `idle-and-off.md` §5.2,
+# under the entry-file cap.)
 #
 # `poster_ms=None`: this app dims and stops.  Only the LAUNCHER can open an app
 # (`stock-v3.0.1-main.py` takes one path out of the menu and `reset()`s when it
@@ -215,8 +221,7 @@ app = card_app.CardApp(
     bake=baker.bake, unbake=baker.remove, recipe=card_bake.stamp,
     now_ms=time.ticks_ms(), load_status=load_status,
     ticks_diff=time.ticks_diff,
-    logical=(chrome.width // chrome.scale, chrome.height // chrome.scale),
-    brightness=panel.set_brightness)
+    logical=(chrome.width // chrome.scale, chrome.height // chrome.scale))
 
 
 class Buttons:

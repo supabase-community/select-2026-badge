@@ -1,19 +1,89 @@
 # Supabase Select 2026 badge software -- source export
 
 This is the software that would ship to the ~800 SELECT badges today, as
-SOURCE, assembled by `scripts/export-source.py` from commit `ed557c82b661`
+SOURCE, assembled by `scripts/export-source.py` from commit `52ee4554aaa8`
 (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
 
+## Status
+
+**This is a RELEASE CANDIDATE for Supabase Select 2026** (conference day:
+October 2, 2026, roughly 800 badges). Read it as software we intend to
+ship, and hold it to that standard. Three things a reviewer should know
+before forming an opinion:
+
+- **Networking is intentionally disabled for launch.** The badge is
+  offline-first and fully functional without it. `NETWORKING.md` is the
+  whole story: what keeps the radio off, why, and what enabling it takes.
+- **The exact fleet UF2 is an open ask.** We build against the public
+  **v3.0.2** release; the exact image the fleet will be flashed with is
+  still an open question (`BUILDING.md` has the pins and the caveat).
+- **A first-article acceptance run is pending.** No unit flashed by the
+  production process has been walked through the acceptance procedure
+  yet; until one has, treat install-level claims as verified on dev
+  hardware only.
+
+## Quick start
+
+Clone to a running badge, copy and paste. You need Python 3.8 or newer
+(stdlib only: no venv, no pip), a C toolchain for `make`, and a badge.
+Run everything from this export's root.
+
+```sh
+# 1. The Badgeware release clone: the stock launcher files and two fonts come from it.
+git clone --branch v3.0.2 https://github.com/pimoroni/tufty2350 badgeware
+BADGEWARE=$PWD/badgeware
+
+# 2. mpy-cross, compiled once, from a SECOND clone: MicroPython, not the release.
+git clone https://github.com/pimoroni/micropython.git micropython
+git -C micropython checkout b29530abbd0550c8ab6963024aef36f3cd6cd278
+make -C micropython/mpy-cross
+MPY=$PWD/micropython/mpy-cross/build/mpy-cross
+
+# 3. Compile the whole tree into build/system.
+python3 tools/build.py --mpy-cross "$MPY" \
+    --stock-menu  "$BADGEWARE/firmware/apps/menu" \
+    --stock-fonts "$BADGEWARE/firmware/assets/fonts"
+
+# 4. Disk Mode: double-tap the rear RESET button. A TUFTY or Tufty2350 volume mounts.
+MOUNT=/media/$USER/TUFTY       # Linux, or /run/media/$USER/TUFTY
+#MOUNT=/Volumes/TUFTY          # macOS: use this line instead
+
+# 5. Clear the install roots first: copying over the top leaves stock apps and strays.
+rm -r "$MOUNT/apps" "$MOUNT/assets"
+
+# 6. Copy by root: manifest.json is the build's own proof file and must not install.
+cp -R build/system/apps build/system/assets \
+      build/system/main.py build/system/secrets.py "$MOUNT/"
+
+# 7. The install's only proof: every file on the volume hashed against the build.
+python3 tools/build.py --verify-mount "$MOUNT"
+
+# 8. Eject cleanly, then open one app: an install is not a test.
+umount "$MOUNT"                # Linux
+#diskutil eject "$MOUNT"       # macOS: use this line instead
+```
+
+Step 2 is a different clone from step 1 and you need both: `mpy-cross` is
+built from MicroPython at the pinned commit, and the four stock launcher
+files and two stock `.af` faces come out of the Badgeware release. Every
+input above is either in this package or in one of those two clones.
+
+Full detail, pins, and troubleshooting: **`BUILDING.md`**. It carries the
+pins with their one open caveat, `--check` (build twice, prove
+byte-identical output), a build without the release clone (`--skip-menu`,
+`--no-stock-fonts`), firmware flashing, and the refusals the build will
+not budge on.
+
 It is not a repository dump and it is not a release. It is the boot file,
-the launcher, 11 apps, the shared layer they all vendor, the assets they
-read, and the toolchain that compiles and installs them: **230 files,
-9,874,185 bytes**.
+the launcher, 8 apps, the shared layer they all vendor, the assets they
+read, and the toolchain that compiles and installs them: **202 files,
+9,475,939 bytes**.
 
 Those two numbers are the PAYLOAD: everything in this tree except this
-README, `MANIFEST.json` and `CLEANUP-CENSUS.md`, the three files that cannot
-quote a total including themselves without changing it.
-`MANIFEST.json` lists 232 rows (the payload plus this README and
-`CLEANUP-CENSUS.md`) and does not hash itself; its `totals.payload` repeats the
+README and `MANIFEST.json`, the two files that cannot quote a total
+including themselves without changing it.
+`MANIFEST.json` lists 203 rows (the payload plus this README) and does
+not hash itself; its `totals.payload` repeats the
 two numbers above, and the exporter's `readme-matches-manifest` gate
 reads this paragraph back and fails the build if any of the three
 disagrees.
@@ -24,6 +94,8 @@ disagrees.
 |---|---|
 | **`ARCHITECTURE.md`** | how it is put together and why, including where we would value your eyes |
 | **`BUILDING.md`** | source to bytecode to badge: two commands and a file copy |
+| **`NETWORKING.md`** | why the fleet ships with networking off, and what enabling it takes |
+| `AGENTS.md` | orientation and hard constraints for an AI agent reviewing or modifying this tree |
 | `apps/<app>/README.md` | one short page per app: what it does, its controls, the non-obvious bits |
 | `shared/README.md` | why every app carries its own copy of the shared layer |
 | `MANIFEST.json` | every file, its SHA-256, the tree hash, and the gate results |
@@ -45,17 +117,14 @@ decision history behind each entry stays in the repository.
 
 | app | installs at | what it is |
 |---|---|---|
-| `badgecard` | `/system/apps/badgecard` | the badge editor and the worn badge itself: name, skin, stickers, effect, brightness |
-| `schedule` | `/system/apps/schedule` | the offline conference agenda: two stage tabs, fourteen sessions, no network |
-| `glyph` | `/system/apps/glyph` | a player for 36 recorded cell-stream animations, with the rear case lights in sync |
-| `snake` | `/system/apps/snake` | Snake on an 8 px grid where the food is the Supabase mark; nine levels trade pace for payout |
-| `pet` | `/system/apps/pet` | virtual-pet care sim where the creature is your database project |
+| `badgecard` | `/system/apps/badgecard` | the badge editor and the worn badge itself: name, skin, stickers, effect |
 | `poster` | `/system/apps/poster` | the worn badge as a read-only full-screen poster, opened in 14 modules instead of 27 |
-| `pong` | `/system/apps/pong` | Pong themed on database replication: the ball is a WAL segment, the AI bat is the replica |
-| `breakout` | `/system/apps/breakout` | brick breaker where the bricks are table bloat, the ball is the vacuum worker |
+| `schedule` | `/system/apps/schedule` | the offline conference agenda: two stage tabs, fourteen sessions, no network |
+| `snake` | `/system/apps/snake` | Snake on an 8 px grid where the food is the Supabase mark; nine levels trade pace for payout |
 | `flappy` | `/system/apps/flappy` | tap-to-fly where you are a client connection and the pipes are a pooler's slots |
-| `pacman` | `/system/apps/pacman` | maze chase where you are a cursor doing a table scan and four named failures hunt you |
-| `settings` | `/system/apps/settings` | pairing, the network switch, optional updates, and the badge's only route to off |
+| `pet` | `/system/apps/pet` | virtual-pet care sim where the creature is your database project |
+| `glyph` | `/system/apps/glyph` | a player for 36 recorded cell-stream animations, with the rear case lights in sync |
+| `settings` | `/system/apps/settings` | pairing, the network switch, optional updates, screen brightness, and the badge's only route to off |
 | `menu` | `/system/apps/menu` | the boot host: the app grid, the hold shortcut, the loading screen and the idle ladder |
 
 Each app directory carries its own short `README.md`: what it does, its
@@ -98,20 +167,17 @@ why the code that looks over-engineered is over-engineered.
 
 ## Building it
 
-```sh
-MPY=<micropython>/mpy-cross/build/mpy-cross          # or --mpy-cross <path>
-python3 tools/build.py --list                        # what would compile
-python3 tools/build.py --mpy-cross $MPY --skip-menu  # all but the launcher
-python3 tools/build.py --mpy-cross $MPY \
-    --stock-menu <badgeware>/firmware/apps/menu \
-    --stock-fonts <badgeware>/firmware/assets/fonts  # the whole tree
-python3 tools/build.py --check --mpy-cross $MPY ...  # prove it reproducible
-python3 tools/build.py --verify-mount <MOUNT>        # prove an install
-```
+The Quick start at the top of this page is the whole path in one block.
+Two things it does not spell out:
 
-**`--mpy-cross` is not optional in practice.** The script also honours the
-`MPY_CROSS` environment variable and one cached default path, and if none
-of the three resolves it stops with the `make` line you need.
+- **`--mpy-cross` is not optional in practice.** The script does not
+  search `PATH`. It checks the flag, then the `MPY_CROSS` environment
+  variable, then one cached default path, and if none of the three
+  resolves it stops with the `make` line you need.
+- **`--check` does not populate `build/system`.** It compiles the tree
+  twice into temporary directories, hashes both and asserts they are
+  byte-identical, then deletes them. So proving the build reproducible
+  and producing the tree you install are two separate commands.
 
 `BUILDING.md` is the whole procedure: the exact pins (release tag and
 commit, UF2 filename and SHA-256, the MicroPython branch/commit that
@@ -138,9 +204,11 @@ direct and there is nothing to interpret:
 
 What in this tree is **export-only** and does not install:
 
-- every `README.md` (including this one), `ARCHITECTURE.md`, `BUILDING.md`;
+- every `README.md` (including this one), `AGENTS.md`, `NETWORKING.md`,
+  `ARCHITECTURE.md`, `BUILDING.md`;
 - `MANIFEST.json`, `apps-roster.json` and `apps/menu/PATCHES.json`;
-- `CLEANUP-CENSUS.md` -- the internal-exhaust census (see the gates below);
+- `.gitignore` and `CONTRIBUTING.md` -- furniture for the published
+  source repository this tree is mirrored into;
 - `apps/snake/PROVENANCE.md`, `apps/flappy/PROVENANCE.md` -- the attribution records;
 - `shared/` -- the canonical copies, explained in `shared/README.md`;
 - `tools/build.py` -- the compiler front end;
@@ -254,7 +322,7 @@ whose canonical copy is not a `shared/` file.
 - **The stock launcher base.** Four files of Pimoroni's own menu app are
   patched rather than replaced; `apps/menu/README.md` names them, their
   pinned hashes and the five patches.
-- **Apps that were built and are not shipping.** The roster records 21
+- **Apps that were built and are not shipping.** The roster records 24
   excluded app directories with a reason for each -- archived
   predecessors, dev labs, comparison tiles and instruments. They are in the
   repository, not in this export.
@@ -298,8 +366,10 @@ in it that names a different hold duration (a stale one survived a fix
 because the string was split across two source lines), and
 `internal-exhaust-census`, which counts the internal residue still in this
 source -- validation-row identifiers, quoted decisions, paths into
-reports you do not have -- in every text file and in the manifest, and
-writes `CLEANUP-CENSUS.md`. That one is REPORT-ONLY except for the class
-that already refused (a bench badge's serial number), because what to
-remove and what to keep is a judgement rather than a rule.
+reports you do not have -- in every text file and in the manifest. Its
+per-file counts go to a maintainer report kept outside this package,
+because that ledger is our cleanup homework, not yours. It is
+REPORT-ONLY except for the class that already refused (a bench badge's
+serial number), because what to remove and what to keep is a judgement
+rather than a rule.
 

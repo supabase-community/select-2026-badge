@@ -172,7 +172,25 @@ def finish_game(now):
     # direct write is 252 us median against a save that is 7-130 ms median and
     # 185 ms at the tail.  The screen can lag; the flash cannot.
     badge.caselights(0.85)
-    high_score, changed = update_high_score(game["score"], high_score)
+    # A death must never reset the badge.  `ScoreSink.write` raises whatever
+    # the filesystem raises -- the right choice THERE -- but an `OSError`
+    # escaping `update()` reaches the firmware's `fatal_error()` and
+    # `machine.reset()`, so a full volume (ENOSPC) would turn every dropped
+    # connection into a REBOOT on the one screen whose whole job is to show
+    # the score.  Guard shape from snake's `bank_run` (the pattern origin).
+    # `OSError` is the whole write surface, not a hedge: `mkdir` is already
+    # guarded inside the sink, `_publish` swallows whatever a forwarder
+    # raises, and open/flush/os.sync/os.rename raise nothing else, so catching
+    # wider would hide a real defect in the model.
+    try:
+        high_score, changed = update_high_score(game["score"], high_score)
+    except OSError as error:
+        changed = False
+        print(
+            "FLAPPY_SAVE_ERROR reason=finish score={} level={} err={}".format(
+                game["score"], game["level"], repr(error)
+            )
+        )
     set_light("refused", now, 1400)
     print(
         "FLAPPY_FINISH score={} level={} cause={} high={} saved={}".format(
@@ -228,7 +246,18 @@ def quit_game(now):
     the same position as the save on a refused connection.
     """
     global phase, high_score, light_kind, confirm_quit
-    high_score, changed = update_high_score(game["score"], high_score)
+    try:
+        high_score, changed = update_high_score(game["score"], high_score)
+    except OSError as error:
+        # Same guard as finish_game's, same WHY: an escaping OSError reaches
+        # machine.reset(), so a full volume would turn the labelled door into
+        # a REBOOT.  The record is what can be lost here; the way out is not.
+        changed = False
+        print(
+            "FLAPPY_SAVE_ERROR reason=quit score={} level={} err={}".format(
+                game["score"], game["level"], repr(error)
+            )
+        )
     phase = INTRO
     light_kind = None
     confirm_quit = False

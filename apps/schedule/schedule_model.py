@@ -148,7 +148,7 @@ def parse_utc_offset(value):
 # `weekday_iso` and `weekday_badgeware` existed for ONE caller: the dial's
 # commit, which wrote both of the badge's clocks and had to put the right
 # number in the PCF85063A's weekday register. **The dial is deleted (owner
-# ruling, 2026-08-25: "we either get a real time from a server or don't assume
+# ruling, 2026-08-24: "we either get a real time from a server or don't assume
 # we know time"), so this app writes no clock and reads no weekday.**
 #
 # The firmware knowledge those functions carried is NOT lost and must not be
@@ -216,7 +216,7 @@ def normalize(data):
     # day-of story is a file somebody drops on the root by hand. Absent means
     # "this file does not say", which the freshness line renders honestly.
     #
-    # `utc_offset_min` (added 2026-08-25) is the fourth and it is the one whose
+    # `utc_offset_min` (added 2026-08-24) is the fourth and it is the one whose
     # ABSENCE COSTS SOMETHING: without it the app has no frame to read a synced
     # badge's UTC clock in, so it claims no time at all. That is a deliberate
     # refusal rather than a degradation by accident -- documented at
@@ -507,7 +507,7 @@ def speaker_lines(session):
 # WHAT THIS CANNOT DETECT, stated plainly rather than pretended away: a badge
 # whose clock is NOT UTC. Applying the offset assumes the reading came from
 # badgelink's NTP sync, and nothing in a date tuple says where it came from. The
-# assumption is defensible because the offline dial was deleted on 2026-08-25, so
+# assumption is defensible because the offline dial was deleted on 2026-08-24, so
 # the only clock writer left in the product IS that sync -- but a badge whose
 # clock was set by hand, by an older lib, or by a stock app is out-of-product
 # state and this app will read it eight hours wrong without being able to say so.
@@ -582,7 +582,7 @@ def event_local_stamp(datetime_value, utc_offset_min):
     return shift_stamp(stamp_from_datetime(datetime_value), utc_offset_min)
 
 
-# FOUR CLOCK STATES, AND SINCE 2026-08-25 ONLY TWO PRESENTATIONS.
+# FOUR CLOCK STATES, AND SINCE 2026-08-24 ONLY TWO PRESENTATIONS.
 #
 # THE MACHINERY IS UNCHANGED AND STAYS. The floor, the window test and the
 # time-field validation are all correct, and `clock_state` still answers three
@@ -605,7 +605,7 @@ def event_local_stamp(datetime_value, utc_offset_min):
 # forbids, and the diagnosis it bought now lives on the serial marker, where the
 # person who can act on it is standing.
 #
-# THE FOURTH STATE ARRIVED 2026-08-25 WITH THE OFFSET FIELD, and it is a
+# THE FOURTH STATE ARRIVED 2026-08-24 WITH THE OFFSET FIELD, and it is a
 # DATA fault rather than a clock fault. `unset` means this badge's clock is
 # detectably garbage; `no_offset` means the clock may be perfect and the AGENDA
 # does not say what frame to read it in. Both draw the plain agenda -- the panel
@@ -671,7 +671,7 @@ def clock_state(datetime_value, event):
     the phases, freshness and the view: one conversion FUNCTION, but two
     conversion INVOCATIONS per second, and a documented guarantee that the app
     "cannot double-shift" resting on the two call sites agreeing forever. An
-    adversarial review (2026-08-25, `dist/sol-reviews/schedule-waves-review.md`
+    adversarial review (2026-08-24, `dist/sol-reviews/schedule-waves-review.md`
     wave 3) named that gap. Handing the stamp back closes it structurally: there
     is now exactly ONE conversion invocation in the app, `FrameWiringTests`
     asserts that by AST, and the second shift costs nothing because it no longer
@@ -869,7 +869,7 @@ def format_gap(minutes):
 
 # NO CALENDAR NAMES, AND NOTHING FORMATS A DATE FOR THE PANEL ANY MORE.
 #
-# Two functions lived here and both were killed by the 2026-08-25 rulings.
+# Two functions lived here and both were killed by the 2026-08-24 rulings.
 # `format_day` (`FRI 14 AUG`) printed the day an UNTRUSTED clock believed, which
 # is exactly the assumption the clock ruling forbids. `format_date_short`
 # (`14 AUG`) dated the agenda file inside `OFFLINE COPY 14 AUG`, and the
@@ -1147,7 +1147,7 @@ def sync_age_minutes(synced_at, now_stamp):
 
     ⚠ **SO THIS IS THE ONE PLACE THAT MUST NOT BE HANDED THE EVENT-LOCAL STAMP,
     AND THAT IS NOW A LIVE HAZARD RATHER THAN A NOTE.** The frame question this
-    docstring used to leave open was answered on 2026-08-25: the agenda carries
+    docstring used to leave open was answered on 2026-08-24: the agenda carries
     `event.utc_offset_min` and the app converts the UTC clock to event-local at
     one seam, so an event-local stamp is now sitting right there in
     `_refresh_clock` next to the raw one. Feeding it to this function would put
@@ -1252,7 +1252,7 @@ def freshness(event, link_version, now_stamp=None, link_synced_at=None):
 
 # ── THE FRESHNESS MARK, WHICH REPLACED FOUR SENTENCES ────────────────────────
 #
-# OWNER RULING, 2026-08-25: the text banners were too loud. "Not super obvious,
+# OWNER RULING, 2026-08-24: the text banners were too loud. "Not super obvious,
 # but easy to tell someone what it means if it matters." So the header carries a
 # small glyph instead of a phrase, and `UPDATED 30 MIN AGO` / `OUT OF DATE` /
 # `MAY BE OUT OF DATE` / `OFFLINE COPY 14 AUG` / `DAY-OF COPY 14 AUG` are all

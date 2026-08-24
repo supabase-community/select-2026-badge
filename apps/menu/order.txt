@@ -1,11 +1,8 @@
 badgecard
-schedule
-glyph
-snake
-pet
 poster
-pong
-breakout
+schedule
+snake
 flappy
-pacman
+pet
+glyph
 settings

@@ -251,7 +251,7 @@ Honestly, and in the order we would ask:
    visibly flickers between two and three quanta. If there is a right way to
    think about that on this panel, we would like to be told.
 2. **Flash wear.** Every commit in the badge editor is a synchronous write, and
-   brightness writes on every rung change. We chose that over deferred saves
+   the Settings tile's brightness ladder writes on every rung change. We chose that over deferred saves
    because a badge that loses a wearer's name is worse than a badge that wears
    its flash, but we have no wear model at all and roughly 800 units are about to
    be handled for two days. If the FAT/LittleFS layout or the flash part makes

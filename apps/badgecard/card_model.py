@@ -88,6 +88,14 @@ CARDS = "cards"
 CONFIRM = "confirm"
 BAKING = "baking"
 EFFECT = "effect"
+# THERE IS NO `BRIGHT` SCREEN, and there was one from 2026-08-23 to 2026-08-24.
+# The owner's ruling: *"Take brightness out of badgecard. That should only exist
+# in settings."*  The ladder, its screen and its menu row moved wholesale to the
+# `settings` tile; what stayed here is the STORE (`new_state`'s `brightness`,
+# `repair`'s clamp and `invariants`' range check) because
+# `/state/badgecard.json` is still the one file every reader shares -- the
+# launcher, `poster`, `settings` and this app's own `panel.restore()`.  A schema
+# that dropped the field would take the wearer's level with it.
 
 # THERE IS NO `HOME` SCREEN, and there was one until 2026-08-21.  The owner's
 # ruling: *"can the save to home option just appear as a kind of button? so it's
@@ -101,15 +109,8 @@ EFFECT = "effect"
 # "OUT OF DATE" / "SHOWING THIS BADGE" status line, and the press that opened
 # it.  The preview answered "is this the right picture" -- a good question, and
 # one the wearer can answer by looking at the badge the menu is drawn over.
-#: The brightness ladder, added 2026-08-23 on the owner's idle design.  A
-#: SCREEN rather than an in-place edit on the menu row, and that is forced
-#: rather than chosen: the ladder needs two keys (`identity`'s D2 -- one press
-#: each way, clamped, never cycling) and on the menu A is already BACK for
-#: every other row.  Every other row here opens a screen too, so this is the
-#: app's own idiom rather than an exception to it.
-BRIGHT = "bright"
 VIEWS = (BADGE, MENU, NAME, SKIN, MARKS, PICK, PLACE, CARDS, CONFIRM, BAKING,
-         BRIGHT, EFFECT)
+         EFFECT)
 
 # The screens whose background is the wearer's own artwork and may therefore
 # move.  Everything else draws over a plate and would be paying a skin's
@@ -122,49 +123,52 @@ ANIMATED = (BADGE, SKIN, EFFECT)
 # THE MENU.  The owner enumerated the first five on 2026-08-17 and ruled out a
 # SHOW BADGE row, because the badge is what you get when you leave the menu.
 #
-# SEVEN ROWS SINCE 2026-08-23, and BOTH additions are owner requests landed by
-# two lanes on the same day.  So the ruling that is still live is "the menu is
-# what the owner enumerates", not "the menu is five rows": the COUNT stopped
-# being the thing being protected, and what is protected instead is that a row
-# buys its place.
+# SIX ROWS.  It was seven for a day: two lanes each landed an owner-asked
+# row on 2026-08-23, and the owner took one of them back out on 2026-08-24 --
+# *"Take brightness out of badgecard. That should only exist in settings."*  So
+# the ruling that is still live is "the menu is what the owner enumerates", not
+# "the menu is five rows" and not "the menu only grows": the COUNT was never the
+# thing being protected, and what is protected instead is that a row buys its
+# place -- and can be told to give it up.
 #
-# BRIGHTNESS came with the idle design, in these words: *"so they can have it
-# less obvious if they want."*  `badgecard/README.md` D6 had recorded the gap as
-# an accepted deviation and is now closed as SUPERSEDED -- see
-# `docs/design/idle-and-off.md` §3.3, which pointed at this file by name.
+# WHERE BRIGHTNESS WENT, because a reader who comes here looking for it needs
+# one pointer rather than a search: the `settings` tile, whose own `ROWS`
+# already carries SLEEP and was built for exactly this class of row.  The ladder
+# is unchanged (`shared/backlight.py`, one press per rung, clamped) and so is
+# the store -- it is still `/state/badgecard.json`'s root `brightness`, which
+# this schema still owns and this app still applies at open.
 #
 # EFFECT came with *"awesome, let's do it"*, and one correction attached that
 # this file obeys: *"no random on the actual badge, just pick one."*  It buys its
 # place as the only per-wearer choice about how the finished card LOOKS that is
 # not a choice of artwork.
 #
-# THE ORDER IS THE ONE ARRANGEMENT BOTH ARGUMENTS FIT.  EFFECT is about the
-# BADGE, so it sits with the badge rows -- and before SAVE TO HOME, because that
-# is the one row that is a BUTTON rather than a screen and a button belongs at the
-# end of a list of settings rather than in the middle of things a wearer scrolls
-# past.  BRIGHTNESS is about the PANEL, so it sorts LAST, after all of them; and
-# B3's lists wrap, so the first UP from row 0 lands there, where B7 requires a
-# harmless row.  Opening a brightness ladder is the most harmless thing in this
-# menu: reversible in one press, destroys nothing.
+# THE ORDER.  EFFECT is about the BADGE, so it sits with the badge rows -- and
+# before SAVE TO HOME, because that is the one row that is a BUTTON rather than a
+# screen and a button belongs at the end of a list of settings rather than in the
+# middle of things a wearer scrolls past.  B3's lists wrap, so the first UP from
+# row 0 now lands on SAVE TO HOME; B7 wants a harmless row there and a bake is
+# not destructive -- it writes a wallpaper the badge regenerates in two presses
+# and `card_bake` argues the same -- but it IS the least harmless row left, and
+# that is the one thing the brightness row was silently doing for this menu.
 #
 # AND IT STILL DOES NOT SCROLL, WHICH WAS WORTH CHECKING RATHER THAN ASSUMING.
 # `card_view._rows` turns the rail and the chevrons on when `total > room`, and
 # `room` is `(chrome.content_h - head_h) // row_h`: measured through a real
 # `CardView` it is NINE rows at LORES (107 - 14) // 10 and SIXTEEN at HIRES
-# (214 - 20) // 12.  So SEVEN fits with two spare at the tighter panel, the
+# (214 - 20) // 12.  So SIX fits with three spare at the tighter panel, the
 # scroll affordances stay off, and the ledger entry about a rail on a list that
 # cannot move is still fixed.  `test_card_home.MenuRoomTests` pins the headroom
 # so that the row which finally overflows it does so as a red test rather than
-# as a rail nobody expected -- and at seven of nine that row is close.
+# as a rail nobody expected.
 MENU_NAME = "NAME"
 MENU_SKIN = "SKIN"
 MENU_MARKS = "STICKERS"
 MENU_CARDS = "BADGES"
 MENU_EFFECT = "EFFECT"
 MENU_HOME = "SAVE TO HOME"
-MENU_BRIGHT = "BRIGHTNESS"
 MENU_ITEMS = (MENU_NAME, MENU_SKIN, MENU_MARKS, MENU_CARDS, MENU_EFFECT,
-              MENU_HOME, MENU_BRIGHT)
+              MENU_HOME)
 
 
 # ---------------------------------------------------------------------------
@@ -192,11 +196,6 @@ NEW = "NEW"
 KEEP = "KEEP"
 SAVE = "SAVE"
 CLEAR = "CLEAR"
-#: The brightness screen's B.  A and C have already applied every change, so
-#: there is nothing left for B to commit and `DONE` is the honest word --
-#: `identity`'s own wording for the same bar, and four characters against the
-#: 34 px budget `SELECT` (35 px) busts.
-DONE = "DONE"
 
 # A screen that draws no bar at all.  Two of them, and for two different
 # reasons: `BADGE` is the resting poster and D1 says a resting badge draws zero
@@ -206,8 +205,7 @@ DONE = "DONE"
 NO_BAR = ("", "", "")
 
 
-def softkeys(view, index=0, count=0, installed=False,
-             brightness=backlight.DEFAULT):
+def softkeys(view, index=0, count=0, installed=False):
     """The three labels for a screen, as `(A, B, C)`.  Never raises.
 
     ONE FUNCTION OWNS THE BAR, and it is pure, so the browser lane can assert
@@ -258,21 +256,6 @@ def softkeys(view, index=0, count=0, installed=False,
         # keep a cancel on A, or build the button rules' 9.2 odometer -- are
         # still open and still not free.
         return (LEFT, DROP, RIGHT)
-    if view == BRIGHT:
-        # THE LADDER, and every label names the VALUE the press will produce
-        # rather than a direction -- so the wearer reads the outcome before
-        # pressing, which a cycling key could never offer (its label names one
-        # of five values and the other four are a guess).  A key at the end of
-        # its ladder changes nothing, so it draws NOTHING and is inert: an empty
-        # slot is already this app's word for that, and I5 forbids a label over
-        # a key that cannot act.
-        #
-        # A IS NOT BACK ON THIS ONE SCREEN, which is `identity`'s recorded D2
-        # exception to I2 adopted deliberately rather than inherited: a ladder
-        # has a genuine low end and high end, I1 puts those on A and C, and B2
-        # explicitly allows B to carry the way out when A is a direction.
-        return (_level_word(brightness, -1), DONE,
-                _level_word(brightness, 1))
     if view == CARDS:
         # Row `count` is the NEW row; the rows before it are saved badges.
         if index >= count:
@@ -287,12 +270,6 @@ def softkeys(view, index=0, count=0, installed=False,
     return NO_BAR
 
 
-def _level_word(value, step):
-    """The brightness name a press would produce, or "" when it cannot act."""
-    level = backlight.step(value, step)
-    return "" if level == value else backlight.name(level)
-
-
 def labels():
     """Every softkey string this app can draw, for the ruler to measure.
 
@@ -303,19 +280,13 @@ def labels():
     dropped.
     """
     out = []
-    # Every rung of the ladder PLUS a value between two of them, because
-    # `_level_word` names whatever `backlight.step` lands on and a hand-edited
-    # 55 is a state the app can be handed.
-    brightnesses = backlight.LEVELS + (0, 55, 255)
     for view in VIEWS:
         for index in range(len(MENU_ITEMS) + 1):
             for count in (0, 1, 5):
                 for installed in (False, True):
-                    for brightness in brightnesses:
-                        for label in softkeys(view, index, count, installed,
-                                              brightness):
-                            if label and label not in out:
-                                out.append(label)
+                    for label in softkeys(view, index, count, installed):
+                        if label and label not in out:
+                            out.append(label)
     return tuple(out)
 
 
@@ -358,6 +329,14 @@ def new_state():
         # the reader that agrees with this, and it had to be TAUGHT to -- before
         # 2026-08-23 it read `brightness` out of the selected badge, so the
         # format described a per-badge value nothing could write.
+        #
+        # THIS APP NO LONGER WRITES IT (owner ruling, 2026-08-24): the control
+        # is the `settings` tile's, and this file is the SCHEMA the four readers
+        # share -- the launcher, `poster`, `settings` and this app's own
+        # `panel.restore()`.  It stays in the schema because a badge's chosen
+        # level has to survive the exit that every app makes: leaving an app is
+        # `machine.reset()`, so nothing is handed over in RAM and persistence is
+        # the only way a level can hold.
         "brightness": backlight.DEFAULT,
     }
 

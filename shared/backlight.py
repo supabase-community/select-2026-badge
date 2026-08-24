@@ -16,8 +16,11 @@ agree on, so it created the home the design record asked for.
 
 WHAT IS MIGRATED, AND WHAT IS NOT.  The idle feature first moved its four seams
 here.  The follow-up migration moved twelve more app seams: the shared 85 %
-normal level used by Settings, the supervisor, Pet, Schedule, all five games,
-Name Badge and Profile, plus Glyph's 100 % review level.  Measurement probes,
+normal level used by the supervisor, Pet, Schedule, all five games, Name Badge
+and Profile, plus Glyph's 100 % review level.  SETTINGS WAS ON THAT LIST AND
+CAME OFF IT ON 2026-08-24, when the owner moved the brightness row there: an app
+that HOSTS the ladder cannot open at a level the ladder did not choose, so it
+reads the store like the launcher, `poster` and `badgecard` do.  Measurement probes,
 off-roster labs, teardown zeroes, the playground compatibility layer and the
 two state-driven identity surfaces remain deliberately unchanged.  Their values
 are experimental conditions, blackouts or wearer data rather than app policy.
@@ -67,6 +70,11 @@ DEFAULT = 80
 # It is deliberately NOT `DEFAULT`: 0.85 was their established output, while
 # `DEFAULT` is the 80 % value persisted for a wearer.  Naming both preserves the
 # visible behaviour and makes their different authority explicit.
+#
+# FOUR APPS DO NOT USE IT, and the number of them is the thing to watch: the
+# launcher, `poster`, `badgecard` and (since 2026-08-24) `settings` all open at
+# the level stored in `/state/badgecard.json`.  Every app still on this constant
+# overrides the wearer's choice for as long as it is open.
 NORMAL = 85
 
 # Glyph is a review viewer and deliberately drives the panel at the ladder's
