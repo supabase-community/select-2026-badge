@@ -124,9 +124,16 @@ class FlappyView:
     # `font.sins` LINE BOX IS 12 PX AT SCALE 1 AND 24 AT SCALE 2, measured
     # through `screen.measure_text` in the pinned runtime rather than assumed.
     # That number is why this card has no death marker at all.  The error
-    # block's seven rows occupy line boxes 3..26, 27..38, 41..52, 55..66,
-    # 71..82, 87..98 and 103..114, so the largest gutter anywhere on the card is
-    # FIVE pixels — and the client's cell is TWELVE.  There is no lane for it.
+    # block's EIGHT rows occupy line boxes 3..26, 27..38, 41..52, 55..66,
+    # 67..78, 79..90, 91..102 and 103..114, so the largest gutter anywhere on
+    # the card is TWO pixels — and the client's cell is TWELVE.  There is no
+    # lane for it.
+    #
+    # IT WAS SEVEN ROWS AND A FIVE-PIXEL GUTTER until the save-failure row
+    # landed (see `FOOTER_WARNING`).  The footer tightened to make room and the
+    # bottom row did NOT move: the card still ends at 114, which is what the
+    # rejected-relocation arithmetic below and Breakout's floor stub both
+    # measure their clearance against.
     #
     # The client's drawn cell can also be at any of those heights.  It spans
     # rows `Y_OFFSET + CEILING - CLIENT_INSET` .. `Y_OFFSET + FLOOR - CLIENT +
@@ -168,6 +175,29 @@ class FlappyView:
     # The `HINT` row's own y, named because it is the row a test pins clear and
     # the row a photograph is read for.
     HINT_Y = 55
+
+    # ---- the post-mortem's footer, and why it is four rows in 67..114 -------
+    #
+    # 67 / 79 / 91 / 103 tiles four 12 px line boxes with ZERO gutter, and both
+    # ends of that band are pinned by something outside this file.  The top
+    # cannot rise: the `HINT` box ends at 66.  The bottom cannot fall: `A MENU`
+    # ends at 114, and Breakout — which copies this footer to the pixel — puts
+    # its floor marker at 117..119, the only opaque ink above its scrim.  Move
+    # `A MENU` down and that stub lands inside a text row's line box, which is
+    # exactly the RED-on-RED failure the owner photographed on 2026-08-22.
+    #
+    # Zero gutter is not tight for this font: the 12 px box carries the
+    # leading, and Snake's shipped footer runs an ELEVEN px step (82 -> 93) on
+    # hardware the owner has played.
+    FOOTER_SCORE = 67
+    # Reserved for the one line the badge only prints when it has bad news: a
+    # record it could not store.  The row exists whether or not it is used,
+    # because rows that move when a state appears make the state harder to read
+    # than the state itself (Snake's rule, and this card's whole identity is
+    # that its rows are a fixed table).
+    FOOTER_WARNING = 79
+    FOOTER_RECONNECT = 91
+    FOOTER_MENU = 103
 
     def __init__(self, screen, image_api, color_api, font_api, vec2_api,
                  accent=ACCENT, backdrop=None, backdrop_dim=P.BACKDROP_DIM, room=True):
@@ -863,7 +893,7 @@ class FlappyView:
         self.screen.pen = self.red if confirm else self.grey
         self._center("A   QUIT NOW" if confirm else "A   QUIT", 100)
 
-    def finished(self, state, high_score, best=False):
+    def finished(self, state, high_score, best=False, save_failed=False):
         """The world that ended the run, held under the result.
 
         This is a render state, not a phase: B and A are live from the first
@@ -875,6 +905,14 @@ class FlappyView:
         this card readable, the geometry block above is the argument for it, and
         `test_flappy_scene.DeathCardTests` walks every reachable death height
         and fails if any ink at all appears over a row again.
+
+        ``save_failed`` IS NOT DECORATION.  The high-score write is caught in
+        `finish_game` so that a full volume cannot turn every dropped
+        connection into a reboot, and the record on disk survives intact either
+        way -- but a run that beat the record and could not store it must not
+        sit here in the yellow this app uses for a bank and let the player
+        believe it was taken.  When the flag is set the run's line drops back to
+        white and one row says so.
 
         The card needs no separate symbol: the world is frozen exactly where it
         stopped, so the client is still standing on the thing that refused it,
@@ -912,16 +950,32 @@ class FlappyView:
         # shipped and prints it to serial), and it turns "I died" into "the idle
         # timer got me" at the cost of one dictionary lookup.
         self._center(self.hint_line(state), self.HINT_Y)
-        self.screen.pen = self.yellow if best else self.white
+        # YELLOW HERE IS A CLAIM, so a failed commit takes it away.  `best`
+        # latched during play against the record that was on disk; if the write
+        # then failed, `high_score` is still the OLD number and this line would
+        # read "you beat 118" in the record colour beside a HIGH that is still
+        # 118.  White plus the warning row is the honest pair.
+        self.screen.pen = self.yellow if best and not save_failed else self.white
         # The load is NOT on this line: it does not price the score, so
         # `SERVED 040` means the same thing at load 1 and load 9 and a tag here
         # would imply otherwise.
         self._center(
-            "SERVED {:03d}  HIGH {:03d}".format(state["score"], high_score), 71
+            "SERVED {:03d}  HIGH {:03d}".format(state["score"], high_score),
+            self.FOOTER_SCORE,
         )
+        if save_failed:
+            # YELLOW, NOT RED, and the pen is the argument.  On this card red is
+            # the CAUSE -- `FATAL` and the SQLSTATE -- and a full volume did not
+            # refuse the connection.  Yellow is this app's record channel, and
+            # what this row reports is the record's state.  `WARNING` is also a
+            # severity psql really prints, so the row stays inside the
+            # transcript idiom the card is photographed for.  141 px against the
+            # 160 px canvas — second only to the 149 px SQLSTATE row.
+            self.screen.pen = self.yellow
+            self._center("WARNING  record not written", self.FOOTER_WARNING)
         self.screen.pen = self.accent
-        self._center("B  RECONNECT", 87)
+        self._center("B  RECONNECT", self.FOOTER_RECONNECT)
         # A badge that lost its connection in a pocket must not sit lit on a
         # death screen all day with a restart as its only offer.
         self.screen.pen = self.grey
-        self._center("A  MENU", 103)
+        self._center("A  MENU", self.FOOTER_MENU)

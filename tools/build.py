@@ -67,8 +67,17 @@ BEFORE anything is written, and the build stages into a temporary sibling of the
 output and replaces it only on success.  A refusal at any point leaves the last
 good tree exactly where it was.
 
+AND ONE THING IT VERIFIES THAT IS NOT A BUILD AT ALL.  `--verify-manifest` hashes
+THIS PACKAGE against its own `MANIFEST.json` and recomputes the `tree_hash`.  It
+exists because the package used to tell a reviewer to verify it with three
+commands that call the EXPORTER, which is in the canonical repository and not
+here: a deploy rehearsal pasted them and got `[Errno 2]`.  The reviewer's
+question is "are these the bytes you published", and this answers it with the
+tools in front of them -- no compiler, no clones, no network.
+
 USAGE
     python3 tools/build.py --list                # what would be compiled
+    python3 tools/build.py --verify-manifest     # are these the published bytes
     python3 tools/build.py --mpy-cross <path> \\
         --stock-menu  <badgeware>/firmware/apps/menu \\
         --stock-fonts <badgeware>/firmware/assets/fonts
@@ -106,8 +115,14 @@ TARGET_FIRMWARE = "v3.0.2"
 # compile, in one uninterruptible call, out of its own heap.
 MPY_HEAP_BYTES = 64 * 1024 * 1024
 
-MPY_CROSS_DEFAULT = os.path.expanduser(
-    "~/.cache/badge-playground/micropython/mpy-cross/build/mpy-cross")
+# THERE IS NO DEFAULT COMPILER PATH, and that absence is deliberate.  This
+# resolved `~/.cache/badge-playground/.../mpy-cross` until 2026-08-24, which meant
+# exactly one machine -- the maintainer's -- built with a compiler nobody had
+# named on the command line, silently, out of a cache that could be any age, while
+# every other reader got the documented error.  A deploy rehearsal found it by
+# running `tools/build.py` with no `--mpy-cross` and getting a build instead of
+# the `make` line `BUILDING.md` §1.2 promises.  Two sources, both explicit.
+MPY_CROSS_SOURCES = ("--mpy-cross", "MPY_CROSS")
 
 # `/system/main.py` ships as SOURCE, not bytecode: the frozen boot imports it by
 # path and it is under a kilobyte, so there is nothing to win and a format to get
@@ -187,14 +202,19 @@ def digest(path):
 # ---------------------------------------------------------------------------
 
 def resolve_mpy_cross(explicit=None):
-    for candidate in (explicit, os.environ.get("MPY_CROSS"), MPY_CROSS_DEFAULT):
+    """The compiler, from the flag or the environment. Nothing else. See above."""
+    for candidate in (explicit, os.environ.get("MPY_CROSS")):
         if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
     raise BuildError(
-        "mpy-cross not found. Build it from the MicroPython clone that matches\n"
-        "the firmware you are flashing:\n"
+        "mpy-cross not found, and this build has no default path to fall back\n"
+        "on: %s are the only two sources, so every machine\n"
+        "resolves the same compiler or none.\n"
+        "Build it from the MicroPython clone that matches the firmware you are\n"
+        "flashing (BUILDING.md section 1.2 pins the commit):\n"
         "    make -C <micropython>/mpy-cross\n"
-        "then pass --mpy-cross <path> or set MPY_CROSS.")
+        "then pass --mpy-cross <path> or set MPY_CROSS."
+        % " and ".join(MPY_CROSS_SOURCES))
 
 
 def check_compiler(mpy_cross):
@@ -768,8 +788,13 @@ def _stage(out, mpy_cross, checked, skip_menu=False, out_label=None, quiet=False
             print("  menu       %s"
                   % "; ".join("%s [%s]" % (row["file"], ", ".join(row["patches"]) or "verbatim")
                               for row in menu_staged))
-        print("  roster     %d apps + %s (apps-roster.json)"
-              % (len(roster["apps"]), roster["launcher"]))
+        # THE ROSTER LINE STATES WHAT WAS STAGED, not what the roster names. It
+        # printed "N apps + menu" one line below "menu SKIPPED" until 2026-08-24,
+        # which a deploy rehearsal flagged as the build contradicting itself in
+        # two consecutive lines.
+        print("  roster     %d apps%s (apps-roster.json)"
+              % (len(roster["apps"]),
+                 "" if skip_menu else " + %s" % roster["launcher"]))
         if fonts_staged:
             print("  fonts      %s (hashes verified)"
                   % ", ".join(row["file"] for row in fonts_staged))
@@ -782,6 +807,26 @@ def _stage(out, mpy_cross, checked, skip_menu=False, out_label=None, quiet=False
         print("  total      %s bytes of %s (%d%% of the /system budget)"
               % ("{:,}".format(total), "{:,}".format(budget), total * 100 // budget))
         print("  tree hash  %s" % manifest["tree_hash"])
+        # A DEGRADED TREE SAYS SO, LOUDLY AND LAST. `--skip-menu` and
+        # `--no-stock-fonts` each replace a complete `build/system` with one that
+        # would regress a stock badge, and the replacement is silent: a deploy
+        # rehearsal ran them over a good build and got no warning that the good
+        # build was gone, then verified a mount against the degraded manifest.
+        # Last, because the line above it is the one an operator reads.
+        missing = []
+        if skip_menu:
+            missing.append("the launcher (apps/%s)" % MENU_DIR)
+        if not fonts_staged:
+            missing.append("the two stock faces (%s)"
+                           % ", ".join(sorted(STOCK_FONTS)))
+        if missing:
+            print("  ⚠ DEGRADED BUILD -- this /system is missing %s."
+                  % " and ".join(missing))
+            print("    It has REPLACED any previous build/system, and this tree")
+            print("    replaces a badge's /system wholesale, so installing it")
+            print("    REMOVES those from the badge. --verify-mount compares")
+            print("    against THIS manifest and will call the result verified.")
+            print("    Rebuild with --stock-menu/--stock-fonts before installing.")
     return manifest
 
 
@@ -940,13 +985,112 @@ def verify_mount(mount, manifest_path=None):
         if len(items) > 20:
             print("        ... and %d more" % (len(items) - 20))
     if any(items for _label, items in rows):
+        # THE REMEDIATION NAMES ALL FOUR ROOTS, not just `apps/`. It said "mirror
+        # the failing app directories again" until 2026-08-24, which does not
+        # describe the failure this verifier catches most often: a deploy
+        # rehearsal followed an install procedure that copied `apps/` alone, and
+        # the volume kept Pimoroni's `main.py`, its `secrets.py` and 16 stock
+        # asset files. The check found it; the advice underneath it pointed at
+        # the wrong directory.
         raise BuildError(
             "THE INSTALL IS NOT VERIFIED. Equality with the build manifest is "
-            "the install's only proof; anything less is a hope. Mirror the "
-            "failing app directories again (delete the device directory's "
-            "contents FIRST, then copy), remove the stale ones, and re-run.")
+            "the install's only proof; anything less is a hope.\n"
+            "The install is four roots, not one. Clear and recopy:\n"
+            "    rm -r \"<MOUNT>/apps\" \"<MOUNT>/assets\"\n"
+            "    cp -R build/system/apps build/system/assets \\\n"
+            "          build/system/main.py build/system/secrets.py \"<MOUNT>/\"\n"
+            "Copy the roots BY NAME (`build/system/.` also installs "
+            "manifest.json, which the build did not emit), delete anything "
+            "listed above that the build does not emit, and re-run this "
+            "command.")
     print("  RESULT every installed file matches the build, byte for byte, with "
           "no strays")
+
+
+# What is legitimately in this package and not in `MANIFEST.json`: the build's own
+# output tree, and the bytecode CPython writes beside the shipped test suite the
+# moment anybody runs it. Both are in the emitted `.gitignore` for the same
+# reason. Skipped here rather than reported, because "you ran the tests we asked
+# you to run" is not a finding.
+UNMANIFESTED_DIRS = ("build", "__pycache__")
+
+
+def verify_manifest(root=None):
+    """Is this package the bytes that were published? The reviewer's question.
+
+    WHY IT LIVES IN THE BUILDER.  This is the one tool that ships, so it is the
+    only place a check can live that a recipient can actually run.  The exporter
+    that WROTE `MANIFEST.json` is in the canonical repository and is deliberately
+    not in this tree, which is how the README came to offer three verification
+    commands that all failed with `[Errno 2]` on a rehearsal.
+
+    WHAT IT PROVES AND WHAT IT DOES NOT.  It proves the tree matches the manifest
+    and that the manifest's own `tree_hash` is the hash of its rows -- content and
+    layout, self-consistently.  It does NOT prove the manifest is the one we
+    published: that is what the git tag and the commit in `provenance` are for.
+    A manifest edited together with the file it describes verifies clean here, by
+    construction, and saying so is cheaper than implying otherwise.
+    """
+    root = os.path.abspath(root or ROOT)
+    manifest_path = os.path.join(root, "MANIFEST.json")
+    if not os.path.isfile(manifest_path):
+        raise BuildError(
+            "no MANIFEST.json at %s -- --verify-manifest checks THIS package "
+            "against its own manifest, so run it from the export root." % root)
+    with open(manifest_path, "r") as handle:
+        manifest = json.load(handle)
+    rows = manifest["files"]
+    expected = {row["path"]: (row["bytes"], row["sha256"]) for row in rows}
+
+    found = {}
+    for base, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in UNMANIFESTED_DIRS)
+        for name in sorted(files):
+            path = os.path.join(base, name)
+            rel = os.path.relpath(path, root).replace(os.sep, "/")
+            if rel == "MANIFEST.json":
+                continue  # It cannot hash itself; see the README's counts.
+            found[rel] = (os.path.getsize(path), digest(path))
+
+    missing = sorted(set(expected) - set(found))
+    extra = sorted(set(found) - set(expected))
+    wrong = sorted(rel for rel in set(expected) & set(found)
+                   if found[rel] != expected[rel])
+    # The formula, recomputed rather than trusted: `path\0sha256\n` per row in
+    # path order, SHA-256 over the lot. The README states it so a reader can do
+    # this in four lines of any language instead of taking our word for it.
+    recomputed = digest_bytes("".join(
+        "%s\0%s\n" % (row["path"], row["sha256"])
+        for row in sorted(rows, key=lambda row: row["path"])).encode())
+
+    print("MANIFEST VERIFY %s" % root)
+    print("  manifest   %d rows (MANIFEST.json does not hash itself)" % len(rows))
+    print("  on disk    %d files, excluding %s"
+          % (len(found), " and ".join("%s/" % name for name in UNMANIFESTED_DIRS)))
+    checks = [("missing from the tree", missing),
+              ("wrong size or hash", wrong),
+              ("in the tree and not in the manifest", extra)]
+    for label, items in checks:
+        print("  %s %-38s %d" % ("ok " if not items else "FAIL", label, len(items)))
+        for item in items[:20]:
+            print("        - %s" % item)
+        if len(items) > 20:
+            print("        ... and %d more" % (len(items) - 20))
+    stated = manifest.get("tree_hash", "")
+    ok_hash = recomputed == stated
+    print("  %s tree_hash %s" % ("ok " if ok_hash else "FAIL", recomputed))
+    if not ok_hash:
+        print("        manifest states %s" % (stated or "nothing"))
+    if any(items for _label, items in checks) or not ok_hash:
+        raise BuildError(
+            "THIS TREE IS NOT THE TREE THE MANIFEST DESCRIBES. Every difference "
+            "is listed above. A fresh `git clone` of the published repository "
+            "verifies clean; a working copy that has been built in or tested in "
+            "should not have differences outside %s."
+            % " and ".join("%s/" % name for name in UNMANIFESTED_DIRS))
+    print("  RESULT every file in this package matches MANIFEST.json, byte for "
+          "byte, and the tree hash is the hash of its rows")
+    return manifest
 
 
 def listing(allow_unrostered=False):
@@ -982,6 +1126,8 @@ def main(argv=None):
                         help="compile app directories apps-roster.json does not name")
     parser.add_argument("--verify-mount", metavar="MOUNT",
                         help="compare a mounted badge against build/system/manifest.json")
+    parser.add_argument("--verify-manifest", action="store_true",
+                        help="hash this package against its own MANIFEST.json")
     parser.add_argument("--manifest",
                         help="the manifest --verify-mount compares against")
     parser.add_argument("--check", action="store_true")
@@ -992,8 +1138,11 @@ def main(argv=None):
         if args.list:
             listing(allow_unrostered=args.allow_unrostered)
             return 0
-        # Deliberately before `resolve_mpy_cross`: verifying an install is a
-        # read-only comparison against a manifest and needs no compiler at all.
+        # Deliberately before `resolve_mpy_cross`: verifying an install or this
+        # package is a read-only hash comparison and needs no compiler at all.
+        if args.verify_manifest:
+            verify_manifest()
+            return 0
         if args.verify_mount:
             verify_mount(args.verify_mount, manifest_path=args.manifest)
             return 0

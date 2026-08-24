@@ -225,60 +225,60 @@
       "sha256": "195546f658b6308a1b64d85f78bc32d382e90cf19aab8cc5257cd012b3ed65f5"
     },
     {
-      "bytes": 4415,
+      "bytes": 7469,
       "generated": true,
       "note": "export-only: orientation for AI agents reading this package",
       "path": "AGENTS.md",
-      "sha256": "20ddebf298a51ebe27a8babc2e91128918ebe27bf6a16d24c23f5e230c5bf527"
+      "sha256": "488b90888a3a0174c5a2a85126d293a22150f57332ba79bd5c2753e1d8b3332d"
     },
     {
-      "bytes": 15191,
+      "bytes": 21349,
       "note": "export-only",
       "origin": "docs/source-export/ARCHITECTURE.md",
       "path": "ARCHITECTURE.md",
-      "sha256": "e7c51e1b89a91010c8056712688bb71406361b650cd6a4ab8c34bb8cd7f32c7f"
+      "sha256": "161e9ea3807bcf7aef912f562fe39cca3ec8f509115f31b33b5fb1824951eb4d"
     },
     {
-      "bytes": 15611,
+      "bytes": 23205,
       "note": "export-only",
       "origin": "docs/source-export/BUILDING.md",
       "path": "BUILDING.md",
-      "sha256": "834481957e14b80b78b072dfb3512e479874d7cc7e789f42ea43e009dae18283"
+      "sha256": "825dfe349eebed86a2e624836a09b707d5b907bae7b226439e539629fb8e3eb2"
     },
     {
-      "bytes": 981,
+      "bytes": 1347,
       "generated": true,
       "note": "export-only: the backflow contract for outside contributors",
       "path": "CONTRIBUTING.md",
-      "sha256": "4c07cc6487b7cd0bfc4189400f93f715798f6b05773ba0f595969132dbcfaa4f"
+      "sha256": "66ff3dd2a61516ea2bbf99660fae4c0c8ebe3490122247dbcdec3090d79ff483"
     },
     {
-      "bytes": 4796,
+      "bytes": 5704,
       "generated": true,
       "note": "export-only: why the fleet ships with networking off",
       "path": "NETWORKING.md",
-      "sha256": "d2b6361176ae8095f78c88a3b1a50701d12dee37187359ef3f23738ff6229042"
+      "sha256": "d8694e8a1a4a95fcfaccc0a8ac47b7488dd298de242e367dbf569336bc2e55a4"
     },
     {
-      "bytes": 20598,
+      "bytes": 24334,
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "d2162b7799a036febb6fa4b52c118a3380f4a59f62c8683187885618056d6b10"
+      "sha256": "123d21c18292c75132f58d061fe5485a9a9becae5a5db944f25c64374424aaa8"
     },
     {
-      "bytes": 7626,
+      "bytes": 7710,
       "generated": true,
       "note": "export-only: the lineup contract tools/build.py reads",
       "path": "apps-roster.json",
-      "sha256": "25db0173c31fb6b103b7a9b642284e585d571fec1536e54417161fcdec25da74"
+      "sha256": "7c8ba8904ab9b6ea302b5a1ca95b8a9e8b6ef7b6632d7697daa7a5937fc35f21"
     },
     {
       "bytes": 2287,
       "generated": true,
       "note": "export-only",
       "path": "apps/badgecard/README.md",
-      "sha256": "4e68b4430bb820bae22bb1c3400f9b25fa96c9ab3eeb8e07aaf4ab72dee34a25"
+      "sha256": "50f9ae4f325ae38e5cd84618624fdf657f037669ba14152a9ea1aa99795e8474"
     },
     {
       "bytes": 18796,
@@ -459,20 +459,20 @@
       "note": "export-only: the attribution record",
       "origin": "docs/source-export/provenance/flappy.md",
       "path": "apps/flappy/PROVENANCE.md",
-      "sha256": "dff6dd7725a0399a8a502873de6215a7db2e27d620da5b499f5d89997c4c23f9"
+      "sha256": "e3d92a0572bd452282fbf6121880401a1e1b4f950e6276856a5af65c455ee4e2"
     },
     {
       "bytes": 1582,
       "generated": true,
       "note": "export-only",
       "path": "apps/flappy/README.md",
-      "sha256": "b5c9abe4041b768e258b121ca2b6b1ec51cb3f0ae6bd8b47521984a4ea3eede1"
+      "sha256": "8c9761d2bfd533299763e1a41396c92e5436b4bfe43fd2e344dc85547245851d"
     },
     {
-      "bytes": 15754,
+      "bytes": 16544,
       "origin": "flappy/badge/flappy/__init__.py",
       "path": "apps/flappy/__init__.py",
-      "sha256": "f3a152e49c6b2ef05effde748ec8a3959f7c88f415ca702c9c7c3ebec1b89b59"
+      "sha256": "f7af62aa98fb2f5dc595c765f80ceb50afeea8639bc565764da52c56c56be157"
     },
     {
       "bytes": 290,
@@ -505,10 +505,10 @@
       "sha256": "8b047e4c9ed10bd7bd48661f1e5d1a73f138edea7e7debbf815d99c96007e720"
     },
     {
-      "bytes": 48481,
+      "bytes": 51787,
       "origin": "flappy/badge/flappy/flappy_view.py",
       "path": "apps/flappy/flappy_view.py",
-      "sha256": "033e5f610a9ee47ca662a6a310fe9c025bd074e64030f158725697eb2da01862"
+      "sha256": "52b7d396054003c9113f453fa7a7a4dca33b4f586b22bd83132b8e15a967d772"
     },
     {
       "bytes": 8514,
@@ -545,7 +545,7 @@
       "generated": true,
       "note": "export-only",
       "path": "apps/glyph/README.md",
-      "sha256": "66bde339a4d62d6b0d80289bc06d04ef90b19308d67f5499fcf44e912434fcfa"
+      "sha256": "c321cbab2dd8e808eb0ba42dc13890498ea658b4b336a945f5a59c2f47a14cf9"
     },
     {
       "bytes": 55144,
@@ -873,11 +873,11 @@
       "sha256": "328d63786e3920702cbf64c852a307048132c7e55099940ba99a9b68dc084015"
     },
     {
-      "bytes": 4154,
+      "bytes": 4459,
       "generated": true,
       "note": "export-only",
       "path": "apps/menu/README.md",
-      "sha256": "7f457235fa5a18ff39d1db70ce3a8e17e70c9fc75214a96eab7144acf5c060c9"
+      "sha256": "6ea1e9c3fa902ff64192e9fff736a3972b76065d8908a0950927ffb3605133cb"
     },
     {
       "bytes": 9950,
@@ -933,7 +933,7 @@
       "generated": true,
       "note": "export-only",
       "path": "apps/pet/README.md",
-      "sha256": "cc437e067378fd1942657261e54e1ecbe918f07d7735c38fc64b790cd633ae3f"
+      "sha256": "c0a83943e8376fc2837833578dd4e39f99610539cdd9e153b8c5ff55bb332e60"
     },
     {
       "bytes": 7957,
@@ -1042,7 +1042,7 @@
       "generated": true,
       "note": "export-only",
       "path": "apps/poster/README.md",
-      "sha256": "19ea9efdef4e48121543e125e676d8de6bd575865167e2063bd6f8970c286b23"
+      "sha256": "39fd5be977876cf6eee0bfb92ae7d438b4e88304d60061833918aae5ca9ba000"
     },
     {
       "bytes": 17596,
@@ -1154,7 +1154,7 @@
       "generated": true,
       "note": "export-only",
       "path": "apps/schedule/README.md",
-      "sha256": "9b857a590d4530d8d96a68094870e38f4dbe0a374f5ab92931b6466d549fa66d"
+      "sha256": "acd0f4e794d0c1050bdd8400d3e32d38e6dbd9f073e75c96d6ba2462db3d57e4"
     },
     {
       "bytes": 22858,
@@ -1215,7 +1215,7 @@
       "generated": true,
       "note": "export-only",
       "path": "apps/settings/README.md",
-      "sha256": "cf69d9f21f583f76505d2e20cfbc391af9169cb0c26ef300418c9cdaebc28734"
+      "sha256": "5f5dd03f2af9961db3b06e526472519b3f959ebeacd9d161def82e6e14ce76f4"
     },
     {
       "bytes": 17181,
@@ -1266,18 +1266,18 @@
       "sha256": "3e74801e22379df4ca5338ce3304bdc9a5d62a9fa8787e6f7a3151910571f435"
     },
     {
-      "bytes": 2569,
+      "bytes": 2555,
       "note": "export-only: the attribution record",
       "origin": "docs/source-export/provenance/snake.md",
       "path": "apps/snake/PROVENANCE.md",
-      "sha256": "c16b8fb9b1a1c3f68165e5cdd6c1759e1793ddc5844e60020c3809cbe413e284"
+      "sha256": "f564be1a5a53a951c8c1b8b24a5e36c34e2b8fd4714ba6a0b23ad35a071d77e3"
     },
     {
       "bytes": 1685,
       "generated": true,
       "note": "export-only",
       "path": "apps/snake/README.md",
-      "sha256": "806203394eee59f0b639102e3e12663901898100a89d883b7a353e3708dbac5d"
+      "sha256": "d318a44dd7b85f358068ef071082d7b5c83d84fe5c19972969b83b4fe906c3e2"
     },
     {
       "bytes": 22523,
@@ -1364,11 +1364,11 @@
       "sha256": "255120cfaa5cd07322b686b4258590382c61793fe33512b54a0c887e5c324707"
     },
     {
-      "bytes": 2976,
+      "bytes": 2759,
       "generated": true,
       "note": "export-only",
       "path": "assets/fonts/README.md",
-      "sha256": "52971675b316659411f205a5e1b8a2ac9a30c355383f856d8f40a357e7d2d842"
+      "sha256": "630fb7f0bad2419ebe4cdc434be7a62802ccecc3fbc8328b68b01a1574255a1f"
     },
     {
       "bytes": 1720,
@@ -1379,11 +1379,11 @@
       "sha256": "473af0ba8c39d54cab592b74c260fed6e56028e9faf5bd7343b77fe32dfdd9d6"
     },
     {
-      "bytes": 4631,
+      "bytes": 4630,
       "generated": true,
       "note": "export-only",
       "path": "shared/README.md",
-      "sha256": "c0ba0c7a895740fe5bd27f2dc3d4c8b325813115fa3c33c3f66275a01503ae31"
+      "sha256": "189c970d7d8f2c5bcc95e6211e66d78b47c4714da5fe3407bef532cd0d4f98ee"
     },
     {
       "bytes": 27931,
@@ -1470,11 +1470,11 @@
       "sha256": "988d44bc0ed4e33c2dbcef30330a6906a8a6baced91e88caab36e2bfdb1b897d"
     },
     {
-      "bytes": 48949,
+      "bytes": 57554,
       "note": "export-only: the builder, not installed on the badge",
       "origin": "scripts/export-source-build.py",
       "path": "tools/build.py",
-      "sha256": "f6b2b8fdf980101a6bbe3fba7b46eed853d7da062282cd12621ce0ffce070f30"
+      "sha256": "8c84b4d4e5ef449d302998f26bb3a56079c0fd769ac0d8aa6ee5e2b547b75328"
     }
   ],
   "gates": [
@@ -1596,7 +1596,7 @@
       "ok": true
     },
     {
-      "detail": "the README's 202 payload files / 9,475,939 bytes and 203 manifest rows all match the manifest",
+      "detail": "the README's 202 payload files / 9,506,877 bytes and 203 manifest rows all match the manifest",
       "gate": "readme-matches-manifest",
       "offenders": [],
       "ok": true
@@ -1605,6 +1605,12 @@
       "detail": "145 text files scanned; every hold duration agrees with HOLD_MS = 1500 ms in apps/menu/ui.py",
       "gate": "hold-contract-consistent",
       "hold_ms": 1500,
+      "offenders": [],
+      "ok": true
+    },
+    {
+      "detail": "33 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 38 guarded import sites across 18 files, 3 launcher `badge.mode` call site(s), pet debounced, one install procedure, a 6,323,776 B staged /system",
+      "gate": "doc-claims-verified",
       "offenders": [],
       "ok": true
     },
@@ -1678,7 +1684,7 @@
     }
   ],
   "provenance": {
-    "commit": "52ee4554aaa88c6f0dab1b2b339da68e952957dc",
+    "commit": "42adb5c5eba0ac76b80739033e91feb5a347fd89",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1739,10 +1745,10 @@
     "version": "v3.0.2"
   },
   "totals": {
-    "bytes": 9496537,
+    "bytes": 9531211,
     "files": 203,
     "payload": {
-      "bytes": 9475939,
+      "bytes": 9506877,
       "excludes": [
         "README.md",
         "MANIFEST.json"
@@ -1750,7 +1756,7 @@
       "files": 202
     }
   },
-  "tree_hash": "0938cb2bc83105950494a674519605805542cf80234c94691b1b68c629f299ec",
+  "tree_hash": "48e8cdcb614ea98f55d1126bfa40a9b9ff49bf450f07e5f5ff31cc880328e982",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",

@@ -105,6 +105,13 @@ game = None
 level_index = 3
 last_step = time.ticks_ms()
 best = False
+# Did the last commit attempt fail?  The RECORD is never damaged by a failed
+# write -- the sink renames into place or does nothing, so the old file
+# survives intact -- but the post-mortem paints `best` in the record colour,
+# and `best` latched against the number that was ON DISK.  Without this flag
+# the card claims a bank that is not there, so it outlives the frame that set
+# it and reaches the view.
+save_failed = False
 light_kind = None
 light_until = last_step
 frame = 0
@@ -164,7 +171,7 @@ def set_light(kind, now, duration_ms):
 
 
 def finish_game(now):
-    global phase, high_score
+    global phase, high_score, save_failed
     phase = FINISHED
     arm_input(now)
     # Fire the lights BEFORE the atomic save.  There is no audio on this badge,
@@ -184,7 +191,12 @@ def finish_game(now):
     # wider would hide a real defect in the model.
     try:
         high_score, changed = update_high_score(game["score"], high_score)
+        # Cleared on every success, not only set on failure: the card this
+        # feeds renders one frame later and must describe THIS commit, not a
+        # stale one from an earlier run in the same session.
+        save_failed = False
     except OSError as error:
+        save_failed = True
         changed = False
         print(
             "FLAPPY_SAVE_ERROR reason=finish score={} level={} err={}".format(
@@ -245,13 +257,15 @@ def quit_game(now):
     committed on the way out.  The write happens with play stopped, which is
     the same position as the save on a refused connection.
     """
-    global phase, high_score, light_kind, confirm_quit
+    global phase, high_score, light_kind, confirm_quit, save_failed
     try:
         high_score, changed = update_high_score(game["score"], high_score)
+        save_failed = False
     except OSError as error:
         # Same guard as finish_game's, same WHY: an escaping OSError reaches
         # machine.reset(), so a full volume would turn the labelled door into
         # a REBOOT.  The record is what can be lost here; the way out is not.
+        save_failed = True
         changed = False
         print(
             "FLAPPY_SAVE_ERROR reason=quit score={} level={} err={}".format(
@@ -390,7 +404,7 @@ def render():
     elif phase == PAUSED:
         view.paused(game, high_score, best, confirm_quit)
     else:
-        view.finished(game, high_score, best)
+        view.finished(game, high_score, best, save_failed)
 
 
 def update():

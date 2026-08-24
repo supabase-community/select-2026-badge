@@ -1,20 +1,10 @@
 # `shared/` -- the canonical copies
 
-**Nothing on the badge imports this directory.** It is not installed, and
-it is not on any `sys.path`. It is here so that a reader who finds 9
-byte-identical copies of `backlight.py` under `apps/` can tell which one a human
-edits.
+**Nothing on the badge imports this directory.** It is not installed, and it is not on any `sys.path`. It is here so that a reader who finds 9 byte-identical copies of `backlight.py` under `apps/` can tell which one a human edits.
 
-MicroPython puts exactly one path on `sys.path` -- the running app's own
-directory -- so a shared module has to be COPIED into every app that uses
-it. `scripts/sync_ui.py` in the full repository owns one table of
-canonical sources and their consumers, refreshes the copies, and has a
-`--check` mode that hashes every copy against its source and exits
-non-zero on drift. CI runs `--check` on every commit.
+MicroPython puts exactly one path on `sys.path` -- the running app's own directory -- so a shared module has to be COPIED into every app that uses it. `scripts/sync_ui.py` in the full repository owns one table of canonical sources and their consumers, refreshes the copies, and has a `--check` mode that hashes every copy against its source and exits non-zero on drift. CI runs `--check` on every commit.
 
-This export additionally proves it for the shipping subset: its
-`gate_vendored_copies_identical` hashes every copy below against the
-canonical file, so if this table is wrong the export does not build.
+This export additionally proves it for the shipping subset: its `gate_vendored_copies_identical` hashes every copy below against the canonical file, so if this table is wrong the export does not build.
 
 ## The map
 
@@ -44,22 +34,13 @@ canonical file, so if this table is wrong the export does not build.
 
 ## The modules whose canonical copy lives in an app
 
-Not every shared module's home is `shared/`. Some grew inside the app
-that first needed them and stayed there, and moving one is a real job
-rather than a rename -- the paths are hardcoded in host tooling. Where
-that is the case the table above points at the app directory that owns
-the file, and the other copies of it are generated from there:
+Not every shared module's home is `shared/`. Some grew inside the app that first needed them and stayed there, and moving one is a real job rather than a rename -- the paths are hardcoded in host tooling. Where that is the case the table above points at the app directory that owns the file, and the other copies of it are generated from there:
 
 - `identity_catalogue.py` is owned by `apps/badgecard/identity_catalogue.py`.
 
 ## The modules whose canonical copy is not in this export
 
-These are owned by app trees that no longer ship -- archived
-predecessors of the apps that do. The shipping copies in this export
-are byte-identical to them (the gate above proves it), so nothing is
-missing: the file you are reading IS the source. The canonical path is
-named only so that a reader of the full repository knows which copy a
-human edits.
+These are owned by app trees that no longer ship -- archived predecessors of the apps that do. The shipping copies in this export are byte-identical to them (the gate above proves it), so nothing is missing: the file you are reading IS the source. The canonical path is named only so that a reader of the full repository knows which copy a human edits.
 
 - `glyphskin.py` -- canonical at `identity/badge/identity/glyphskin.py` in the full repository, shipped into `badgecard`, `poster`.
 - `glyphskins.gpk` -- canonical at `identity/badge/identity/assets/glyphskins.gpk` in the full repository, shipped into `badgecard`, `poster`.
@@ -84,4 +65,3 @@ human edits.
 - `score_sink.py`
 - `ui.py`
 - `wallpaper.py`
-
