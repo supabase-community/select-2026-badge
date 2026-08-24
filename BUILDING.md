@@ -168,9 +168,9 @@ Two rules on it:
 
 | | source form | bytecode form |
 |---|---:|---:|
-| the modules | 3,517,136 B | 807,078 B (23%) |
+| the modules | 3,532,949 B | 805,913 B (23%) |
 | plus assets and the two files that stay source | +5,516,698 B | +5,516,698 B |
-| **staged `/system`** | **9,033,834 B** | **6,323,776 B** |
+| **staged `/system`** | **9,049,647 B** | **6,322,611 B** |
 | of the 12 MB FAT allocation | 72% | 50% |
 
 1. **Headroom.** Source form fits today. It fits with 3.5 MB in hand against 6.2 MB, and the assets are the part that grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.

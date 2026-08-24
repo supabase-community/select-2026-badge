@@ -1,5 +1,12 @@
 """BADGE CARD -- the worn badge, and the five things you can change about it.
 
+ONE CARD, NOT FIVE, SINCE 2026-08-24.  The owner removed the save slots and put
+a RESET BADGE row in their place: *"you create your name badge, if you don't like
+it you can edit it, or you can wipe it and start over."*  The five things above
+are still five -- name, skin, stickers, effect, home screen -- and there is now
+one badge wearing them.  A FULL wipe, which is a different thing, is staff-only
+over serial: `scripts/badge-wipe.sh` and `docs/staff-badge-wipe.md`.
+
 THE HARDWARE SEAM AND NOTHING ELSE.  Badgeware's globals arrive here as
 builtins, are handed to a pure controller and a view, and never leave this file.
 `card_app.frame(now_ms, buttons) -> plan` reads a clock it is given and writes
@@ -13,7 +20,8 @@ legibility is a nice-to-have rather than the product.  That ordering decides the
 `_try` wrapper below and the plain-name painter of last resort.
 
     at rest      the badge.  Zero chrome, one name (D1).
-    any press    the menu.  NAME, SKIN, STICKERS, BADGES, SAVE TO HOME.
+    any press    the menu.  NAME, SKIN, STICKERS, EFFECT, SAVE TO HOME,
+                 RESET BADGE.
     HOME         the launcher.  `on_exit` runs first, so nothing is lost.
 
 HOW IT ARRIVES, and this file's shape is that answer.  Threads are compiled out

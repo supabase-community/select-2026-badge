@@ -55,10 +55,10 @@ EMPTY = "NOTHING TO DELETE"
 MARK_ADDED = "STICKER ADDED"
 MARK_GONE = "STICKER REMOVED"
 MARK_FULL = "24 STICKERS MAX"
-CARD_NEW = "NEW BADGE"
-CARD_GONE = "BADGE DELETED"
-CARD_WORN = "WEARING IT"
-CARD_FULL = "5 BADGES MAX"
+# WHAT THE RESET SAYS WHEN IT LANDS.  `CARD_NEW`, `CARD_GONE`, `CARD_WORN` and
+# `CARD_FULL` left with the five slots on 2026-08-24; this is the one sentence
+# that replaces all four, because there is one card and one thing to do to it.
+CARD_RESET = "BADGE RESET"
 HOME_ON = "HOME SCREEN SET"
 HOME_OFF = "HOME SCREEN CLEARED"
 HOME_FAILED = "COULD NOT SAVE"
@@ -147,7 +147,13 @@ class CardApp:
         self.place_x = model.RECIPE_UNITS // 2
         self.place_y = model.RECIPE_UNITS // 2
         self.editing = -1
-        self.doomed = -1
+        # `self.doomed` LEFT WITH THE CARDS SCREEN (2026-08-24).  It held which
+        # of five saved badges a confirmation was about, and the confirmation is
+        # now about the only card there is -- so the screen needs no subject, and
+        # a stale index can no longer point the destructive press at the wrong
+        # badge.  `test_card_cards.test_a_confirmation_reached_with_a_stale_index
+        # _cannot_delete` existed for exactly that failure; the field it guarded
+        # is gone, so the failure is unrepresentable rather than merely tested.
         self.job = None
         # THE EFFECT BEING PREVIEWED, and the one to put back on BACK.  A pair
         # of its own rather than a reuse of `choice`/`restore`: those hold a
@@ -204,6 +210,20 @@ class CardApp:
         self.index = 0
         self._suppress()
         self.events.append(view)
+
+    def _menu_at(self, row):
+        """Back to the menu, SELECTION ON `row` rather than on the top of it.
+
+        THREE SCREENS NEEDED THIS AND THE FIRST TWO EACH WROTE IT OUT.  `_goto`
+        resets `index` to 0, which is right for a list somebody navigated INTO
+        and wrong for every return: the browser lane caught it as "the press
+        after a save opened NAME", `_route_effect` hit the same thing, and the
+        reset confirmation would have hit it a third time.  A helper, because the
+        bug is not that the line is long -- it is that it is EASY TO OMIT, and
+        the omission looks like a working screen.
+        """
+        self._goto(model.MENU)
+        self.index = model.MENU_ITEMS.index(row)
 
     def _toast_now(self, now_ms, message):
         self._toast = message
@@ -299,8 +319,6 @@ class CardApp:
             self._route_pick(now_ms, buttons)
         elif view == model.PLACE:
             self._route_place(now_ms, buttons)
-        elif view == model.CARDS:
-            self._route_cards(now_ms, buttons)
         elif view == model.CONFIRM:
             self._route_confirm(now_ms, buttons)
         elif view == model.BAKING:
@@ -352,17 +370,24 @@ class CardApp:
             self._browse_skin()
         elif row == model.MENU_MARKS:
             self._goto(model.MARKS)
-        elif row == model.MENU_CARDS:
-            self._goto(model.CARDS)
         elif row == model.MENU_EFFECT:
             self._browse_effect()
         # EXPLICIT, WHERE THIS USED TO BE A BARE `else`.  With five rows the
         # fall-through was unambiguous; with more an unhandled row would have
         # SAVED THE WALLPAPER, which is the loudest wrong answer available -- and
-        # the menu has both gained and lost a row since, which is exactly the
-        # churn a bare `else` turns into a silent bake.
+        # the menu has now gained and lost a row twice, which is exactly the
+        # churn a bare `else` turns into a silent bake.  The stakes went up again
+        # on 2026-08-24: the row that a fall-through would reach LAST is the one
+        # that resets the badge, so an unhandled row must land nowhere at all.
         elif row == model.MENU_HOME:
             self._save_home(now_ms)
+        elif row == model.MENU_RESET:
+            # OPENING A QUESTION, NOT ANSWERING ONE.  Every other destructive
+            # thing in this app is one press from done; this is the one that is
+            # two screens from done, and B7 is why (`docs/badge-button-rules.md`
+            # §5).  Nothing is written here -- `_route_confirm` is the only
+            # place a reset can happen, and the tests count writes to prove it.
+            self._goto(model.CONFIRM)
 
     # -- the name ------------------------------------------------------------
 
@@ -524,8 +549,7 @@ class CardApp:
             # highlighted filter the whole time, so leaving without putting it
             # back would look like a commit that did not save.
             self.effect = self.effect_was
-            self._goto(model.MENU)
-            self.index = model.MENU_ITEMS.index(model.MENU_EFFECT)
+            self._menu_at(model.MENU_EFFECT)
             return
         if not buttons.pressed("B"):
             return
@@ -535,12 +559,8 @@ class CardApp:
         # save falls back to; the alternative is a recovery that silently drops
         # the one thing they had just changed.
         self._commit(milestone=True)
-        self._goto(model.MENU)
-        # RETURN THE SELECTION TO THE ROW IT CAME FROM.  `_goto` resets `index`
-        # to 0, which would land the wearer on NAME after applying an effect --
-        # the same regression the browser lane caught on SAVE TO HOME, where the
-        # press after a save opened NAME.
-        self.index = model.MENU_ITEMS.index(model.MENU_EFFECT)
+        # RETURN THE SELECTION TO THE ROW IT CAME FROM -- see `_menu_at`.
+        self._menu_at(model.MENU_EFFECT)
         self._toast_now(now_ms, SAVED)
 
     # -- the stickers --------------------------------------------------------
@@ -651,81 +671,91 @@ class CardApp:
         self.index = landed
         self._toast_now(now_ms, message)
 
-    # -- the saved badges ----------------------------------------------------
-
-    def card_rows(self):
-        """One row per saved badge, plus a NEW row while there is room."""
-        count = len(self.state["badges"])
-        return count + (1 if count < model.MAX_BADGES else 0)
-
-    def _route_cards(self, now_ms, buttons):
-        badges = self.state["badges"]
-        step = self._scroll(now_ms, buttons)
-        if step:
-            self._move(step, self.card_rows())
-        if buttons.pressed("A"):
-            self._goto(model.MENU)
-            return
-        if buttons.pressed("B"):
-            if self.index >= len(badges):
-                if len(badges) >= model.MAX_BADGES:
-                    self._toast_now(now_ms, CARD_FULL)
-                    return
-                badges.append(model.new_badge())
-                self.state["active"] = len(badges) - 1
-                self._commit(milestone=True)
-                self._goto(model.MENU)
-                self._toast_now(now_ms, CARD_NEW)
-            else:
-                self.state["active"] = self.index
-                self._commit(milestone=True)
-                self._toast_now(now_ms, CARD_WORN)
-            return
-        if buttons.pressed("C") and self.index < len(badges):
-            self.doomed = self.index
-            keep = self.index
-            self._goto(model.CONFIRM)
-            self.index = keep
+    # -- reset the badge ------------------------------------------------------
 
     def _route_confirm(self, now_ms, buttons):
+        """The one destructive press in this app, behind the one confirmation.
+
+        THE ROUTE OUT IS A AND IT COMMITS NOTHING (I2), and the route back is
+        the menu ON THE ROW THAT ASKED -- not the top of it.  `_goto` resets the
+        selection to 0, which would land a wearer who declined a reset on NAME,
+        with a modal's worth of adrenaline and no idea what they just did.
+        `_back_to_the_row` learned this on SAVE TO HOME and `_route_effect`
+        learned it again; this is the third screen to need it.
+        """
         if buttons.pressed("A"):
-            self.doomed = -1
-            keep = self.index
-            self._goto(model.CARDS)
-            self.index = keep
+            self._menu_at(model.MENU_RESET)
             return
         # B IS INERT HERE.  B7, and it is the only screen in the app where the
         # primary key does nothing: a thumb that has been pressing B all
-        # afternoon must not be able to destroy a badge with a press it started
+        # afternoon must not be able to reset a badge with a press it started
         # before it read the question.
         if not buttons.pressed("C"):
             return
-        badges = self.state["badges"]
-        target = self.doomed
-        self.doomed = -1
-        if target < 0 or target >= len(badges):
-            self._goto(model.CARDS)
-            return
-        if len(badges) == 1:
-            # THE LAST BADGE IS RESET, NOT REMOVED.  A store with no badges in
-            # it has no active badge, and every draw path would then need a
-            # branch for "there is nothing to wear".  Resetting is also what the
-            # owner asked this screen for -- "the option to reset or create a
-            # new badge" -- and it is the same press either way.
-            badges[0] = model.new_badge()
-            self.state["active"] = 0
-        else:
-            del badges[target]
-            index = self.state["active"]
-            if index == target:
-                self.state["active"] = 0
-            elif index > target:
-                self.state["active"] = index - 1
+        self._reset_badge(now_ms)
+
+    def _reset_badge(self, now_ms):
+        """Back to the original system defaults.  The card, and NOTHING else.
+
+        THE OWNER'S SCOPE, 2026-08-24, verbatim: *"which takes the home screen
+        background, poster, and name badge back to the original system defaults
+        without a name or anything so it's easy to redo it from scratch ...
+        network and game scores and everything else will persist. The only way to
+        wipe a badge [fully] will be someone at the event plugs it into a
+        supabase machine and wipes it for you."*  A full wipe is a STAFF
+        procedure over serial (`scripts/badge-wipe.sh`, `docs/staff-badge-wipe.md`)
+        and it is deliberately not reachable from any button on the badge.
+
+        WHAT THIS CLEARS, as the exact files it can reach:
+
+            /state/badgecard.json    `badges` -> one factory card, `active` -> 0,
+                                     `home.on` -> False, `home.recipe` -> 0.
+                                     Its root `brightness` is NOT NAMED and so
+                                     survives -- that field belongs to the
+                                     `settings` tile, and a wearer who resets
+                                     their card has not asked for a bright panel.
+            /state/wallpaper.pgw     deleted, through the injected `unbake`.
+
+        WHAT IT CANNOT REACH, AND WHY THAT IS STRUCTURAL RATHER THAN CAREFUL.
+        This module is PURE -- `test_card_purity` walks its AST and fails on any
+        import outside the model, the two catalogues and `ui` -- so it opens no
+        file at all.  The seam (`badgecard/__init__.py`) hands it exactly two
+        write capabilities, the `card_store.save` above and `Baker.remove` for
+        the film.  `/state/badgelink_state.json`, the network preference, the
+        schedule and the five games' score files are therefore not reachable from
+        this press by construction, not by discipline, and
+        `test_card_reset.BoundaryTests` asserts the whole of `/state` around a
+        real reset to keep it that way.
+
+        THE FILM GOES BEFORE THE FLAG, and the order is load-bearing rather than
+        tidy.  `card_bake.reconcile` runs at every boot on the rule that THE DISK
+        IS THE TRUTH: if the state said `home.on = False` while the file was
+        still on the volume, the next launch would read the header, disagree, and
+        turn the wearer's old wallpaper straight back on.  Clearing the flag
+        without deleting the file is not a partial reset -- it is a reset that
+        undoes itself.
+
+        A FAILED REMOVAL DOES NOT ABORT THE RESET, which is the mirror of
+        `_clear_home` and of the same judgement.  `wallpaper.remove` is total and
+        answers False for a file that was not there -- the overwhelmingly common
+        case, since most badges never bake -- so a caller that treated False as
+        an error would refuse to reset the majority of badges in the room.
+        """
+        if self._unbake is not None:
+            self._unbake()
+        model.reset_card(self.state)
+        # A MILESTONE.  `.bak` is what a corrupt primary falls back to, and a
+        # recovery that restored the badge the wearer just deliberately wiped
+        # would be the loudest possible way to fail: they reset it because they
+        # wanted it gone, and the badge would hand it back.
         self._commit(milestone=True)
-        keep = min(self.index, self.card_rows() - 1)
-        self._goto(model.CARDS)
-        self.index = max(0, keep)
-        self._toast_now(now_ms, CARD_GONE)
+        # BACK ON THE ROW THAT WAS PRESSED, like every other return in this app,
+        # and it also happens to be one press from starting over: B3's lists
+        # wrap, so a single DOWN from the last row lands on NAME -- which is what
+        # the owner asked this feature for ("so it's easy to redo it from
+        # scratch").
+        self._menu_at(model.MENU_RESET)
+        self._toast_now(now_ms, CARD_RESET)
 
     # -- save to home, from the menu row itself -------------------------------
 
@@ -801,17 +831,8 @@ class CardApp:
         self._back_to_the_row(now_ms, job.note or HOME_FAILED)
 
     def _back_to_the_row(self, now_ms, message):
-        """Return to the menu ON THE ROW THAT WAS PRESSED, with the toast.
-
-        `_goto` resets the selection to the top, which is right for a screen
-        somebody navigated INTO and wrong for a button: the wearer pressed the
-        last row and would come back to the first, with the confirmation of an
-        action sitting over a different row.  `_route_place` restores its index
-        for the same reason.  The browser lane caught this the frame it was
-        introduced -- the press after a save opened NAME.
-        """
-        self._goto(model.MENU)
-        self.index = model.MENU_ITEMS.index(model.MENU_HOME)
+        """Return to SAVE TO HOME with the bake's verdict.  See `_menu_at`."""
+        self._menu_at(model.MENU_HOME)
         self._toast_now(now_ms, message)
 
     # -- the plan ------------------------------------------------------------
@@ -847,8 +868,6 @@ class CardApp:
             rows = len(model.MENU_ITEMS)
         elif view == model.MARKS:
             rows = self.mark_rows()
-        elif view == model.CARDS:
-            rows = self.card_rows()
         elif view == model.SKIN:
             rows = catalogue.COUNT
         elif view == model.EFFECT:
@@ -857,8 +876,7 @@ class CardApp:
             rows = 0
         return {
             "view": view,
-            "labels": model.softkeys(view, self.index,
-                                     len(self.state["badges"]), installed),
+            "labels": model.softkeys(view, self.index, installed),
             "state": self.state,
             "badge": badge,
             "index": self.index,
@@ -876,7 +894,9 @@ class CardApp:
             "place": (self.place_x / float(model.RECIPE_UNITS),
                       self.place_y / float(model.RECIPE_UNITS)),
             "editing": self.editing,
-            "doomed": self.doomed,
+            # `doomed` LEFT THIS PLAN WITH THE CARDS SCREEN.  It named which of
+            # five badges a confirmation was about; there is one card, so the
+            # confirmation reads `badge` like every other screen does.
             "board": self.board,
             "cap": self.name_cap(),
             "animate": animate,

@@ -1,6 +1,6 @@
 # Supabase Select 2026 badge software -- source export
 
-This is the software that would ship to the ~800 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `42adb5c5eba0` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
+This is the software that would ship to the ~800 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `353e1bfb6fd4` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
 
 ## Status
 
@@ -66,7 +66,7 @@ It does, and that is the right development loop: your own README's "Installing A
 
 We precompile the thing we hand you for three measured reasons:
 
-1. **Headroom.** The modules here are 3,517,136 B as source and 807,078 B as bytecode, 23%. With assets, the installed tree is 6,323,776 B, 50% of the 12 MB volume; as source it would be 9,033,834 B, 72%. Both fit today. The assets are what grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
+1. **Headroom.** The modules here are 3,532,949 B as source and 805,913 B as bytecode, 23%. With assets, the installed tree is 6,322,611 B, 50% of the 12 MB volume; as source it would be 9,049,647 B, 72%. Both fit today. The assets are what grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
 2. **First-open latency, which is the one a wearer feels.** MicroPython compiles each `.py` at import, as one uninterruptible native call per module, and every app exit resets the badge, so every open is a cold open. The largest module here is 666,336 B of source; even precompiled to a 228,847 B `.mpy`, its cold import measures 630-765 ms on device. Shipping source adds the parse to that, on every open.
 3. **Fleet integrity.** 800 badges get a byte-identical, hash-verified install, and a stray `.py` beside its own `.mpy` silently wins: no speed-up, possibly stale code, no error. That is the failure `tools/build.py --verify-mount` exists to catch.
 
@@ -74,7 +74,7 @@ We precompile the thing we hand you for three measured reasons:
 
 Full detail, pins, and troubleshooting: **`BUILDING.md`**. It carries the pins with their one open caveat, `--check` (build twice, prove byte-identical output), a build without the release clone (`--skip-menu`, `--no-stock-fonts`), firmware flashing, and the refusals the build will not budge on.
 
-It is not a repository dump and it is not a release. It is the boot file, the launcher, 8 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **202 files, 9,506,877 bytes**.
+It is not a repository dump and it is not a release. It is the boot file, the launcher, 8 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **202 files, 9,524,292 bytes**.
 
 Those two numbers are the PAYLOAD: everything in this tree except this README and `MANIFEST.json`, the two files that cannot quote a total including themselves without changing it. `MANIFEST.json` lists 203 rows (the payload plus this README) and does not hash itself; its `totals.payload` repeats the two numbers above, and the exporter's `readme-matches-manifest` gate reads this paragraph back and fails the build if any of the three disagrees.
 
@@ -208,7 +208,7 @@ One command, and it runs from this package with no compiler, no clones and no ne
 python3 tools/build.py --verify-manifest
 ```
 
-It hashes every file here against `MANIFEST.json` and recomputes the `tree_hash`, reporting missing files, wrong bytes and files the manifest does not name. It skips `build/` and `__pycache__/`, which are what the build and the shipped test suite write and are in `.gitignore` for the same reason.
+It hashes every file here against `MANIFEST.json` and recomputes the `tree_hash`, reporting missing files, wrong bytes and files the manifest does not name. It skips `build/`, `__pycache__/` and `.git/` when it walks the tree. The first two are what the build and the shipped test suite write, and are in `.gitignore` for the same reason; `.git/` is this repository's own metadata, present in every clone and never a manifest row, so a FRESH `git clone` of this repository verifies clean. (git cannot ignore its own metadata directory, which is why `.git/` is skipped in the walk rather than named in `.gitignore`.)
 
 **The `tree_hash` formula, so you do not have to take our word for it.** SHA-256 over the concatenation of `<path>\0<sha256>\n` for every row in `MANIFEST.json`, rows sorted by path:
 

@@ -225,11 +225,11 @@
       "sha256": "195546f658b6308a1b64d85f78bc32d382e90cf19aab8cc5257cd012b3ed65f5"
     },
     {
-      "bytes": 7469,
+      "bytes": 7636,
       "generated": true,
       "note": "export-only: orientation for AI agents reading this package",
       "path": "AGENTS.md",
-      "sha256": "488b90888a3a0174c5a2a85126d293a22150f57332ba79bd5c2753e1d8b3332d"
+      "sha256": "b776be0b7966c79e49ca74358234e70aca563406924570c6b8d5d33d5a5b5337"
     },
     {
       "bytes": 21349,
@@ -243,7 +243,7 @@
       "note": "export-only",
       "origin": "docs/source-export/BUILDING.md",
       "path": "BUILDING.md",
-      "sha256": "825dfe349eebed86a2e624836a09b707d5b907bae7b226439e539629fb8e3eb2"
+      "sha256": "24c85ed9fa7c554d0dd4fb8aea60a1a449b5a4b85eb7d113d68e4cf020a8f5d7"
     },
     {
       "bytes": 1347,
@@ -260,11 +260,11 @@
       "sha256": "d8694e8a1a4a95fcfaccc0a8ac47b7488dd298de242e367dbf569336bc2e55a4"
     },
     {
-      "bytes": 24334,
+      "bytes": 24652,
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "123d21c18292c75132f58d061fe5485a9a9becae5a5db944f25c64374424aaa8"
+      "sha256": "eecc6c50ef635652bdb1696bef5053a8cf12387cd106be54ed9f1b227c8d11a3"
     },
     {
       "bytes": 7710,
@@ -274,17 +274,17 @@
       "sha256": "7c8ba8904ab9b6ea302b5a1ca95b8a9e8b6ef7b6632d7697daa7a5937fc35f21"
     },
     {
-      "bytes": 2287,
+      "bytes": 2620,
       "generated": true,
       "note": "export-only",
       "path": "apps/badgecard/README.md",
-      "sha256": "50f9ae4f325ae38e5cd84618624fdf657f037669ba14152a9ea1aa99795e8474"
+      "sha256": "94c4aaf77ab767783a800fbb4531630c8da18aad3201b6bd3100d60d8d8ab978"
     },
     {
-      "bytes": 18796,
+      "bytes": 19298,
       "origin": "badgecard/badge/badgecard/__init__.py",
       "path": "apps/badgecard/__init__.py",
-      "sha256": "9518a830be8c14a78a7bc9972e55f0fc99e411479582afa843c78f30b975bc09"
+      "sha256": "28b8d698bedbede8e441a56e588c0ee208565a484d24df0241709445e56a50b8"
     },
     {
       "bytes": 385468,
@@ -311,10 +311,10 @@
       "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
     },
     {
-      "bytes": 39881,
+      "bytes": 42949,
       "origin": "badgecard/badge/badgecard/card_app.py",
       "path": "apps/badgecard/card_app.py",
-      "sha256": "38ec7e50ede6d1a7cca62cd9194abf9a374b81f4a0a452509ef7412672c085f9"
+      "sha256": "a7ab33debe3c306f8167b3adc493db32efb4a4d9558087920357a0a8784daee1"
     },
     {
       "bytes": 50389,
@@ -341,22 +341,22 @@
       "sha256": "cd4f4708feb237a9bfc3b81ad8930b09f8ec39122fe96f8f27607da9522b236e"
     },
     {
-      "bytes": 33742,
+      "bytes": 43956,
       "origin": "badgecard/badge/badgecard/card_model.py",
       "path": "apps/badgecard/card_model.py",
-      "sha256": "470c04782cf90b43ee322de7ce45f3683b6abe6a247a444f2b9e7541e2be2f7f"
+      "sha256": "67344a375f5a0a35e6ef52109dff69eb41151f0f249308345d449119cd2e528f"
     },
     {
-      "bytes": 6934,
+      "bytes": 7238,
       "origin": "badgecard/badge/badgecard/card_store.py",
       "path": "apps/badgecard/card_store.py",
-      "sha256": "567459a8dc5b10f294b0857771d606d423d2659c92607b0715038eca17a7f2d4"
+      "sha256": "f2534896c61c14552a42a927b0f8a34727c2501b8e5bd3194962286ff1aa5cc0"
     },
     {
-      "bytes": 44828,
+      "bytes": 46553,
       "origin": "badgecard/badge/badgecard/card_view.py",
       "path": "apps/badgecard/card_view.py",
-      "sha256": "9942eea4ea732a9b41d1e9d2e81ea1c6f6168fd4aee31bc3d4c43cc44b5e401c"
+      "sha256": "9d32784f6f59b7354edd4ee7e9b8eceaac444cca5b527bf36668e14461ce3b4d"
     },
     {
       "bytes": 14415,
@@ -1470,11 +1470,11 @@
       "sha256": "988d44bc0ed4e33c2dbcef30330a6906a8a6baced91e88caab36e2bfdb1b897d"
     },
     {
-      "bytes": 57554,
+      "bytes": 58656,
       "note": "export-only: the builder, not installed on the badge",
       "origin": "scripts/export-source-build.py",
       "path": "tools/build.py",
-      "sha256": "8c84b4d4e5ef449d302998f26bb3a56079c0fd769ac0d8aa6ee5e2b547b75328"
+      "sha256": "1b2df402bb3c6c9ea0bfb01d0ece491385f7a55ae6b9d9cfeb0ceba11c4149cd"
     }
   ],
   "gates": [
@@ -1596,7 +1596,7 @@
       "ok": true
     },
     {
-      "detail": "the README's 202 payload files / 9,506,877 bytes and 203 manifest rows all match the manifest",
+      "detail": "the README's 202 payload files / 9,524,292 bytes and 203 manifest rows all match the manifest",
       "gate": "readme-matches-manifest",
       "offenders": [],
       "ok": true
@@ -1609,7 +1609,7 @@
       "ok": true
     },
     {
-      "detail": "33 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 38 guarded import sites across 18 files, 3 launcher `badge.mode` call site(s), pet debounced, one install procedure, a 6,323,776 B staged /system",
+      "detail": "34 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 38 guarded import sites across 18 files, 3 launcher `badge.mode` call site(s), pet debounced, one install procedure, a 6,322,611 B staged /system",
       "gate": "doc-claims-verified",
       "offenders": [],
       "ok": true
@@ -1645,14 +1645,14 @@
           "class": "owner-quotations",
           "fatal": false,
           "files": 50,
-          "occurrences": 202,
+          "occurrences": 205,
           "what": "a quoted block with an owner attribution beside it"
         },
         {
           "class": "verbatim-ruling-blocks",
           "fatal": false,
-          "files": 24,
-          "occurrences": 45,
+          "files": 26,
+          "occurrences": 52,
           "what": "the `*\"...\"*` verbatim-ruling form, a subset of the line above"
         },
         {
@@ -1666,7 +1666,7 @@
           "class": "repository-doc-paths",
           "fatal": false,
           "files": 71,
-          "occurrences": 160,
+          "occurrences": 164,
           "what": "a path into `docs/` other than this export's own prose"
         },
         {
@@ -1677,14 +1677,14 @@
           "what": "a path into another tree this export omits (`*/host/`, `research/`, ...)"
         }
       ],
-      "detail": "census over 146 text subjects (report-only except device-identifiers): device-identifiers 0/0f!, val-identifiers 14/11f, owner-quotations 202/50f, verbatim-ruling-blocks 45/24f, benchmark-report-paths 23/16f, repository-doc-paths 160/71f, other-internal-paths 192/71f -- per-file counts kept in a maintainer report outside this package",
+      "detail": "census over 146 text subjects (report-only except device-identifiers): device-identifiers 0/0f!, val-identifiers 14/11f, owner-quotations 205/50f, verbatim-ruling-blocks 52/26f, benchmark-report-paths 23/16f, repository-doc-paths 164/71f, other-internal-paths 192/71f -- per-file counts kept in a maintainer report outside this package",
       "gate": "internal-exhaust-census",
       "offenders": [],
       "ok": true
     }
   ],
   "provenance": {
-    "commit": "42adb5c5eba0ac76b80739033e91feb5a347fd89",
+    "commit": "353e1bfb6fd4b9585680d817d13942098d80617a",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1745,10 +1745,10 @@
     "version": "v3.0.2"
   },
   "totals": {
-    "bytes": 9531211,
+    "bytes": 9548944,
     "files": 203,
     "payload": {
-      "bytes": 9506877,
+      "bytes": 9524292,
       "excludes": [
         "README.md",
         "MANIFEST.json"
@@ -1756,7 +1756,7 @@
       "files": 202
     }
   },
-  "tree_hash": "48e8cdcb614ea98f55d1126bfa40a9b9ff49bf450f07e5f5ff31cc880328e982",
+  "tree_hash": "3cc96f77191c8ab115a871a8c7b3d2b9a7a481473292415901362137863a79df",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",

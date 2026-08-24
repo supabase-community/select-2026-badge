@@ -41,11 +41,46 @@ import effects
 
 SCHEMA = 1
 
-# HOW MANY BADGES A WEARER KEEPS.  The owner's number, 2026-08-17.  A fixed
-# small set rather than an unbounded list: five rows fit one screen at both
-# resolutions with no scrolling, and a badge is a thing you have a few of, not a
-# collection you manage.
-MAX_BADGES = 5
+# HOW MANY LEGACY SLOT ENTRIES SURVIVE A LOAD.  NOT A PRODUCT CAP -- there is no
+# cap any more, because there is no choice any more.
+#
+# THE OWNER RULED ON 2026-08-24: *"remove the 5 different name badge save spots.
+# So basically you create your name badge, if you don't like it you can edit it,
+# or you can wipe it and start over."*  One live card, and the BADGES row, the
+# CARDS screen and the five-slot product all went with that sentence.
+#
+# THE LIST DID NOT GO WITH THEM, AND THE REASON IS THAT THIS FILE DOES NOT OWN
+# THE FORMAT ALONE.  `/state/badgecard.json` is a SHARED file with three other
+# apps in it, and two of them spell `{"active": <int>, "badges": [ ... ]}` by
+# name:
+#
+#   `poster/badge/poster/badge_state.select`   READS `badges[active]` and draws
+#                                              it.  It is the app the launcher's
+#                                              1.5-second hold opens.
+#   `badgelink/.../badgecard_state.py`         WRITES one key on the ACTIVE
+#                                              badge for a remote `set_name` or
+#                                              `set_skin`, carrying every other
+#                                              byte verbatim.
+#   `settings`' brightness store               writes the ROOT `brightness` and
+#                                              must carry the list past it --
+#                                              its own comments say a careless
+#                                              write here destroys saved badges.
+#   the launcher's brightness read             reads the ROOT `brightness`.
+#
+# Re-rooting the shape to a bare `badge` dict would be a four-app format break
+# bought for zero wearer-visible gain: the wearer already sees one card either
+# way.  So the list stays as the FORMAT, and the app draws index `active` and
+# offers no way to change it.
+#
+# WHICH MAKES THIS A CARRY BOUND RATHER THAN A CHOICE BOUND, and the difference
+# decides the migration.  A dev badge that already holds five slots keeps them on
+# disk and keeps wearing the one it was wearing -- IGNORED, not deleted, which is
+# schema rule 3 (an unknown value is kept) pointed at the wearer's own old data.
+# The one press that deletes them is RESET, which is a press the wearer asked
+# for.  Five, because five is what an old file can hold; the bound exists so a
+# hostile file cannot turn a load into an unbounded repair loop, exactly as
+# `STICKER_SCAN_MAX` does for marks.
+CARRY_BADGES = 5
 
 # The name cap, and it is `poster`'s.  `badge_state.NAME_MAX` truncates a longer
 # name before drawing it, and `poster` is what the launcher's hold opens, so an
@@ -84,7 +119,20 @@ SKIN = "skin"
 MARKS = "marks"
 PICK = "pick"
 PLACE = "place"
-CARDS = "cards"
+# THERE IS NO `CARDS` SCREEN, and there was one from 2026-08-17 to 2026-08-24.
+# It was the list of five saved badges -- WEAR, NEW, DEL -- and the owner removed
+# the whole feature: *"remove the 5 different name badge save spots."*  What went
+# with it: `card_app._route_cards`, `card_rows`, `CardView.cards_screen`, the
+# `%d OF %d` value on the menu row, the `n/m` slot counter in the menu header,
+# and the `count` argument this file's `softkeys` took to label WEAR against NEW.
+#
+# `CONFIRM` OUTLIVED IT AND CHANGED JOBS.  It was "delete the badge you selected
+# in the list"; it is now "reset the one card you have", which is the same
+# screen, the same B7 bar and the same question with one subject instead of five.
+# Reusing it rather than inventing a second confirmation is the point: this app
+# now has exactly one destructive action and exactly one screen that asks about
+# one, so a wearer who ever sees a red-ruled modal here knows what kind of press
+# put it there.
 CONFIRM = "confirm"
 BAKING = "baking"
 EFFECT = "effect"
@@ -109,7 +157,7 @@ EFFECT = "effect"
 # "OUT OF DATE" / "SHOWING THIS BADGE" status line, and the press that opened
 # it.  The preview answered "is this the right picture" -- a good question, and
 # one the wearer can answer by looking at the badge the menu is drawn over.
-VIEWS = (BADGE, MENU, NAME, SKIN, MARKS, PICK, PLACE, CARDS, CONFIRM, BAKING,
+VIEWS = (BADGE, MENU, NAME, SKIN, MARKS, PICK, PLACE, CONFIRM, BAKING,
          EFFECT)
 
 # The screens whose background is the wearer's own artwork and may therefore
@@ -131,6 +179,15 @@ ANIMATED = (BADGE, SKIN, EFFECT)
 # thing being protected, and what is protected instead is that a row buys its
 # place -- and can be told to give it up.
 #
+# IT IS STILL SIX AND THE SIXTH IS A DIFFERENT ROW.  BADGES left and RESET BADGE
+# arrived in the same owner ruling on 2026-08-24, which is worth reading as one
+# sentence rather than two changes: *"a setting in badgecard to 'reset name
+# badge' ... so it's easy to redo it from scratch. Also remove the 5 different
+# name badge save spots. So basically you create your name badge, if you don't
+# like it you can edit it, or you can wipe it and start over."*  The five slots
+# were the old answer to "I don't like this one"; RESET is the new one, and it is
+# one row instead of a list, one card instead of five, and no bookkeeping.
+#
 # WHERE BRIGHTNESS WENT, because a reader who comes here looking for it needs
 # one pointer rather than a search: the `settings` tile, whose own `ROWS`
 # already carries SLEEP and was built for exactly this class of row.  The ladder
@@ -143,14 +200,21 @@ ANIMATED = (BADGE, SKIN, EFFECT)
 # place as the only per-wearer choice about how the finished card LOOKS that is
 # not a choice of artwork.
 #
-# THE ORDER.  EFFECT is about the BADGE, so it sits with the badge rows -- and
-# before SAVE TO HOME, because that is the one row that is a BUTTON rather than a
-# screen and a button belongs at the end of a list of settings rather than in the
-# middle of things a wearer scrolls past.  B3's lists wrap, so the first UP from
-# row 0 now lands on SAVE TO HOME; B7 wants a harmless row there and a bake is
-# not destructive -- it writes a wallpaper the badge regenerates in two presses
-# and `card_bake` argues the same -- but it IS the least harmless row left, and
-# that is the one thing the brightness row was silently doing for this menu.
+# THE ORDER.  NAME, SKIN, STICKERS and EFFECT are the four things a card IS, in
+# the order a wearer builds one.  Then the two rows that are BUTTONS rather than
+# screens, because a button belongs at the end of a list of settings rather than
+# in the middle of things a wearer scrolls past.
+#
+# RESET IS LAST, AND B3'S WRAP IS WHY THAT IS SAFE RATHER THAN RECKLESS.  Lists
+# wrap, so the first UP from row 0 lands on the last row -- a press a wearer
+# makes blind, before the menu has been read.  That target used to be SAVE TO
+# HOME, and this comment used to concede it was "the least harmless row left",
+# because a single B there writes a 76,816-byte film with no question asked.
+# RESET is strictly safer in that seat: B on it OPENS a confirmation and destroys
+# NOTHING, B is inert on that confirmation (B7), and the only key that resets
+# anything is a C the wearer presses after reading a modal that names their
+# badge.  So the most destructive row in the app is also the one that costs the
+# most deliberate presses, and the blind wrap got cheaper rather than dearer.
 #
 # AND IT STILL DOES NOT SCROLL, WHICH WAS WORTH CHECKING RATHER THAN ASSUMING.
 # `card_view._rows` turns the rail and the chevrons on when `total > room`, and
@@ -164,11 +228,17 @@ ANIMATED = (BADGE, SKIN, EFFECT)
 MENU_NAME = "NAME"
 MENU_SKIN = "SKIN"
 MENU_MARKS = "STICKERS"
-MENU_CARDS = "BADGES"
 MENU_EFFECT = "EFFECT"
 MENU_HOME = "SAVE TO HOME"
-MENU_ITEMS = (MENU_NAME, MENU_SKIN, MENU_MARKS, MENU_CARDS, MENU_EFFECT,
-              MENU_HOME)
+# "RESET BADGE" AND NOT "RESET NAME BADGE", which is the owner's own phrase.
+# Inside this app every noun is already the badge, so the second word would be
+# carried by every other row too and none of them says it; the register the other
+# five rows set is NAME / SKIN / STICKERS / EFFECT / SAVE TO HOME.  The full
+# phrase survives where a wearer might actually need the disambiguation: the
+# confirmation modal, which spells out what goes and what stays.
+MENU_RESET = "RESET BADGE"
+MENU_ITEMS = (MENU_NAME, MENU_SKIN, MENU_MARKS, MENU_EFFECT, MENU_HOME,
+              MENU_RESET)
 
 
 # ---------------------------------------------------------------------------
@@ -191,11 +261,20 @@ DROP = "DROP"
 LEFT = "LEFT"
 RIGHT = "RIGHT"
 PLACE_LABEL = "PLACE"
-WEAR = "WEAR"
-NEW = "NEW"
 KEEP = "KEEP"
 SAVE = "SAVE"
 CLEAR = "CLEAR"
+# THE ONE KEY IN THIS APP THAT RESETS ANYTHING.  29 px against `ui.LABEL_MAX_PX`
+# of 34, measured through the real `font.sins` advance table by
+# `test_card_labels` like every string in this block -- not counted in
+# characters, which is the mistake that put `SELECT` and `DELETE` on a panel with
+# their last glyph silently dropped.
+#
+# `DEL` was what this slot said while the confirmation was about deleting one of
+# five badges; a card that is being put back to factory is not being deleted, and
+# a bar that said DEL over a modal headed RESET BADGE would be two words for one
+# press.  `WEAR` and `NEW` left with the CARDS screen on 2026-08-24.
+RESET = "RESET"
 
 # A screen that draws no bar at all.  Two of them, and for two different
 # reasons: `BADGE` is the resting poster and D1 says a resting badge draws zero
@@ -205,8 +284,14 @@ CLEAR = "CLEAR"
 NO_BAR = ("", "", "")
 
 
-def softkeys(view, index=0, count=0, installed=False):
+def softkeys(view, index=0, installed=False):
     """The three labels for a screen, as `(A, B, C)`.  Never raises.
+
+    `count` LEFT THIS SIGNATURE WITH THE CARDS SCREEN (2026-08-24).  It said how
+    many badges were saved, and the only branch that read it chose WEAR against
+    NEW on a row of that list.  A parameter nothing reads is a parameter every
+    caller has to guess a value for, and `labels()` below would have gone on
+    sweeping three values of it forever to measure strings that cannot be drawn.
 
     ONE FUNCTION OWNS THE BAR, and it is pure, so the browser lane can assert
     what a screen offers without rendering it and the label ruler can measure
@@ -225,6 +310,12 @@ def softkeys(view, index=0, count=0, installed=False):
         # actually do beats a key labelled for the screen it lives on.
         if index == MENU_ITEMS.index(MENU_HOME):
             return (BACK, SAVE, CLEAR if installed else "")
+        # AND THE RESET ROW IS NOT A BUTTON, WHICH IS THE WHOLE GATE.  Its B says
+        # OPEN because a screen is what it opens; nothing on this menu can reset
+        # anything.  A row that said RESET here would be one press from a wiped
+        # badge and would be reading its label off the same B every other row
+        # uses to browse -- which is precisely the "wake and fire" shape I5
+        # forbids, one screen further in.
         return (BACK, OPEN, "")
     if view == SKIN:
         return (BACK, APPLY, JUMP)
@@ -256,17 +347,12 @@ def softkeys(view, index=0, count=0, installed=False):
         # keep a cancel on A, or build the button rules' 9.2 odometer -- are
         # still open and still not free.
         return (LEFT, DROP, RIGHT)
-    if view == CARDS:
-        # Row `count` is the NEW row; the rows before it are saved badges.
-        if index >= count:
-            return (BACK, NEW, "")
-        return (BACK, WEAR, DEL)
     if view == CONFIRM:
         # B IS INERT ON A CONFIRMATION.  B7, and `identity` learned it the hard
         # way: B is the primary action on every other screen in the app, so a
         # thumb that has been pressing B all afternoon must not be able to
         # destroy a badge with the press it has already started.
-        return (KEEP, "", DEL)
+        return (KEEP, "", RESET)
     return NO_BAR
 
 
@@ -282,11 +368,10 @@ def labels():
     out = []
     for view in VIEWS:
         for index in range(len(MENU_ITEMS) + 1):
-            for count in (0, 1, 5):
-                for installed in (False, True):
-                    for label in softkeys(view, index, count, installed):
-                        if label and label not in out:
-                            out.append(label)
+            for installed in (False, True):
+                for label in softkeys(view, index, installed):
+                    if label and label not in out:
+                        out.append(label)
     return tuple(out)
 
 
@@ -324,8 +409,13 @@ def new_state():
         "home": {"on": False, "recipe": 0},
         # THE PANEL, NOT A BADGE, which is why it sits at the root beside
         # `active` rather than inside `new_badge()`: brightness is a property of
-        # the screen, so switching between five saved badges must not change how
-        # bright the badge is.  `poster/badge/poster/badge_state.DEVICE_KEYS` is
+        # the screen, so nothing the wearer does to their CARD may move it.
+        # That used to be argued from switching between five saved badges; the
+        # slots are gone and the rule got a sharper case instead -- RESET BADGE
+        # replaces the whole `badges` list and must leave the panel exactly where
+        # `settings` put it.  `reset_card` below is where that is enforced, and
+        # it is enforced by not naming this key.
+        # `poster/badge/poster/badge_state.DEVICE_KEYS` is
         # the reader that agrees with this, and it had to be TAUGHT to -- before
         # 2026-08-23 it read `brightness` out of the selected badge, so the
         # format described a per-badge value nothing could write.
@@ -380,6 +470,59 @@ def active(state):
         if key not in badge:
             return repair_badge(badge)
     return badge
+
+
+def reset_card(state):
+    """Put the WEARER'S CARD back to a factory one, in place.  Total.
+
+    THE OWNER'S RULING OF 2026-08-24 IS THE SPEC, and its second half matters as
+    much as its first: *"which takes the home screen background, poster, and name
+    badge back to the original system defaults without a name or anything ...
+    network and game scores and everything else will persist. The only way to
+    wipe a badge [fully] will be someone at the event plugs it into a supabase
+    machine and wipes it for you."*  So this is a CARD reset and never a badge
+    wipe, and the boundary is not a promise in a comment -- it is this function's
+    body.  Three keys are named here and nothing else in the store is reachable
+    from it:
+
+        badges   -> ONE factory card.  Every legacy slot goes, and this is the
+                    only place in the app that deletes one (see `CARRY_BADGES`:
+                    ignored on load, deleted on reset, and never in between).
+        active   -> 0, because there is exactly one entry to point at.
+        home.on  -> False, with `home.recipe` back to 0.  The FILM ITSELF is a
+        home.recipe  file on disk and this module opens none, so the caller
+                    deletes it through the injected `unbake`; clearing the flag
+                    without the file would leave `card_bake.reconcile` turning it
+                    straight back on at the next boot, which is the disk-is-the-
+                    truth rule working exactly as designed and against us.
+
+    WHAT IT CANNOT TOUCH, said as code rather than as a list.  `brightness` is a
+    sibling key it never names, so the level `settings` wrote survives.  The
+    carried unknown keys `repair` preserved at the root survive for the same
+    reason.  And every OTHER file under `/state` -- the badgelink pairing state,
+    the network preference, the schedule, the five games' scores -- is not
+    reachable from this app at all: `card_app` is pure (`test_card_purity` walks
+    its AST), and the seam hands it exactly two write capabilities, a writer for
+    `/state/badgecard.json` and an `unbake` for `/state/wallpaper.pgw`.  The
+    scope boundary is a property of the wiring, which is why it is checkable.
+
+    THE POSTER NEEDS NO LINE HERE, and that was verified rather than assumed.
+    `poster` persists nothing: it reads `/state/badgecard.json`, selects
+    `badges[active]` through its own total `badge_state.select`, and draws.  So a
+    card put back to factory IS a factory poster, on the next open, with no
+    second store to keep in step.
+    """
+    state["badges"] = [new_badge()]
+    state["active"] = 0
+    home = state.get("home")
+    if not isinstance(home, dict):
+        # A hand-edited or half-repaired store still has to come out of this
+        # function resettable.  `_home` is the same shape `repair` installs.
+        home = _home(None)
+        state["home"] = home
+    home["on"] = False
+    home["recipe"] = 0
+    return state
 
 
 # ---------------------------------------------------------------------------
@@ -571,10 +714,18 @@ def repair(value):
     # close.  A non-number is the factory level, not an end of the ladder.
     state["brightness"] = backlight.clamp(value.get("brightness"))
 
+    # EVERY CARRIED ENTRY IS REPAIRED, NOT JUST THE WORN ONE, and that is not
+    # wasted work on a feature that no longer exists.  `invariants` is asserted
+    # over whole states by the fuzz suite, `card_store.save` has to be able to
+    # serialise every byte it is handed, and `badgelink` writes this file with a
+    # rule of "change one key, carry the rest verbatim" -- so a legacy slot that
+    # repair skipped would be an unvalidated dict riding inside a state three
+    # other apps read.  Repairing it costs a load nobody watches and keeps the
+    # file's ONE promise: anything in it is drawable.
     raw = value.get("badges")
     badges = []
     if isinstance(raw, (list, tuple)):
-        for item in raw[:MAX_BADGES]:
+        for item in raw[:CARRY_BADGES]:
             badges.append(repair_badge(item))
     if not badges:
         badges = [new_badge()]
@@ -611,8 +762,8 @@ def invariants(state):
         return bad
     if not badges:
         bad.append("badges is empty")
-    if len(badges) > MAX_BADGES:
-        bad.append("more than %d badges" % MAX_BADGES)
+    if len(badges) > CARRY_BADGES:
+        bad.append("more than %d carried badges" % CARRY_BADGES)
     index = state.get("active")
     if not isinstance(index, int) or isinstance(index, bool):
         bad.append("active is not an int")
@@ -706,10 +857,14 @@ def recipe_parts(state):
     forgetting to stamp it is a change to THIS function and shows up in its
     test.
 
-    DELIBERATELY ABSENT: `active`, and the other badges entirely.  The film is a
-    picture of the badge being worn; which slot it came from cannot move a
-    pixel, and stamping it would re-bake the home screen every time the wearer
-    switched to an identical badge.  A field that is switched off contributes a
+    DELIBERATELY ABSENT: `active`, and any other entry in `badges`.  The film is
+    a picture of the badge being WORN, so a position in a list cannot move a
+    pixel.  That argument was written against the five-slot product, where it
+    also stopped a re-bake every time the wearer switched to an identical badge;
+    the slots are gone (2026-08-24) and the rule outlived them unchanged, because
+    a store that still CARRIES legacy entries must not stamp them into the recipe
+    -- a badge whose ignored slot 3 differed from another's would otherwise
+    re-bake an identical wallpaper.  A field that is switched off contributes a
     constant rather than nothing, so turning it back on cannot collide with a
     state that never had it.
 

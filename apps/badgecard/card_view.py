@@ -463,8 +463,6 @@ class CardView:
             self.pick_screen(plan)
         elif view == model.PLACE:
             self.place_screen(plan)
-        elif view == model.CARDS:
-            self.cards_screen(plan)
         elif view == model.CONFIRM:
             self.confirm_screen(plan)
         elif view == model.BAKING:
@@ -529,11 +527,14 @@ class CardView:
     # -- the menu ------------------------------------------------------------
 
     def menu_screen(self, plan):
-        state = plan["state"]
         badge = plan["badge"]
         self._behind(plan)
-        slot = "%d/%d" % (state["active"] + 1, len(state["badges"]))
-        top = self._header(badge["name"] or "UNNAMED BADGE", slot)
+        # NO SLOT COUNTER IN THE HEADER ANY MORE.  It read `n/m` -- which of the
+        # five saved badges you were editing -- and with one card it could only
+        # ever say `1/1`, which is chrome that answers a question nobody can ask.
+        # The wearer's name is the whole header now, and it is the one thing on
+        # this screen that says WHICH badge these six rows are about.
+        top = self._header(badge["name"] or "UNNAMED BADGE")
         # THE ROW SAYS WHAT PRESSING IT WILL DO, or that there is nothing to do.
         # `OUT OF DATE` used to live here and the owner removed it by name:
         # *"they don't need to see outdated"*.  A wearer who has edited their
@@ -547,9 +548,16 @@ class CardView:
             badge["name"] or "-",
             catalogue.label(badge["background"]),
             "%d" % count if count else "-",
-            "%d OF %d" % (len(state["badges"]), model.MAX_BADGES),
             effects.label(badge["effect"]),
             "ON" if home_ready else model.SAVE,
+            # RESET HAS NO VALUE COLUMN, AND THE BLANK IS THE HONEST ANSWER.
+            # Every other value here reports state -- what the name IS, which
+            # skin, how many stickers, whether the film is on.  A reset has no
+            # state to report: it is a door, and `-` would be claiming it holds
+            # nothing when what it holds is a question.  `_rows` skips the value
+            # column entirely for an empty string, so the label gets the full
+            # width and the row reads as the one entry that is not a setting.
+            "",
         )
         self._rows(plan, top, model.MENU_ITEMS, values,
                    button=-1 if home_ready
@@ -802,54 +810,58 @@ class CardView:
                 screen.rectangle(x + width - self.scale, run[0], self.scale,
                                  run[1])
 
-    # -- the saved badges ----------------------------------------------------
-
-    def cards_screen(self, plan):
-        state = plan["state"]
-        self._behind(plan)
-        top = self._header("YOUR BADGES", "%d/%d" % (len(state["badges"]),
-                                                     model.MAX_BADGES))
-        labels = []
-        values = []
-        for position in range(len(state["badges"])):
-            entry = state["badges"][position]
-            labels.append(entry["name"] or "UNNAMED")
-            if position == state["active"]:
-                values.append("WEARING")
-            else:
-                values.append(catalogue.label(entry["background"]))
-        if len(state["badges"]) < model.MAX_BADGES:
-            labels.append("+  NEW BADGE")
-            values.append("")
-        self._rows(plan, top, labels, values)
+    # -- reset the badge ------------------------------------------------------
+    #
+    # `cards_screen` WAS HERE and went with the five save slots on 2026-08-24.
+    # The record is `badgecard/README.md` §"One card, and a list that outlived
+    # the feature"; what a reader of THIS file needs is that `CONFIRM` below is
+    # the only screen left that draws a red rule, and it is now about the one
+    # card rather than about one of a list.
 
     def confirm_screen(self, plan):
         """One question, centred, with the consequence spelled out.
 
-        THE NAME OF THE THING BEING DELETED IS IN THE QUESTION.  "Are you sure?"
-        is a dialog a thumb dismisses; "DELETE SAM MEECH?" is a sentence it
-        reads.  B is inert here and the bar says so by leaving its slot empty
-        rather than filling it with a word.
+        THE NAME OF THE BADGE IS IN THE QUESTION.  "Are you sure?" is a dialog a
+        thumb dismisses; "RESET BADGE / SAM MEECH" is a sentence it reads.  B is
+        inert here and the bar says so by leaving its slot empty rather than
+        filling it with a word.
+
+        AND THE LAST LINE SAYS WHAT SURVIVES, which is the half a confirmation
+        usually leaves out.  The owner's ruling drew the boundary in the same
+        breath as the feature -- *"network and game scores and everything else
+        will persist"* -- and a wearer standing at a conference deciding whether
+        to press C is exactly the person who needs to know their high scores and
+        their wifi are not part of this.  Naming what is KEPT is also what stops
+        the staff wipe (`docs/staff-badge-wipe.md`) and this press being confused
+        for each other: one is a card, the other is the badge.
         """
-        state = plan["state"]
         chrome = self.chrome
         self._behind(plan)
-        doomed = plan["doomed"]
-        badges = state["badges"]
-        name = "UNNAMED"
-        if 0 <= doomed < len(badges):
-            name = badges[doomed]["name"] or "UNNAMED"
-        last = len(badges) == 1
+        name = plan["badge"]["name"] or "UNNAMED"
+        # FIVE LINES AND FIVE PENS, ZIPPED BY INDEX.  There was a sixth entry
+        # here for a year and it was the empty string, meant as a blank line --
+        # but the loop below `continue`s on a falsy line without advancing `row`,
+        # so it drew no gap and cost no height.  A spacer that has never once
+        # spaced anything is a line of code that lies about the layout, and the
+        # pens tuple it was silently keeping in step with is one index away from
+        # an IndexError on the frame somebody adds a real line.
+        #
+        # THIRTY CHARACTERS IS THE WIDTH THIS SCREEN HAS ALREADY PROVEN, and it
+        # is a precedent rather than a calculation: `_bounded` draws through the
+        # chrome's VECTOR face at HIRES, which no host ruler in this repo can
+        # measure -- `card_harness.sins_width` is the ROM face's table.  What is
+        # known is that `THIS IS YOUR ONLY BADGE, SO IT` (30) drew unellipsed on
+        # this screen through this call, in the 2026-08-23 device capture.  The
+        # longest line below is 27.  `test_card_reset.ConfirmDrawTests` pins the
+        # bound and the modal's height against `chrome.content_h`.
         lines = (
-            "DELETE" if not last else "RESET",
+            "RESET BADGE",
             name,
-            "" if not last else "",
-            "IT CANNOT BE BROUGHT BACK" if not last
-            else "THIS IS YOUR ONLY BADGE, SO IT",
-            "" if not last else "GOES BACK TO A BLANK ONE",
+            "BACK TO A BLANK BADGE,",
+            "AND THE HOME SCREEN WITH IT",
+            "SCORES AND WIFI ARE KEPT",
         )
-        height = self.row_h * len([line for line in lines if line]) \
-            + 4 * self.scale
+        height = self.row_h * len(lines) + 4 * self.scale
         y = (chrome.content_h - height) // 2
         self.screen.pen = self.plate
         self.screen.rectangle(0, y, chrome.width, height)
@@ -859,10 +871,8 @@ class CardView:
                               self.scale)
         self.screen.font = chrome.font
         row = y + 2 * self.scale
-        pens = (self.red, self.white, None, self.grey, self.grey)
+        pens = (self.red, self.white, self.grey, self.grey, self.grey)
         for index in range(len(lines)):
-            if not lines[index]:
-                continue
             self._bounded(lines[index], self.text_x, row,
                           chrome.width - 2 * self.text_x, pens[index],
                           align=(self.image.CENTER, self.image.MIDDLE))

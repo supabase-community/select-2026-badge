@@ -1008,11 +1008,26 @@ def verify_mount(mount, manifest_path=None):
 
 
 # What is legitimately in this package and not in `MANIFEST.json`: the build's own
-# output tree, and the bytecode CPython writes beside the shipped test suite the
-# moment anybody runs it. Both are in the emitted `.gitignore` for the same
-# reason. Skipped here rather than reported, because "you ran the tests we asked
-# you to run" is not a finding.
-UNMANIFESTED_DIRS = ("build", "__pycache__")
+# output tree, the bytecode CPython writes beside the shipped test suite the
+# moment anybody runs it, and `.git/`. The first two are in the emitted
+# `.gitignore` for the same reason. Skipped here rather than reported, because
+# "you ran the tests we asked you to run" is not a finding.
+#
+# WHY `.git` IS ON THIS LIST, and it is not optional. This package is DISTRIBUTED
+# AS A GIT REPOSITORY: `scripts/publish-dist.py` mirrors it into a standalone
+# repo, every publish is a commit stamped `Published-From:`, and `CONTRIBUTING.md`
+# invites pull requests -- so a recipient's first act is `git clone`, and the
+# README's headline verification is this file's `--verify-manifest`. Without this
+# entry the walk below descends `.git/` and reports every object under it as a
+# file the manifest does not name (201 of them on a pristine clone, measured
+# 2026-08-24), so the one command meant to prove the clone pristine HARD-FAILS on
+# it. `.git` was absent until 2026-08-24, and the README's "a fresh git clone
+# verifies clean" claim was false against the shipped tree for exactly that
+# reason. git cannot ignore its own metadata directory, so `.gitignore` cannot
+# carry it; the skip has to live here. `--verify-mount` walks a badge volume
+# through `tree_index`, which never consults this tuple and where no `.git` exists
+# anyway, so this entry is inert there.
+UNMANIFESTED_DIRS = ("build", "__pycache__", ".git")
 
 
 def verify_manifest(root=None):

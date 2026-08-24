@@ -8,13 +8,17 @@ sequence that survives power loss on LittleFS: the rename is the atom, so a kill
 at any earlier point leaves the previous good file untouched.
 
 THIS IS `identity_store` WITH THE KEEPSAKE TAKEN OUT, and the subtraction is
-deliberate rather than lazy.  `identity` has one badge, so ERASE is
-unrecoverable and needs a write-once `.prev` slot to undo from.  This app has
-five, deleting one is confirmed on its own screen (B7), and the confirmation is
-the protection.  A keepsake no screen can reach would be a fourth file, a fourth
-failure mode and a fourth thing to reason about, in exchange for an undo nobody
-can perform.  What is kept is the part that has actually caught real corruption:
-the milestone `.bak` and the `.bad` diagnostic copy.
+deliberate rather than lazy.  `identity` has one badge, so ERASE is unrecoverable
+and needs a write-once `.prev` slot to undo from.  This app's argument used to be
+"it has five"; since 2026-08-24 it has ONE TOO, and the subtraction survived the
+loss of its first reason because the second one was always the load-bearing half:
+the destructive press is confirmed on its own screen (B7), with B inert, and THE
+CONFIRMATION IS THE PROTECTION.  A keepsake no screen can reach would be a fourth
+file, a fourth failure mode and a fourth thing to reason about, in exchange for
+an undo nobody can perform -- and it would now be actively wrong, because a
+wearer who resets their card is asking for it to be gone.  What is kept is the
+part that has actually caught real corruption: the milestone `.bak` and the
+`.bad` diagnostic copy.
 
 ONE MODULE OWNS THE PATH, and every entry point resolves `path=None` HERE at
 call time rather than as a default argument -- a default binds at DEFINITION

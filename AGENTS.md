@@ -44,7 +44,7 @@ python3 -m unittest discover -s apps/poster/tests -v
 
 It passes from this layout; a few cases skip with a printed reason because they pin against trees this export deliberately omits. The suite is the worked example of how everything else is verified; the full suites live in the canonical repository.
 
-**Running it writes `__pycache__/` directories, and they are not in `MANIFEST.json`.** That is CPython caching bytecode beside the source, not drift: they are in `.gitignore`, `tools/build.py` skips them when it compiles, and `--verify-manifest` skips them when it hashes. `git clean -xfd` removes them if you want the tree back to the published file list exactly.
+**Running it writes `__pycache__/` directories, and they are not in `MANIFEST.json`.** That is CPython caching bytecode beside the source, not drift: they are in `.gitignore`, `tools/build.py` skips them when it compiles, and `--verify-manifest` skips them when it hashes. `git clean -xfd` removes them if you want the tree back to the published file list exactly. `--verify-manifest` skips `.git/` for the same reason: it is this repository's own metadata, never a manifest row, so a fresh clone of this repository verifies clean.
 
 ## The guarded imports, in full
 
