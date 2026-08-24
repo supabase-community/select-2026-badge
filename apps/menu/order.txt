@@ -1,0 +1,11 @@
+badgecard
+schedule
+glyph
+snake
+pet
+poster
+pong
+breakout
+flappy
+pacman
+settings

@@ -1,0 +1,65 @@
+{
+  "_doc": "The patches this project applies to the pinned Badgeware launcher. The four files in `stock_files` are Pimoroni's own and are not in this export. Verify the hashes FIRST, then apply each patch's `anchor` -> `replacement` exactly once. `tools/build.py --stock-menu <dir>` does both.",
+  "patches": [
+    {
+      "anchor": "\n    if badge.pressed(BUTTON_B):\n        return apps.active.path\n",
+      "file": "__init__.py",
+      "name": "COMMIT",
+      "replacement": "\n    target = ui.commit(apps.active.path)\n    if target is not None:\n        return target\n",
+      "why": "Route the B-button commit through our `ui.commit`, which is what makes the 1.5-second hold gesture possible at all. It cannot live in our own `ui.py`: the pinned base returns the active app's path directly."
+    },
+    {
+      "anchor": "\nimport ui\n\nfrom app import Apps\n\ntitle_font = font.ark\nlabel_font = font.sins\n\n\n# find installed apps and create apps\napps = Apps(\"/system/apps\")\n",
+      "file": "__init__.py",
+      "name": "BOOT",
+      "replacement": "\nimport ui\nui.load_step(\"-- theme\")\n\nfrom app import Apps\nui.load_step(\"-- app module\")\n\ntitle_font = font.ark\nlabel_font = font.sins\nui.load_step(\"-- fonts\")\n\n\n# find installed apps and create apps\napps = Apps(\"/system/apps\")\nui.load_step(\"-- apps\")\n",
+      "why": "Bracket the launcher's own imports with the shared loading screen's stages, so the home screen arrives the way every app does. The stages have to be interleaved with the base's import statements, which is why this is a substitution and not a call."
+    },
+    {
+      "anchor": "\n# \"on_exit\" will be called if callable, else returned verbatim by `launch`\non_exit = run(update).result\n",
+      "file": "__init__.py",
+      "name": "END",
+      "replacement": "\nui.load_end()\n\n# \"on_exit\" will be called if callable, else returned verbatim by `launch`\non_exit = run(update).result\n",
+      "why": "Tear the loading screen down. Applied with BOOT and never apart: the stages without the teardown leave the loading screen holding the panel's last frame under a running launcher."
+    },
+    {
+      "anchor": "\n                    App(self.apps, name, f\"{root}/{path}\")\n",
+      "file": "app.py",
+      "name": "ICON",
+      "replacement": "\n                    App(self.apps, name, f\"{root}/{path}\")\n                    ui.load_tick(name)\n",
+      "why": "Tick the loading screen once per app inside the base's own icon scan. That scan is the slow part of a cold home screen, and the only place a frame fits inside it is its own loop."
+    },
+    {
+      "anchor": "\n        for path in sorted(os.listdir(root)):\n",
+      "file": "app.py",
+      "name": "ORDER",
+      "replacement": "\n        for path in ui.launcher_order(os.listdir(root)):\n",
+      "why": "Route the scan's order through `ui.launcher_order` so the grid follows the lineup instead of the directory listing. The one line that cannot live in our `ui.py` is the loop header itself; every line of policy is in ours."
+    }
+  ],
+  "pinned_sha256": {
+    "__init__.py": "cc7fa620daec9f1a3afa32eb1e6bec98577287f5722f51f342d1563e5cffabb2",
+    "app.py": "c2ac9d0b5e96b0374b12ae695c84998f3f17d5b19bc7fb8d9306c8e89129ed2c",
+    "default_icon.png": "1ab762ee417528bc80075a0c9c71e35f7e1cee602521950c287bcc749cbf664e",
+    "ui.py": "6f868c44ee1ad8bd7a7a24d90a200d572d4498516f7e5b7105673dbf68119049"
+  },
+  "project_files": [
+    "ui.py",
+    "first_wake.py",
+    "wallpaper.py",
+    "loading.py",
+    "loading_sql.py",
+    "backlight.py",
+    "idle.py"
+  ],
+  "replaced_stock_files": [
+    "ui.py"
+  ],
+  "stock_files": [
+    "__init__.py",
+    "app.py",
+    "default_icon.png",
+    "ui.py"
+  ],
+  "target_firmware": "v3.0.2"
+}

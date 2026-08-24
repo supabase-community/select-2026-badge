@@ -1,0 +1,79 @@
+{
+  "_doc": "THE APP LINEUP FOR THE ~800-UNIT SELECT BUILD, and the file `tools/build.py` reads. `apps` is the launcher's grid order and `launcher` is the twelfth directory under `apps/`; the build refuses any directory this file does not name. Extracted by `scripts/export-source.py` from the repository's own `apps-roster.json`, which is the single source both exporters read -- the decision narrative behind each entry stays in the repository, and `excluded` here carries one compacted sentence per entry instead.",
+  "apps": [
+    "badgecard",
+    "schedule",
+    "glyph",
+    "snake",
+    "pet",
+    "poster",
+    "pong",
+    "breakout",
+    "flappy",
+    "pacman",
+    "settings"
+  ],
+  "asset_profiles": {
+    "note": "Per-app payload pruning, and it governs `.gpa` deck files ONLY -- every module, icon, LUT and mask bank ships regardless, so nothing an app imports can go missing. A profile that kept zero decks would reset the badge at launch, which is why the exporter's `deck-assets-present` gate refuses one.",
+    "profiles": {
+      "glyph": [
+        "full",
+        "lean",
+        "minimal",
+        "classic-only"
+      ]
+    },
+    "selected": {
+      "glyph": "full"
+    }
+  },
+  "descriptions": {
+    "badgecard": "The wearable name badge and its editor: name, handle, marks and theme, edited on the badge with the QWERTY keyboard and saved to /state.",
+    "breakout": "VACUUM.SQL, a brick breaker about reclaiming a bloated table.",
+    "flappy": "POOLER.SQL, a tap-to-fly game about getting a query through the connection pool.",
+    "glyph": "An animated glyph viewer: 18 recorded techniques at two grid densities, A and C to step, B for the rear case lights.",
+    "menu": "The launcher. Boots the badge, draws the app grid, dims and opens the poster when idle, and plays the first-wake ceremony on a cold start.",
+    "pacman": "CURSOR.SQL, a maze game about a cursor doing a table scan.",
+    "pet": "A database pet that lives in a save file: it gets hungry, it gets bored, and it remembers how you treated it across reboots.",
+    "pong": "REPLICA.SQL, a paddle game about keeping a replica in sync. Nine speeds, opening on level 5.",
+    "poster": "The badge, worn. Full-screen artwork, marks and name, and the resting state the launcher returns to after 30 seconds of nothing.",
+    "schedule": "The conference agenda, fully offline. Day tabs, session detail, and an honest clock: it says when it cannot trust the time instead of guessing.",
+    "settings": "The utility tile: backlight, sleep, and the pairing and network status screens. With BadgeLink off it shows Not ready and everything else still works.",
+    "snake": "Snake, drawn at 160x120 and pixel-doubled, which is the look the games all landed on. A and C steer relative to travel, UP and DOWN are absolute, and the walls wrap."
+  },
+  "excluded": {
+    "badge_dial": "Name Badge experiment board, archived 2026-08-18.",
+    "badge_grid": "Name Badge experiment board, archived 2026-08-18. The badge_* family were experiments FOR badgecard.",
+    "badge_hires": "Name Badge experiment board, archived 2026-08-18.",
+    "badge_line": "Name Badge experiment board, archived 2026-08-18.",
+    "badgelink": "Not a tile. BadgeLink's badge modules ship as bytecode in /system/lib (OWNER-DECISIONS #1) and are consumed by the settings tile; the badgelink app directory is its dev surface.",
+    "benchmark_app": "Dev instrument. Also the one app that cannot be pure bytecode (@micropython.native in runner.py), so shipping it would put .py beside .mpy on a production badge.",
+    "extend_a_squirrel": "RETIRED AND DELETED, 2026-08-21, by owner ruling: [quotation removed]. Pimoroni's own Snake, admitted 2026-08-20 as an unmodernised comparison specimen so the owner could judge their sprite-per-segment body against our merged tube.",
+    "glyph2x": "RETIRED AS A TILE, 2026-08-21, by consolidation rather than by ruling: `glyph` is now ONE viewer carrying BOTH recorded decks, so there is no second app to ship. The 32x12 assets moved to `glyph/badge/glyph/assets2x/` and the entry point was deleted; `glyph2x/` keeps its host builders, its receipts and its asset/renderer tests, so the deck is still regenerable and still covered.",
+    "glyph2x_lab": "Dev lab: the HIRES twin of glyph_lab.",
+    "glyph_1x_hi": "DEV COMPARISON TILE, 2026-08-22, one of four: `glyph` at 16x6/HIRES, which is today's shipping default in isolation.",
+    "glyph_1x_lo": "DEV COMPARISON TILE, 2026-08-22, one of four: `glyph` at 16x6/LORES, the pre-consolidation shipping look. The owner asked for four ISOLATED tiles so the density question can be judged on glass without the geometry changing under his thumb mid-A/B.",
+    "glyph_2x_hi": "DEV COMPARISON TILE, 2026-08-22, one of four: `glyph` at 32x12/HIRES, the only configuration in the app where HIRES buys real detail, and the case the owner has never fairly seen -- his first A/B ran against a broken frame (wrong-geometry tiles, fixed 2026-08-21) and the flip that replaced it crashed on memory (fixed 2026-08-22).",
+    "glyph_2x_lo": "DEV COMPARISON TILE, 2026-08-22, one of four: `glyph` at 32x12/LORES, which is the retired `glyph2x` app's exact mode and has had no tile since the 2026-08-21 consolidation. It is also the ONLY configuration anywhere that reaches the natively authored 5x10 mask bank (`assets2x/glyph-masks-2x.pfb`), which the density-flip report calls dead weight on a HIRES-only payload -- here it is live.",
+    "glyph_lab": "Dev lab: perceptual tunables, option-surfing surface.",
+    "glyph_review": "Dev lab: a review harness for the glyph decks, not a product tile.",
+    "home_latency": "Playground-only measurement app; has no build_mpy tree.",
+    "identity": "ARCHIVED 2026-08-18 (AGENTS.md). badgecard vendors the same renderer.",
+    "kbgrid": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING, having already been RULED OUT of `production` before that. Sam: [quotation removed].",
+    "kbqwerty": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING \u2014 and this is the entry that CLOSES the keyboard question rather than deferring it. Sam: [quotation removed].",
+    "profile": "ARCHIVED: superseded by badgecard. Its runtimePath is /system/apps/badge, which would collide with nothing today but is the old curated-launcher `badge` tile.",
+    "profile_stress": "Playground-only stress harness; has no build_mpy tree.",
+    "snake2x": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING -- the one entry here that was decided by a person playing the badge rather than by consolidation or a technique verdict. Sam, after the LORES visual passes landed on all five games: \"squirrel needs to go and 2x snake needs to go ...",
+    "supervisor": "NOT the shipping boot architecture. [repository record] \u00a7Product-state boundary: the product keeps the factory reset-per-app control flow, with no background network supervisor active."
+  },
+  "icon_default_ok": [
+    "poster"
+  ],
+  "launcher": "menu",
+  "panel": "Pimoroni Tufty 2350",
+  "system_lib": {
+    "note": "Whether `/system/lib` ships at all. It does not: the network runtime is dark in this build. `main.py` keeps its guarded import either way, so the badge boots offline and prints `BADGELINK_NETWORK boot=offline error=ImportError`; `settings` is the only app that guards a `/system/lib` import and it degrades to its \"Not ready\" view.",
+    "ship": false
+  },
+  "target_firmware": "v3.0.2"
+}

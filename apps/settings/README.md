@@ -1,0 +1,24 @@
+# settings -- pairing, the network switch, optional updates, and the badge's only route to off
+
+A short menu of rows, each opening one screen. Pair shows a QR code and a match code with
+a live expiry countdown; Network reports connected, paired, revoked or unreachable and
+lets whoever is holding the badge turn the radio off without unpairing it; Sleep is the one
+manual route to a dark badge. It owns no socket: it reads the boot pump's live state and
+asks that controller to change the durable preference.
+
+**Controls.** Menu: UP/DOWN move by one and wrap, B opens the selected row, A is inert
+because there is nowhere above the menu. On any row screen A is back and commits nothing.
+On the Pair screen B and C carry the pairing view's own labels, and an unlabelled key is
+inert rather than guessed. Network: B toggles BadgeLink on and off. Updates: B is yes and
+C is no -- two answers rather than a toggle, so a double press cannot walk the preference.
+On the sleep note every key is inert for 1000 ms and there is no cancel. HOME exits.
+
+**Non-obvious.** HIRES 320x240. Three imports (`pairstate`, `pairview`, `store`) are
+guarded, and it is not a browser accommodation: they live in `/system/lib`, installed by a
+different step than this tile, and a bare import on a half-installed badge raises inside
+`launch()`, which resets, which re-runs the same import, for ever. **They are not in this
+export**, so this tile shows one honest row saying so. Its durable state is not under
+`/state/` -- pairing lives in `/badgelink_state.json`. `badge.sleep()` is called with no
+argument, and the choice is forced: the no-argument form arms A/B/C/UP/DOWN as wake
+sources, while `sleep(n)` arms the alarm alone and HOME is not a wake source either way,
+so the timed form would be a badge nobody can turn back on.

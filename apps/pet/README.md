@@ -1,0 +1,25 @@
+# pet -- virtual-pet care sim where the creature is your database project
+
+A care loop with decaying stats: feed, play, clean, heal, rest and RLS, across six life
+stages with three adult forms that branch on lifetime care mistakes. Health is a derived
+integrator over data, mood, waste and sickness rather than one linear decay. Neglect ends
+in a grey suspension notice with a restore button meant to be photographed -- nothing is
+permanent, and restoring brings the same creature back at 40%. It ships on a 120x fast
+clock (30 real seconds is one simulated hour) so the whole arc fits one booth visit; one
+press on the egg screen switches that creature to the real three-day clock, fixed for life.
+
+**Controls.** The rule is A retreats, B commits, C advances, with three softkey labels drawn
+on every screen and UP/DOWN changing exactly one integer by one step, never committing and
+never writing. B is deliberately empty and inert on the log and confirm screens, and C is
+where the one destructive verb (erase) lives. On the resting poster screen any press wakes
+to the care screen and that press is consumed. HOME resets to the launcher.
+
+**Non-obvious.** LORES 160x120. Its four-stage loading screen exists because the three
+sprite-sheet decodes are each one indivisible native call, so they are separated to get a
+frame up between them. Persistence is `/state/pet.json` with four sibling slots, not one:
+a torn-write backup, an erase keepsake that nothing else writes and no automatic path reads,
+and two diagnostic copies. Opening the app deliberately does not write unless the save had
+to be repaired or migrated, because the advance function is exactly additive and a
+decayed-but-unwritten visit is reconstructed bit for bit. There is no float in the model at
+all: the RP2350 builds single-precision floats while the host builds double, and a previous
+build lost a day to health reading 40.03 against 40.00.
