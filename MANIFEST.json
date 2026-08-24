@@ -260,11 +260,11 @@
       "sha256": "d8694e8a1a4a95fcfaccc0a8ac47b7488dd298de242e367dbf569336bc2e55a4"
     },
     {
-      "bytes": 24652,
+      "bytes": 27374,
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "eecc6c50ef635652bdb1696bef5053a8cf12387cd106be54ed9f1b227c8d11a3"
+      "sha256": "4e25ad4ddc879ebdd0066a8f23152bd9c5592e87262089945dcfeaf2ac270cea"
     },
     {
       "bytes": 7710,
@@ -1609,7 +1609,7 @@
       "ok": true
     },
     {
-      "detail": "34 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 38 guarded import sites across 18 files, 3 launcher `badge.mode` call site(s), pet debounced, one install procedure, a 6,322,611 B staged /system",
+      "detail": "35 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 38 guarded import sites across 18 files, 3 launcher `badge.mode` call site(s), pet debounced, one install procedure, a 6,322,611 B staged /system",
       "gate": "doc-claims-verified",
       "offenders": [],
       "ok": true
@@ -1684,7 +1684,7 @@
     }
   ],
   "provenance": {
-    "commit": "353e1bfb6fd4b9585680d817d13942098d80617a",
+    "commit": "e7cb3df7af253e618ecafacc5a0c9df7b7143b2e",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1745,7 +1745,7 @@
     "version": "v3.0.2"
   },
   "totals": {
-    "bytes": 9548944,
+    "bytes": 9551666,
     "files": 203,
     "payload": {
       "bytes": 9524292,
@@ -1756,7 +1756,7 @@
       "files": 202
     }
   },
-  "tree_hash": "3cc96f77191c8ab115a871a8c7b3d2b9a7a481473292415901362137863a79df",
+  "tree_hash": "3d9b98a69a8009b2415631db7e7ccbe2c42b3c6088d7d5ffd6271068d94d2322",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",

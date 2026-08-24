@@ -1,6 +1,6 @@
 # Supabase Select 2026 badge software -- source export
 
-This is the software that would ship to the ~800 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `353e1bfb6fd4` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
+This is the software that would ship to the ~800 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `e7cb3df7af25` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
 
 ## Status
 
@@ -9,6 +9,37 @@ This is the software that would ship to the ~800 SELECT badges today, as SOURCE,
 - **Networking is intentionally disabled for launch.** The badge is offline-first and fully functional without it. `NETWORKING.md` is the whole story: what keeps the radio off, why, and what enabling it takes.
 - **The exact fleet UF2 is an open ask.** We build against the public **v3.0.2** release; the exact image the fleet will be flashed with is still an open question (`BUILDING.md` has the pins and the caveat).
 - **A first-article acceptance run is pending.** No unit flashed by the production process has been walked through the acceptance procedure yet; until one has, treat install-level claims as verified on dev hardware only.
+
+## Contents
+
+- [Run it as plain Python (development only)](#run-it-as-plain-python-development-only)
+- [Quick start](#quick-start)
+- [Start here](#start-here)
+- [The lineup](#the-lineup)
+- [The architecture, in ten sentences](#the-architecture-in-ten-sentences)
+- [Building it](#building-it)
+- [How this tree maps onto the badge](#how-this-tree-maps-onto-the-badge)
+- [The shared layer, and why every app has its own copy of it](#the-shared-layer-and-why-every-app-has-its-own-copy-of-it)
+- [What a wearer experiences](#what-a-wearer-experiences)
+- [What is deliberately NOT here](#what-is-deliberately-not-here)
+- [Verifying this export](#verifying-this-export)
+
+## Run it as plain Python (development only)
+
+**WARNING: THIS IS NOT HOW WE DEPLOY.** This section is for poking at the code and developing against it, not the production install. The real deploy is the Quick start below, which compiles to bytecode, and `BUILDING.md` is the full procedure. Precompiling is deliberate, and the reasons are in `BUILDING.md` section 2.5.
+
+Badgeware runs source `.py` directly, so to hack on one app you drag its directory onto the badge and skip the compile entirely. The steps are the official Pimoroni flow, from your own README's "Installing Apps" section:
+
+1. Double-tap the rear RESET button. A disk mounts, named `Tufty2350` (we have also observed `TUFTY`, so read the name off the mount).
+2. Copy ONE app directory out of this tree's `apps/` into the badge's `apps/`.
+3. Safely unmount the disk. The badge reboots and runs the source directly, with no compile step.
+
+This is development-only, and you drag individual apps rather than the whole tree, for four honest reasons:
+
+1. **The whole source tree does not fit the volume at once.** In source form the staged `/system` is 72% of the 12 MB FAT against 50% as bytecode (`BUILDING.md` section 2.5 has the table), and with everything uncompiled it overflows. So you drag only the apps you want to hack on, not the whole lineup.
+2. **The two stock fonts must already be on the badge.** `DynaPuff` and `IndieFlower` ship with the firmware. Dragging an app does not touch them, but do not wholesale-replace `/system/assets/fonts`: that would remove them.
+3. **Each app carries its own copy of the shared layer.** The shared modules an app imports already sit inside that app's own directory in this tree, so dropping a WHOLE app directory is self-contained. A partial drop that leaves those files behind breaks the app.
+4. **A stray `.py` beside its own `.mpy` silently wins.** Do not drop a source app on top of a bytecode install without clearing that app's directory first, or the badge runs stale source with no error anywhere. `BUILDING.md` section 2.5 covers this.
 
 ## Quick start
 
