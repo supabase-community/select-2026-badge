@@ -10,6 +10,13 @@ SCHEMA = 2
 # three visual treatments the published agenda actually uses, recorded in the
 # data rather than re-derived from an empty speaker list — "Doors Open &
 # Breakfast" and "Lunch" both have no speakers and are drawn differently.
+#
+# **THE VERSION DID NOT MOVE FOR `session.description` (2026-08-26).** It is
+# OPTIONAL, exactly like the four optional `event` fields below, and for the same
+# reason: the schema version is matched EXACTLY, so requiring it would reject
+# every agenda file already on a badge and every day-of override built from an
+# older example. Adding an optional field old files may omit is not a break;
+# bumping the version would have been one.
 KIND_TALK = "talk"           # speakers, or TO BE ANNOUNCED when the list is empty
 KIND_LOGISTICS = "logistics"  # normal row, no speaker line at all
 KIND_BREAK = "break"         # muted and hatched, no speaker line
@@ -297,6 +304,32 @@ def normalize(data):
         # A break or a logistics row draws no speaker line, so carrying names on
         # one would silently drop them rather than render them somewhere.
         _require(kind == KIND_TALK or not speakers, "only a talk may list speakers")
+        # THE SESSION'S OPTIONAL LABEL LINE (BADGE_FREEZE_ADDENDUM §C, 2026-08-26).
+        # It is allowed on EVERY kind, unlike `speakers`: the rule above exists
+        # because a break draws no speaker slot at all, while every block has a
+        # place for this line, so "Lunch, sponsored by X" is a thing the data may
+        # say.
+        #
+        # ALWAYS PRESENT, EMPTY WHEN THERE IS NOTHING, so the draw path needs no
+        # `.get()` and no branch a future view can forget -- the same shape
+        # `speakers` uses, and the reason `""` rather than `None` is that the one
+        # question anybody asks it is truthiness.
+        #
+        # WRONG TYPE IS REFUSED, NOT DROPPED, and the asymmetry with badgelink's
+        # `schedule_store` is deliberate: that module sanitizes a WIRE it cannot
+        # re-ask and keeps the row, this one reads an OPERATOR'S FILE whose
+        # rejection has a visible recoverable path (`load_with_override`'s amber
+        # notice, falling back to the known-good baked agenda). Silently dropping
+        # a mistyped field would leave somebody believing a 07:50 edit landed.
+        #
+        # NO LENGTH BOUND HERE, exactly like `title`: the renderer caps it at one
+        # wrapped line and ellipsizes. badgelink truncates at `MAX_DESCRIPTION`
+        # (160) on the wire because it is paying for bytes on an 8192-byte
+        # response; a hand-written override pays for nothing and a second,
+        # different bound would be a drift to reconcile forever.
+        description = raw.get("description", "")
+        _require(isinstance(description, str), "session description must be text")
+        description = sanitize_title(description.strip())
         start = parse_time(raw.get("start"))
         end = parse_time(raw.get("end"))
         _require(start < end, "session end must follow start")
@@ -309,6 +342,7 @@ def normalize(data):
                 "stage_id": stage_id,
                 "kind": kind,
                 "speakers": speakers,
+                "description": description,
                 "start": start,
                 "end": end,
                 "stage_index": stage_by_id[stage_id]["index"],

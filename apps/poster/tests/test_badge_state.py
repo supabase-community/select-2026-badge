@@ -69,7 +69,7 @@ CORPUS = (
     ("full", {
         "schema": 1, "name": "SAM MEECH", "line2": "SUPABASE",
         "face": "badgewaremax", "background": "glyph.radar",
-        "stickers": [{"kind": "github", "x": 0.12, "y": 0.61},
+        "stickers": [{"kind": "python", "x": 0.12, "y": 0.61},
                      {"kind": "heart", "x": 0.9, "y": 0.05}],
         "brightness": 60, "motion": False,
         "home": {"on": True, "motion": "slow", "finish": "vivid",
@@ -83,7 +83,7 @@ CORPUS = (
     ("brightness low", {"brightness": 0}),
     ("brightness high", {"brightness": 9999}),
     ("no stickers key", {"name": "A"}),
-    ("stickers not a list", {"stickers": {"kind": "github"}}),
+    ("stickers not a list", {"stickers": {"kind": "python"}}),
     ("stickers junk items", {"stickers": [None, 3, "github", []]}),
     ("stickers no kind", {"stickers": [{"x": 0.5, "y": 0.5}]}),
     ("stickers over the cap", {"stickers": [{"kind": "star", "x": 0.5,
@@ -128,6 +128,10 @@ class AgreementTests(unittest.TestCase):
 class DefaultTests(unittest.TestCase):
     """Five literals shadow five of identity's. Each is pinned to its source.
 
+    IT WAS SIX AGAIN UNTIL 2026-08-26, when `background` moved to its own case
+    below and its authority moved with it, from the archived editor to the one
+    that ships. See that case for why.
+
     IT WAS SIX UNTIL 2026-08-23. Brightness stopped being a literal here when
     `shared/backlight.py` became the ladder's one home: `DEFAULT_BRIGHTNESS`,
     `BRIGHTNESS_MIN` and `BRIGHTNESS_MAX` were a verbatim duplicate of
@@ -139,13 +143,50 @@ class DefaultTests(unittest.TestCase):
 
     @requires_repository
     def test_every_default_matches_the_schema(self):
+        """Five of the six. `background` moved to the case below, on purpose."""
         fresh = model.new_state()
         self.assertEqual(badge_state.DEFAULT_NAME, fresh["name"])
         self.assertEqual(badge_state.DEFAULT_LINE2, fresh["line2"])
         self.assertEqual(badge_state.DEFAULT_FACE, fresh["face"])
-        self.assertEqual(badge_state.DEFAULT_BACKGROUND, fresh["background"])
         self.assertEqual(badge_state.backlight.DEFAULT, fresh["brightness"])
         self.assertEqual(badge_state.DEFAULT_MOTION, fresh["motion"])
+
+    def test_the_background_default_is_the_shipping_editors(self):
+        """`background` is pinned against `card_model`, NOT the archived schema.
+
+        RETARGETED 2026-08-26, the same move `test_poster_app`'s
+        `test_the_state_path_is_the_badge_editor_s_own` made on 2026-08-17 and
+        for the same reason: `badgecard` is the editor the owner ships, this app
+        is the launcher hold's fast window onto the file badgecard WRITES, and a
+        viewer that defaults differently from its writer draws a different badge
+        for the same state and says nothing about why.
+
+        What forced it: the owner moved the default from `skin.supabase` to
+        `glyph.ring-buffer` on 2026-08-26. `card_model`, `badge_state` and
+        badgelink's contract mirror all moved; `identity_model` did NOT, because
+        `identity` is archived and changing what an archived app draws is not a
+        defect fix. So the archived schema is no longer the right authority for
+        THIS field, and pinning to it would have meant either freezing the
+        product on an archived app's opinion or editing that app to satisfy a
+        test. The other five literals still agree with it and are still pinned
+        there, because nothing has moved them.
+
+        The assertion is still against the writer's own CONSTANT rather than a
+        literal, which is the property that matters.
+        """
+        card = poster_harness.sibling_app("badgecard")
+        if card is None:
+            self.skipTest("badgecard is not in this tree, and its "
+                          "DEFAULT_BACKGROUND is the thing this pins against")
+        import sys
+        if str(card) not in sys.path:
+            sys.path.append(str(card))
+        import card_model
+
+        self.assertEqual(badge_state.DEFAULT_BACKGROUND,
+                         card_model.DEFAULT_BACKGROUND)
+        self.assertEqual(badge_state.DEFAULT_BACKGROUND,
+                         badge_state.defaults()["background"])
 
     @requires_repository
     def test_every_bound_matches_the_schema(self):
@@ -279,7 +320,7 @@ class ReadTests(unittest.TestCase):
         saved = model.repair({"name": "SAM MEECH", "line2": "SUPABASE",
                               "background": "skin.riso", "brightness": 40,
                               "motion": False,
-                              "stickers": [{"kind": "github", "x": 0.2,
+                              "stickers": [{"kind": "python", "x": 0.2,
                                             "y": 0.8}]})
         self.write(json.dumps(saved))
         self.assertEqual(picture(badge_state.read(self.path)), picture(saved))
@@ -343,7 +384,7 @@ class SelectTests(unittest.TestCase):
                  "stickers": []},
                 {"name": "SAM MEECH", "background": "glyph.radar",
                  "face": "badgewaremax",
-                 "stickers": [{"kind": "github", "x": 0.2, "y": 0.8}]}]},
+                 "stickers": [{"kind": "python", "x": 0.2, "y": 0.8}]}]},
                 handle)
         state = badge_state.read(path)
         self.assertEqual("file", badge_state.source)

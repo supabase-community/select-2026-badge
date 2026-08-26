@@ -65,7 +65,11 @@ import effects
 DEFAULT_NAME = ""
 DEFAULT_LINE2 = ""
 DEFAULT_FACE = "badgewaremax"
-DEFAULT_BACKGROUND = "skin.supabase"
+# MOVED WITH `card_model.DEFAULT_BACKGROUND`, 2026-08-26, and it has to move
+# with it: `badgecard/tests/test_card_model.py` reads this file as TEXT and
+# fails when the two literals disagree, because a viewer that defaulted
+# differently from the editor would draw a different badge for the same file.
+DEFAULT_BACKGROUND = "glyph.ring-buffer"
 DEFAULT_MOTION = True
 # NONE, AND NOT `effects.DEFAULT`.  This is the VIEWER's default -- what to draw
 # when the file does not say -- and a file that does not say is a badge nobody

@@ -69,6 +69,32 @@ LINE_HEIGHT = 1.25
 # and is then ellipsized. Every string in the published agenda fits inside it.
 MAX_WRAP_LINES = 2
 
+# THE DESCRIPTION GETS ONE LINE, AND THE DENSITY LEDGER IS WHY. `config.SOFTKEYS
+# = False` ships because the 26 px band cost exactly one agenda block (three
+# visible instead of two), on a screen whose whole job is "what is on and what is
+# next".
+#
+# THE NUMBERS, MEASURED IN THE PINNED PICOVECTOR RUNTIME OVER EVERY REACHABLE
+# SCROLL POSITION OF BOTH STAGES IN BOTH CLOCK STATES
+# (`schedule/host/description_density.mjs`, which exits non-zero if they move):
+# one described line is `_wrapped_height(..., 1)` + `pad // 2`, and the cap is
+# `text_h` rather than a line step, so the row grows by
+# 20 px (`text_h + pad // 2`) and NOT by `line_step + pad//2` -- this comment
+# said the latter until 2026-08-26. That buys zero blocks
+# on most screens, one on the synced-clock landing (3 -> 2), and two at worst
+# (Build Stage, unset clock, 5 -> 3; an offline badge has 25 px more list to lose
+# because it draws no NOW strip). A SECOND wrapped line adds `line_step`, 23 px,
+# taking the row to 43 px, and costs a further block on 10 of the 28 screens
+# without buying one back anywhere -- which is what settles the cap at one.
+#
+# Charged ONLY to rows that carry a description -- the published SELECT 2026
+# agenda carries none, so the shipping build is unchanged.
+#
+# It is a bound on the BLOCK, not on the data: the string is ellipsized here and
+# stored in full, so a day-of override may hold a sentence and a future detail
+# view could show all of it without a resync.
+DESCRIPTION_WRAP_LINES = 1
+
 # ── THE FRESHNESS MARK'S GEOMETRY ────────────────────────────────────────────
 #
 # OWNER RULING, 2026-08-24: the freshness text banners were too loud. What
@@ -419,10 +445,16 @@ class ScheduleView:
             line_height=LINE_HEIGHT,
         )
 
-    def _wrapped_height(self, text, width):
-        """Measured wrapped height, capped at MAX_WRAP_LINES."""
+    def _wrapped_height(self, text, width, lines=MAX_WRAP_LINES):
+        """Measured wrapped height, capped at `lines` wrapped lines.
+
+        The cap is an argument rather than a constant because the description
+        line is allowed ONE (see DESCRIPTION_WRAP_LINES) while titles and speaker
+        credits are allowed two; the default keeps every existing caller
+        unchanged.
+        """
         height = int(self._measure(text, width)[1] + 0.5)
-        ceiling = self.text_h + (MAX_WRAP_LINES - 1) * self.line_step
+        ceiling = self.text_h + (lines - 1) * self.line_step
         return min(height, ceiling)
 
     def build_layout_cache(self, on_session=None):
@@ -445,11 +477,28 @@ class ScheduleView:
                 height = self._wrapped_height(line, self.content_w)
                 speakers.append((line, height))
                 total += height + self.pad // 2
+            # THE LABEL LINE, MEASURED HERE OR NOT AT ALL. An empty description
+            # buys no measurement and no height, which is what makes a row
+            # without one byte-identical to the build that shipped before the
+            # field existed -- the fail-soft this app owes 800 badges.
+            #
+            # Indexed, not `.get()`, like `title`/`kind`/`speakers` beside it:
+            # every view in this app is built from `normalize`, which always
+            # supplies the key. A defensive default here would only hide a
+            # session dict that came from somewhere it should not have.
+            description = session["description"]
+            description_h = 0
+            if description:
+                description_h = self._wrapped_height(
+                    description, self.content_w, DESCRIPTION_WRAP_LINES)
+                total += description_h + self.pad // 2
             cache[session["id"]] = {
                 "time": format_range(session),
                 "title": session["title"],
                 "title_h": title_h,
                 "speakers": speakers,
+                "description": description,
+                "description_h": description_h,
                 "height": total + self.block_gap,
             }
         self.layout_cache = cache
@@ -940,16 +989,33 @@ class ScheduleView:
             time_pen = self.past_muted
             title_pen = self.past_muted if session["kind"] == KIND_BREAK else self.past_ink
             speaker_pen = self.past_muted
+            # THE ONE PLACE THE THREE-STEP HIERARCHY COLLAPSES TO TWO, and it is
+            # a choice rather than an oversight: there is no pen below
+            # `past_muted` that still reads as text instead of as a disabled
+            # control, and a row that has ended is de-emphasised AS A WHOLE.
+            description_pen = self.past_muted
         else:
             time_pen = self.muted
             title_pen = self.muted if session["kind"] == KIND_BREAK else self.text
             speaker_pen = self.muted
+            # THREE STEPS OF INK FOR THE BLOCK'S THREE LEVELS: what it is
+            # (`text`), who is on it (`muted`), the detail an eye may skip
+            # (`dim`). The label is the only line here a wearer can ignore
+            # without losing the agenda, so it is the quietest.
+            description_pen = self.dim
         self._text(cached["time"], self.pad, y, self.time_w + 1, self.text_h, time_pen)
         self._text(cached["title"], self.content_x, y, self.content_w, cached["title_h"], title_pen)
         line_y = y + cached["title_h"] + self.pad // 2
         for line, line_h in cached["speakers"]:
             self._text(line, self.content_x, line_y, self.content_w, line_h, speaker_pen)
             line_y += line_h + self.pad // 2
+        # LAST, UNDER THE NAMES, and the order is the block's reading order:
+        # what, who, then the detail. An empty description draws nothing at all
+        # -- never an empty rect, which on a hatched break row would read as a
+        # rendering fault rather than as an absent field.
+        if cached["description"]:
+            self._text(cached["description"], self.content_x, line_y, self.content_w,
+                       cached["description_h"], description_pen)
         return height
 
     def _draw_softkeys(self, labels):

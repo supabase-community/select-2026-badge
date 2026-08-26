@@ -380,7 +380,80 @@ def _switch_stage(delta):
 # clocks now.
 
 
+# -- the BadgeLink placement opt-in ----------------------------------------
+#
+# OWNER RULING #22 establishes the MECHANISM and names no apps; the ROSTER is the
+# owner's work order, `docs/handoff/networking-endstate-2026-08-26/
+# FINAL_PROMPT_badge.md` §7.1 -- settings and home already covered, poster and
+# schedule the two to add. Kept apart so nobody reads a roster into #22.
+#
+# THIS APP IS THE ONE THAT MOST NEEDS THE NETWORK, and until 2026-08-26 it was
+# the one that could never get it. `_pump_schedule_sync` short-circuits unless
+# the backend reaches CONNECTED, and `network_runtime.
+# _placement_allows_establishment` is `at_launcher or active` -- so an app that
+# never calls `set_active(True)` withholds every establishment moment, and the
+# agenda a wearer opened the app to read could not refresh while they were
+# looking at it. The GET itself was already non-blocking (it rides the errand
+# channel, not a blocking fetch), so the opt-in was the only missing piece.
+#
+# THE ROSTER IS ALSO A CAPACITY CONTROL AND NOBODY PRICED THAT HALF. See the long
+# note beside `poster`'s opt-in for the argument; the short form is that the
+# poster is join-allowed and is where an untouched badge spends its day, every
+# app exit is a `machine.reset()` landing the wearer at the join-allowed
+# launcher, and so no ordinary wearer state withholds. `BOOT_JITTER_MS`'s twenty
+# seconds spaces a herd, not a rate, and nothing is reused across a reset -- so
+# every join is cold and each app added here multiplies fleet join rate by that
+# app's share of wearer time. The server-side join cost is an open measurement
+# (NETWORKING_LANE_STATE.md §6). Do not extend the roster without it.
+#
+# A firmware-injected builtin read as a BARE NAME: MicroPython's `builtins`
+# attribute lookup bypasses its own override dictionary, so
+# `builtins.badgelink_network = ...` is visible only to ordinary name lookup.
+try:
+    _network = badgelink_network
+except NameError:
+    _network = None
+
+
+def _network_active(active):
+    """Tell BadgeLink this app is a tolerant place to establish, or stop.
+
+    GUARDED BECAUSE AN AttributeError HERE RESETS THE BADGE (docs/deploy.md: a
+    raise on the launch path is a `machine.reset()`), and a badge whose
+    `/system/lib` predates `set_active` would raise exactly that. A missing seam
+    means the agenda simply keeps showing its cached copy, which is this app's
+    whole offline story anyway.
+    """
+
+    if _network is None:
+        return
+    setter = getattr(_network, "set_active", None)
+    if not callable(setter):
+        return
+    try:
+        setter(bool(active))
+    except Exception as error:  # noqa: BLE001
+        print("SCHEDULE_NETWORK stage=set_active error={!r}".format(error))
+
+
+def on_exit():
+    """Release the opt-in. A backstop, and worth having anyway.
+
+    `enter_run_context` clears `_active` at the top of every `run()`, so the
+    next app cannot inherit this one's opt-in. What this covers is the same-run
+    window: an app that opted in and returned without releasing leaves a WSS
+    establishment admissible for the rest of the call.
+    """
+
+    _network_active(False)
+
+
 def update():
+    # IDEMPOTENT AND PER FRAME. `set_active` raises MOMENT_VIEW_TRANSITION on
+    # the False->True edge only, so after the first frame this is an attribute
+    # lookup and a bool compare -- and doing it per frame is what survives a
+    # `set_active(False)` raised from anywhere else while the agenda is still up.
+    _network_active(True)
     # FOUR LIVE KEYS, DOWN FROM FIVE, AND B IS DELIBERATELY UNBOUND.  UP/DOWN
     # move the focused thing up and down the screen; A and C are the leftward and
     # rightward direction, and what sits left and right here is the stage tabs

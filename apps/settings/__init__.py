@@ -18,7 +18,7 @@ The Pair and Confirm screens are Card E's landed `badgelink.pairview`
 view-models, consumed and not reimplemented. **There is no badge-side unpair in
 v2** and this app offers none.
 
-THE THREE GUARDED IMPORTS, AND WHY NONE OF THEM IS A BROWSER ACCOMMODATION.
+THE GUARDED IMPORTS, AND WHY NONE OF THEM IS A BROWSER ACCOMMODATION.
 
 * `pairview` / `pairstate` / `store` live in **`/system/lib`** (decision #1),
   reachable only through the one `sys.path.append("/system/lib")` line
@@ -26,6 +26,11 @@ THE THREE GUARDED IMPORTS, AND WHY NONE OF THEM IS A BROWSER ACCOMMODATION.
   different steps, so a badge can have one without the other — and a bare import
   on such a badge raises INSIDE `launch()`, which resets the badge, every time,
   for ever (`docs/deploy.md`). Guarded, the tile shows one honest row instead.
+* `scorebox` is in the same payload and is guarded SEPARATELY, because it is not
+  part of that coupled three: the Scores row erases the games' own high-score
+  files, which are the wearer's own data and nothing to do with networking, so
+  the row has to work on a badge that carries no library at all — which is the
+  badge that SHIPS (`apps-roster.json`: `production.system_lib.ship` is false).
 * `qrcode` (in `settings_view`) is an undocumented native firmware usermod. Same
   argument: present on this firmware, not guaranteed on another.
 
@@ -76,6 +81,7 @@ badge.caselights(0)
 
 import backlight  # noqa: E402
 import brightness_store  # noqa: E402
+import score_wipe  # noqa: E402
 import settings_model  # noqa: E402
 import settings_view  # noqa: E402
 import ui  # noqa: E402
@@ -94,6 +100,25 @@ except ImportError as exc:
     # Printed once, so a half-installed badge says which half is missing instead
     # of looking like a tile that simply does nothing.
     print("SETTINGS_LIB missing={} path={}".format(exc, "/system/lib"))
+
+# THE UNDELIVERED SCORE SPOOL, GUARDED SEPARATELY FROM THE THREE ABOVE, and the
+# separation is the point rather than tidiness. Those three are one coupled
+# payload and half of it is useless; `scorebox` is independent, and the Scores row
+# must work WITHOUT it: erasing the games' own high-score files is the wearer's
+# own data on their own volume, and the production payload ships no `/system/lib`
+# at all (`apps-roster.json`: `production.system_lib.ship` is false). A badge with
+# no library therefore erases the four things it can and reports honestly on the
+# one it cannot.
+#
+# `except Exception`, not `except ImportError`, for `system/main.py`'s reason: a
+# half-refreshed `/system/lib` can fail an import in more ways than one, and a
+# raise at module scope inside `launch()` RESETS THE BADGE.
+try:
+    import scorebox
+except Exception as _score_error:  # noqa: BLE001 - a reset is the alternative
+    scorebox = None
+    print("SETTINGS_SPOOL missing={} path={}".format(
+        _score_error.__class__.__name__, "/system/lib"))
 
 # NO LOADING SCREEN, DELIBERATELY. `docs/deploy.md` requires a `loading.spec.ts`
 # WIRED row for any app that calls `loading.begin`, and this one does not: it
@@ -153,6 +178,8 @@ app = settings_model.Settings(
     network_control=_network,
     push_control=_push_control,
     brightness=_brightness,
+    score_control=score_wipe.ScoreWipe(settings_model.GAME_SCORE_PATHS,
+                                       scorebox),
 )
 chrome = settings_view.build(pairview.qr_layout if pairview is not None else None)
 # THE STORED LEVEL, NOT `backlight.NORMAL`, and that changed with the BRIGHTNESS

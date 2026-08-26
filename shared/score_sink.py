@@ -17,6 +17,13 @@ would have to be reopened and renamed to grow that; a module named for the
 DESTINATION already has the right shape, with exactly one destination
 implemented.
 
+THAT SECOND DESTINATION ARRIVED ON 2026-08-27 and it is `spool()`, NOT the
+`forward_to()` seam this file built for it.  The seam publishes from `write()`,
+which `commit()` reaches only when the run BEAT THE RECORD, so a forwarder sees
+personal bests and nothing else -- and the owner's ruling is EVERY completed run,
+with no filtering on the badge.  `spool()` is therefore called from each game's
+own game-over, and `forward_to` stays for a genuinely best-only destination.
+
 THE ORDER IS NOT NEGOTIABLE: DISK FIRST, AND DISK WINS.  `write()` completes
 the atomic local save -- including the `rename` that makes it durable -- before
 anything else is offered the record.  A network sink is best-effort and
@@ -43,15 +50,46 @@ import json
 import os
 
 
-# THE SECOND SINK, AND IT DOES NOT EXIST YET.
+# THE OFFLINE SCORE SPOOL, GUARDED, AND THE GUARD IS THE WHOLE REASON THIS IMPORT
+# IS HERE RATHER THAN IN FIVE APPS.
 #
-# UNUSED TODAY.  Nothing in this repository calls `forward_to()`, nothing
-# imports `badgelink`, and no game knows this list is here.  It is carried
-# anyway because the owner has already named the next destination and because
-# the seam is the part that is expensive to add later: retrofitting a
-# publication point into five games means five edits to the one function that
-# must not be got wrong twice.  One edit here, in one file, is the cost of
-# adding it now.
+# `scorebox` lives in `/system/lib`, which MAY NOT BE ON THE BADGE:
+# `apps-roster.json`'s `production.system_lib.ship` is false (owner, 2026-08-24,
+# "if we deployed today badgelink is off"), so the shipping payload carries no
+# BadgeLink at all.  An `ImportError` raised inside `launch()` is a traceback
+# modal and `machine.reset()`, so an unguarded import would make every game
+# UNOPENABLE rather than merely unscored -- and it would do it on the eight-tile
+# production badge, not on the dev one this is written on.
+#
+# `except Exception`, not `except ImportError`, for `system/main.py`'s reason: a
+# half-refreshed `/system/lib` can fail an import in more ways than one, and none
+# of them is worth a reset.  `settings` carries the same shape one level down.
+#
+# MODULE SCOPE, NOT LAZY, and that is a frame-cost decision.  The first import of
+# a `.mpy` is a real load; taken lazily it would land on the death frame, which
+# already pays the 7-130 ms atomic save.  Taken here it lands during the app's
+# own loading screen, where nothing is on the clock.
+try:
+    import scorebox
+except Exception:  # noqa: BLE001 - a missing library may not cost the game
+    scorebox = None
+
+
+# THE SECOND SINK, AND IT IS NOT THIS SEAM.  READ THIS BEFORE USING `forward_to`.
+#
+# UNUSED TODAY, and now known to be UNUSABLE for the destination it was built
+# for.  `_publish` is reached only from `write()`, and `write()` is reached from
+# `commit()` only when the run BEAT THE RECORD -- so a forwarder registered here
+# sees personal bests and nothing else.  The owner's scoring ruling (2026-08-27)
+# is EVERY-RUN with no client-side filtering, because personal-best-on-the-badge
+# is judgment and all judgment is SQL, hot-patchable.  Publishing the leaderboard
+# through this seam would therefore implement, silently, the exact filtering the
+# ruling forbids.
+#
+# So the every-run path is `spool()` below, called from each game's own
+# game-over, and this list is left in place because a genuine best-only
+# destination (a "new record" announcement, say) would still want it.
+_FORWARDERS = []
 #
 # A FORWARDER MUST RETURN IMMEDIATELY.  It is called from `write()`, which is
 # reached from a game's `finish_game()`, which is reached from `update()` --
@@ -89,6 +127,64 @@ def forward_to(callback):
     if callback not in _FORWARDERS:
         _FORWARDERS.append(callback)
     return callback
+
+
+def spool(name, score, elapsed_ms=0):
+    """Offer one COMPLETED RUN to the offline score spool.  NEVER RAISES.
+
+    The every-run submission path (owner ruling, 2026-08-27): every completed
+    game submits, with NO client-side filtering, because personal-best-on-the-
+    badge would be judgment and all judgment is SQL and hot-patchable.  What the
+    leaderboard DISPLAYS is a server-side view decision and can change mid-event.
+
+    CALLED WHEREVER THE GAME ALREADY BANKS THE RUN TO FLASH, and that rule is the
+    whole of the placement argument: if the app already considers a run finished
+    enough to write it to `/state`, it is finished enough to send.  It adds no new
+    door and no new judgment -- deciding a quit run "does not count" would be
+    exactly the client-side filtering the ruling forbids, and the server can tell
+    a walk-away from a death from the score and the duration.
+
+    AFTER the local save, never before.  `write()`'s ordering rule ("DISK FIRST,
+    AND DISK WINS") is not negotiable, and it applies harder here than to the
+    forwarder seam: the spool is one `open`/`write`/`sync`, so on a full volume it
+    is one more thing that can fail on the frame the atomic save is already
+    failing on.
+
+    THE FRAME COST, STATED: an append plus an `os.sync` on top of a save measured
+    at 7-130 ms median with a 185 ms tail (`docs/engineering-findings.md`).  It
+    lands on the death/quit frame, which is already the most expensive frame these
+    games draw on purpose, and there is nowhere cheaper to put it -- the game owns
+    the only copy of the score, and the pump that drains the spool runs frames
+    later, in another module, with no way to ask.
+
+    `elapsed_ms` IS WALL TIME FROM THE RUN STARTING, PAUSES INCLUDED, and 0 means
+    NOT KNOWN.  A run whose measured wall time falls outside the `scores` column's
+    own bound (a game left paused overnight, then quit) reports 0 rather than
+    losing the score to `record`'s refusal or asserting a clamped figure nothing
+    measured.  Nothing here invents a duration from model ticks: a step counter
+    times the SIMULATION, not the player, and a fabricated duration would be worse
+    than a missing one because no server-side check can falsify it.
+
+    Returns the idempotency key, or None when nothing was spooled -- a badge with
+    no `/system/lib`, a refused row, or a filesystem that would not take it.
+    """
+    if scorebox is None:
+        return None
+    try:
+        if elapsed_ms < 0 or elapsed_ms > scorebox.MAX_DURATION_MS:
+            elapsed_ms = 0
+        return scorebox.record(name, score, elapsed_ms)
+    except Exception:  # noqa: BLE001 - see below
+        # DEFENCE IN DEPTH, and it is deliberate rather than superstitious.
+        # `record` documents and tests "it NEVER RAISES" -- but the badge runs
+        # whatever `.mpy` its `/system/lib` happens to hold, which is refreshed by
+        # a separate install step from the app, and an exception escaping here
+        # reaches the firmware's `fatal_error()` and `machine.reset()`.  So the
+        # cost of being wrong is EVERY DEATH BECOMING A REBOOT, on the one screen
+        # whose job is to show the player their score, and the cost of the guard
+        # is two lines.  Same trade `_publish` takes above it, for the same
+        # reason: a sink may not break a finished game.
+        return None
 
 
 def forget(callback):

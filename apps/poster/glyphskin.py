@@ -202,11 +202,24 @@ MAX_BUDGET = 96
 # A SINGLE skin never comes near it -- the busiest asset in the deck uses 117
 # distinct keys, so 23 KB at LORES and 94 KB at HIRES.  The ceiling is sized for
 # a BROWSE instead, where the wearer scrubs the catalogue through one retargeted
-# painter and the cache accumulates across techniques: the whole eighteen-entry
-# deck is 323 distinct keys, which fits at both resolutions and is what makes
-# scrubbing back up the list free.  256 KB is about 3% of the ~8.2 MB free with
-# an app loaded, and it is 323 small allocations rather than one big one, so it
-# is nowhere near the 384 KB single-block wall the stress pass found.
+# painter and the cache accumulates across techniques.
+#
+# THE NUMBER THAT MATTERS IS THE KEYFRAME UNION, NOT THE DECK'S.  Record 0 of a
+# stream is a full grid, so a scrub step that lands on a deck paints exactly
+# that; the nineteen KEYFRAMES are 326 distinct keys, 260,800 B at a HIRES 10x20
+# cell against this 262,144 B cap.  ONE TILE OF HEADROOM.  (This comment said
+# "the whole eighteen-entry deck is 323 distinct keys" until 2026-08-26; the 323
+# was right and the words around it were not -- played to COMPLETION the same
+# streams reach 481 keys and DO overflow, so the fit was always a claim about
+# scrubbing rather than about watching.)  256 KB is about 3% of the ~8.2 MB free
+# with an app loaded, and it is 326 small allocations rather than one big one, so
+# it is nowhere near the 384 KB single-block wall the stress pass found.
+#
+# ⚠ A TWENTIETH DECK THAT ADDS MORE THAN ONE NEW (glyph, style) KEY TO ITS
+# KEYFRAME TAKES THE SCRUB OVER THE CAP.  `elephant` (2026-08-26) spent three of
+# the four tiles that were free, on purpose and with the count measured first.
+# Union of `pack.stream(n).record(0)` over every deck is how to check; `.keys()`
+# is the whole-stream union and answers a different question.
 #
 # Overflow clears the WHOLE cache rather than evicting one entry: no LRU
 # bookkeeping in the paint path, the cost is bounded and rare, and the next

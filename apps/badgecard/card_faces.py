@@ -21,7 +21,7 @@ is done host-side, once, against both sources, and checked.
 
 `widest` is the measured widest glyph of that face at scale 1, copied from
 `skins.FONT_WIDEST` so the runtime can size a name without importing the
-666,336 bytes of `skins` to ask.
+667,219 bytes of `skins` to ask.
 """
 
 # What the 18 glyph decks draw a name in.  A deck is a pixel-font atlas, not a
@@ -35,7 +35,6 @@ FACES = (
     ('skin.container-sea', 'bacteria', 13),
     ('skin.interlock', 'ignore', 17),
     ('skin.oxide', 'curse', 10),
-    ('skin.supabase', 'badgewaremax', 13),
     ('skin.terminal', 'smart', 9),
     ('skin.trace-map', 'absolute', 12),
     ('skin.amber', 'yesterday', 10),
@@ -119,12 +118,14 @@ FACES = (
     ('skin.anthropic', 'badgewaremax', 13),
     ('skin.pg-sleep', 'smart', 9),
     ('skin.supabase-select', 'badgewaremax', 13),
+    ('skin.supabase', 'badgewaremax', 13),
     ('glyph.alphabet', 'badgewaremax', 13),
     ('glyph.arrow-cleanse', 'badgewaremax', 13),
     ('glyph.arrow-field', 'badgewaremax', 13),
     ('glyph.binary-island', 'badgewaremax', 13),
     ('glyph.brackets', 'badgewaremax', 13),
     ('glyph.column', 'badgewaremax', 13),
+    ('glyph.elephant', 'badgewaremax', 13),
     ('glyph.fluid-field', 'badgewaremax', 13),
     ('glyph.marquee', 'badgewaremax', 13),
     ('glyph.memory-compactor', 'badgewaremax', 13),

@@ -48,7 +48,7 @@ It passes from this layout; a few cases skip with a printed reason because they 
 
 ## The guarded imports, in full
 
-**38 import sites across 18 files** are wrapped in a `try` that catches `ImportError`, and this list is generated from an AST walk of the tree you are holding rather than maintained by hand. `ARCHITECTURE.md` section 2 quotes these two numbers and the exporter's `doc-claims-verified` gate refuses a build where they disagree.
+**43 import sites across 21 files** are wrapped in a `try` that catches `ImportError`, and this list is generated from an AST walk of the tree you are holding rather than maintained by hand. `ARCHITECTURE.md` section 2 quotes these two numbers and the exporter's `doc-claims-verified` gate refuses a build where they disagree.
 
 A guarded import is how this tree survives its own omissions: the badge puts exactly one directory on `sys.path`, `/system/lib` is not in this export, and the launcher is the app whose failure needs a USB cable. An import moved OUT of one of these guards is a reset at launch, not a tidy-up.
 
@@ -59,9 +59,10 @@ A guarded import is how this tree survives its own omissions: the badge puts exa
 | `apps/badgecard/poster.py` | 89 | `backdrop` |
 | `apps/flappy/loading.py` | 147 | `os` |
 | `apps/flappy/loading.py` | 306 | `loading_sql` |
+| `apps/flappy/score_sink.py` | 73 | `scorebox` |
 | `apps/glyph/__init__.py` | 82 | `glyph_variant` |
-| `apps/glyph/__init__.py` | 363 | `os` |
-| `apps/glyph/__init__.py` | 628 | `os` |
+| `apps/glyph/__init__.py` | 386 | `os` |
+| `apps/glyph/__init__.py` | 651 | `os` |
 | `apps/glyph/loading.py` | 147 | `os` |
 | `apps/glyph/loading.py` | 306 | `loading_sql` |
 | `apps/menu/first_wake.py` | 867 | `glyph_render` |
@@ -75,20 +76,24 @@ A guarded import is how this tree survives its own omissions: the badge puts exa
 | `apps/menu/ui.py` | 81 | `first_wake` |
 | `apps/menu/ui.py` | 171 | `loading` |
 | `apps/menu/ui.py` | 514 | `json` |
+| `apps/menu/ui.py` | 765 | `json` |
 | `apps/pet/loading.py` | 147 | `os` |
 | `apps/pet/loading.py` | 306 | `loading_sql` |
 | `apps/poster/poster.py` | 89 | `backdrop` |
 | `apps/schedule/loading.py` | 147 | `os` |
 | `apps/schedule/loading.py` | 306 | `loading_sql` |
-| `apps/settings/__init__.py` | 87 | `pairstate` |
-| `apps/settings/__init__.py` | 88 | `pairview` |
-| `apps/settings/__init__.py` | 89 | `store` |
+| `apps/settings/__init__.py` | 93 | `pairstate` |
+| `apps/settings/__init__.py` | 94 | `pairview` |
+| `apps/settings/__init__.py` | 95 | `store` |
+| `apps/settings/__init__.py` | 117 | `scorebox` |
 | `apps/settings/settings_view.py` | 95 | `qrcode` |
 | `apps/snake/loading.py` | 147 | `os` |
 | `apps/snake/loading.py` | 306 | `loading_sql` |
+| `apps/snake/score_sink.py` | 73 | `scorebox` |
 | `apps/snake/snake_profile.py` | 27 | `__import__(<dynamic>)` |
 | `main.py` | 5 | `network_runtime` |
 | `main.py` | 11 | `from realtime.client import BACKOFF_RESET_ON_FIRST_JOIN, RealtimeClient` |
 | `shared/loading.py` | 147 | `os` |
 | `shared/loading.py` | 306 | `loading_sql` |
 | `shared/poster.py` | 89 | `backdrop` |
+| `shared/score_sink.py` | 73 | `scorebox` |

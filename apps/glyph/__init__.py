@@ -313,6 +313,29 @@ ASSET_ORDER = (
     "brackets", "tracks", "signal-histogram", "binary-island",
     "arrow-cleanse", "alphabet", "memory-compactor", "numbers", "column",
     "marquee", "terminal-marquee", "packet-router", "fluid-field",
+    # `elephant` (2026-08-26) is DENSE-ONLY: it was sampled straight into the
+    # 32x12 grid from the website's Muybridge plate and has no 16x6 sibling, so
+    # `_installed()` finds it in `assets2x` and not in `assets`. It is last
+    # because it arrived last -- the order is a browse sequence, not a ranking.
+    "elephant",
+    # THE FIVE `logo-*` DECKS (2026-08-26) ARE DENSE-ONLY AND OFF THE PACK, and
+    # the second half of that is deliberate rather than incidental. They are
+    # the Select 26 brand lockup, authored at 32x12 from the site's own
+    # `components/brand/` code (`glyph/host/logo-lockup/`), and they are in the
+    # GLYPH APP ONLY: they are absent from `identity/host/build_skin_assets.py`
+    # 's `ASSET_ORDER`, so they never reach `glyphskins.gpk` and
+    # `badgecard/host/generate_catalogue.py` -- which globs the packed `.gpd`
+    # directory -- cannot see them. That is the owner's instruction ("add the
+    # logo glyphs to glyphs but not to badgecard", 2026-08-26) and it needs no
+    # exclusion mechanism because the two lists were already separate.
+    #
+    # It is also the only affordable arrangement: packing all five would add 22
+    # keys to the browse keyframe union, which stood at 326 of a 327-key cap
+    # after `elephant` (measured by `glyph/host/logo-lockup/measure_decks.py`).
+    #
+    # They are adjacent because a wearer comparing brand treatments wants them
+    # one thumb apart, which is the same argument the density interleave makes.
+    "logo-sizzle", "logo-trail", "logo-offset", "logo-left", "logo-stack",
 )
 
 # THE TWO DECKS, in the order a comparison wants them: the measured-safe

@@ -96,6 +96,13 @@ SLEEP = "sleep"
 #: lived for a day -- same rungs, same store, same one-press-per-rung
 #: motion -- so the only thing this app had to decide was the bar.
 BRIGHT = "bright"
+#: The score-erase question and its result (owner feature, 2026-08-27). THE ONLY
+#: DESTRUCTIVE SCREEN THIS TILE HAS, so it is the only one that follows B7's
+#: confirmation shape rather than acting on the row it was opened from. One screen
+#: constant covers the question and the answer: `badgecard` reuses `CONFIRM` for
+#: the same reason -- it is one question with one subject, and a second screen id
+#: for "the same screen, afterwards" would need its own route for no behaviour.
+SCORES = "scores"
 
 # Row identifiers. The tile is general-purpose on purpose: the owner's reasoning
 # for one Settings tile over a tile per need was that other settings-shaped needs
@@ -106,6 +113,7 @@ ROW_NETWORK = "network"
 ROW_PUSH = "push"
 ROW_SLEEP = "sleep"
 ROW_BRIGHT = "bright"
+ROW_SCORES = "scores"
 
 ROW_LABELS = {
     ROW_PAIR: settings_copy.ROW_PAIR_LABEL,
@@ -113,6 +121,7 @@ ROW_LABELS = {
     ROW_PUSH: settings_copy.ROW_PUSH_LABEL,
     ROW_SLEEP: settings_copy.ROW_SLEEP_LABEL,
     ROW_BRIGHT: settings_copy.ROW_BRIGHT_LABEL,
+    ROW_SCORES: settings_copy.ROW_SCORES_LABEL,
 }
 ROW_SCREENS = {
     ROW_PAIR: PAIR,
@@ -120,7 +129,29 @@ ROW_SCREENS = {
     ROW_PUSH: PUSH,
     ROW_SLEEP: SLEEP,
     ROW_BRIGHT: BRIGHT,
+    ROW_SCORES: SCORES,
 }
+
+#: THE FILES "ERASE SCORES" TAKES, BESIDES THE UNDELIVERED SPOOL. One per game,
+#: written by `shared/score_sink.py` and read as the wearer's high score.
+#:
+#: THIS TILE CARRIES ITS OWN COPY OF THE LIST AND DOES NOT IMPORT ONE, which is
+#: the same decision `badgecard` made about `badgecard_state` and for a stronger
+#: reason: `scorebox.GAME_STATE_PATHS` says the same five paths, but it lives in
+#: `/system/lib`, which the production payload DOES NOT SHIP
+#: (`apps-roster.json`: `production.system_lib.ship` is false). A wearer erasing
+#: high scores that have nothing to do with networking must not need a networking
+#: library to do it. `settings/tests/test_settings_scores.py` pins this list
+#: against `scorebox`'s and against each game's own `STATE_PATH`, so the
+#: duplication cannot drift silently -- and a silent drift here means a wipe that
+#: misses a game while the modal says it took everything.
+#:
+#: FIVE, EVEN THOUGH THE PRODUCTION ROSTER SHIPS FEWER. Erasing a file that was
+#: never written costs nothing, a dev badge has all five, and a badge that later
+#: gains a game must not keep a high score the wearer already erased.
+GAME_SCORE_PATHS = ("/state/snake.json", "/state/pong.json",
+                    "/state/breakout.json", "/state/flappy.json",
+                    "/state/pacman.json")
 #: Menu order. Pair first: it is the entry point decision #2 exists to ship.
 #:
 #: SLEEP IS LAST, AND IT IS THE FIRST NON-NETWORK ROW THIS TILE HAS EVER HAD.
@@ -156,13 +187,29 @@ ROW_SCREENS = {
 #: already tested, and the note protects a blind UP-then-B whether or not a
 #: ladder exists. Trading a documented protection for an undocumented one is not
 #: an improvement.
-ROWS = (ROW_PAIR, ROW_NETWORK, ROW_BRIGHT, ROW_SLEEP)
+#:
+#: SCORES SITS IN THE MIDDLE, and its seat is chosen against the two ends rather
+#: than for a category. B3's lists wrap, so the two seats a blind press can reach
+#: are the LAST row (the first UP from the top) and the SECOND (the first DOWN).
+#: Sleep's last place is a recorded owner decision with a built mitigation, and
+#: Brightness is pinned directly above it by its own; the destructive row
+#: therefore takes neither end and is two deliberate presses from anywhere.
+#:
+#: `badgecard` argues the opposite case and both are right: a properly gated
+#: destructive row makes a BETTER wrap target than an ungated mildly-costly one,
+#: which is why RESET BADGE sits last there. The difference is what the seat is
+#: being traded against. There the alternative was SAVE TO HOME, which writes a
+#: 76,816-byte film on one press with no question; here the alternatives are a
+#: reversible ladder and a documented note, so there is nothing to improve by
+#: moving either of them and no reason to take a wrap seat at all.
+ROWS = (ROW_PAIR, ROW_NETWORK, ROW_SCORES, ROW_BRIGHT, ROW_SLEEP)
 #: The Updates row is CONDITIONAL: it appears only when the boot pump actually
 #: has a doorbell to control. A row that describes a transport this badge does
 #: not carry is a row that lies, and the tile already refuses to invent state.
 #: Brightness is conditional on nothing: every badge has a panel, so it is the
 #: second row after Sleep that means the same thing on an unprovisioned badge.
-ROWS_WITH_PUSH = (ROW_PAIR, ROW_NETWORK, ROW_PUSH, ROW_BRIGHT, ROW_SLEEP)
+ROWS_WITH_PUSH = (ROW_PAIR, ROW_NETWORK, ROW_PUSH, ROW_SCORES, ROW_BRIGHT,
+                  ROW_SLEEP)
 
 #: HOW LONG THE NOTE STAYS UP before `badge.sleep()` is called.
 #:
@@ -342,16 +389,129 @@ def push_mode(mode):
     return mode if mode in PUSH_MODES else PUSH_UNKNOWN
 
 
-def push_view(mode, library=True, controllable=False, enabled=None):
-    """The Updates screen: what is happening, and the one question to answer.
+# -- WHY the doorbell is not carrying ----------------------------------------
+#
+# `network_runtime.PUSH_CAUSES`, spelled here rather than imported, exactly as
+# the six transport states and the six push modes above are: this module stays
+# pure and CPython-testable on a machine with no `/system/lib`, and
+# `test_settings_seam.py` is the drift detector that makes the copy safe --
+# `test_every_push_cause_the_runtime_can_name_has_wearer_copy` asserts these are
+# the runtime's set, so a renamed or added cause fails the fast lane.
+CAUSE_NOT_STARTED = "not started"
+CAUSE_PLACEMENT = "in an app"
+CAUSE_ESTABLISHING = "connecting"
+CAUSE_NO_SIGNAL = "no signal"
+CAUSE_REFUSED = "refused"
+CAUSE_SERVER_BUSY = "server busy"
+CAUSE_RETRY_LATER = "retry later"
+CAUSE_WAITING = "waiting"
+
+PUSH_CAUSES = (CAUSE_NOT_STARTED, CAUSE_PLACEMENT, CAUSE_ESTABLISHING,
+               CAUSE_NO_SIGNAL, CAUSE_REFUSED, CAUSE_SERVER_BUSY,
+               CAUSE_RETRY_LATER, CAUSE_WAITING)
+
+
+def push_cause(cause):
+    """Normalise a reported cause to a literal this build has copy for, or None.
+
+    AN UNKNOWN WORD IS DROPPED, AND THIS IS THE ONE PLACE THIS APP DOES NOT
+    PRINT A LITERAL IT HAS NEVER HEARD OF. `NET_LINE_STATE` and
+    `PUSH_LINE_STATE` print theirs raw on purpose ("no invented states" cuts both
+    ways), and two things make this different:
+
+    * `/system/lib` and this app are installed by SEPARATE steps
+      (OWNER-DECISIONS #1), so a badge can carry a newer `network_runtime` than
+      this table knows -- and a word from it is a string no lane has ever priced
+      against the 308 px band or checked against the pre-baked glyph set. The
+      loud degrade for that belongs in the SUITE, where the exhaustiveness test
+      fails on a ninth cause, not on a wearer's panel.
+    * this line is SECONDARY. Dropping it loses nothing the mode line above did
+      not already say, whereas `NET_LINE_STATE` is the only line on its screen
+      and dropping it would leave a blank one.
+
+    Total, and never raises: every caller is on a draw path where a raise is
+    `machine.reset()`.
+    """
+    if not isinstance(cause, str):
+        return None
+    return cause if cause in PUSH_CAUSES else None
+
+
+def push_view(mode, library=True, controllable=False, enabled=None, cause=None,
+              previous=None):
+    """The Updates screen: what is happening, WHY, and the one question to answer.
 
     ``mode`` is READ BACK from the transport every time this is built — the
     owner's Card PW rule, and the reason there is no "pending" state here. The
     wearer's own preference (``enabled``) is a separate fact and is not allowed
     to describe the connection: a badge whose holder said YES but whose venue
     blocked push reads "The event turned this off for now", not "Instant".
+
+    ``cause`` IS THE SECOND LINE AND IT IS WHY THIS SCREEN CHANGED. `trying` is
+    one word for eight states, four permanent for the boot, so "Looking for a
+    fast connection" was true of a healthy handshake AND of a badge that had
+    stopped trying for the rest of the boot. The cause names which
+    (`settings_copy.PUSH_CAUSE_LINES` has the vocabulary and the evidence). It is
+    rendered for EVERY cause rather than for a chosen subset, so "no second line"
+    keeps exactly one meaning: there is nothing to explain, because push is live
+    or somebody turned it off, and the mode line already said so.
+
+    ``previous`` IS THE SAME QUESTION ABOUT THE PAST, and it exists because this
+    screen destroys its own most valuable answer: opening it calls
+    `set_active(True)`, which grants the placement `cause` would have reported.
+    See `Settings.push_cause_previous` and `settings_copy`'s past-line block.
+
+    ORDER: what, then why, then why BEFORE, then the question. The question is
+    last because `settings_view._draw_body` reserves a band for every line still
+    to come, so the last line is the one guaranteed not to be squeezed out — and
+    here the last line is the one the softkeys answer. The past line sits under
+    the live one because a reader scans downward from now into then; reversed, the
+    first thing on the screen would be a fact about a moment that has passed.
     """
     normalised = push_mode(mode)
+    # NOT on a library-less badge: "The server refused this badge" under
+    # "BadgeLink is not installed" would be two answers to one question, and such
+    # a badge has no transport to have produced a cause anyway.
+    named = push_cause(cause) if library else None
+    # LATCH PRESENCE IS THE ANSWER TO "IS THERE ANYTHING TO EXPLAIN", AND THIS
+    # LINE MUST NOT RE-DERIVE IT FROM THE LIVE CAUSE. It did until 2026-08-26
+    # (`named is not None`), and that gate was wrong twice over.
+    #
+    # IT COLLAPSED TWO DIFFERENT NONES. `push_cause()` answers None both when
+    # everything is fine and when the wearer killed the transport, and the runtime
+    # already distinguishes them where it matters: a live join CLEARS the latch,
+    # a switch-off KEEPS it, and since the switch-press capture the runtime
+    # deliberately TAKES one at the moment networking goes off -- that press is
+    # the last instant the answer exists, because `poll()` returns above
+    # `_note_push_cause` once networking is off. That asymmetry is the runtime's
+    # reviewed decision, so reading the latch and trusting it is the whole
+    # contract; second-guessing it here threw the asymmetry away.
+    #
+    # AND IT MADE A LANDED FEATURE DEAD CODE. Composed with that capture, the gate
+    # left the switch-captured value with ZERO READERS ON ANY PATH: networking off
+    # means no live cause, so the gate suppressed the line, and pressing ON clears
+    # the latch. In freeze-bound firmware.
+    #
+    # THE `push` CASE THE GATE ALSO CLAIMED TO GUARD IS UNREACHABLE ANYWAY: a
+    # latch beside a working doorbell dies within a frame of the join
+    # (`_note_push_cause`'s shift-before-clear), so the runtime has already made
+    # it impossible.
+    #
+    # `!= named` STAYS, because a latch equal to the live cause explains nothing
+    # twice: `Waiting for a good moment` / `Earlier: it was between tries` is one
+    # fact wearing two sentences, which is the eight-states-one-word defect
+    # inverted. With `named` None the comparison holds trivially, which is exactly
+    # the switch-off screen this rule has to let through.
+    #
+    # NORMALISED THROUGH `push_cause` UNCONDITIONALLY, never compared raw: this
+    # value crosses the same `/system/lib`-may-be-newer seam the live one does, so
+    # an unrecognised word is DROPPED here exactly as it is there and no unpriced
+    # string can reach the pre-baked glyph set one layer up. The `library` gate is
+    # the live line's, for the same reason: a badge with no BadgeLink has no
+    # transport to have produced a cause, past or present.
+    was = push_cause(previous) if library else None
+    if was == named:
+        was = None
     lines = []
     if not library:
         lines.append(settings_copy.NET_NOT_INSTALLED)
@@ -359,6 +519,10 @@ def push_view(mode, library=True, controllable=False, enabled=None):
         lines.append(settings_copy.PUSH_LINE_STATE.format(mode))
     else:
         lines.append(_PUSH_LINES[normalised])
+    if named is not None:
+        lines.append(settings_copy.PUSH_CAUSE_LINES[named])
+    if was is not None:
+        lines.append(settings_copy.PUSH_WAS_LINES[was])
     middle = ""
     right = ""
     events = ("", "", "")
@@ -379,6 +543,15 @@ def push_view(mode, library=True, controllable=False, enabled=None):
         "mode": normalised,
         "push_mode": mode,
         "push_enabled": enabled,
+        # The NORMALISED cause, or None -- the raw one is deliberately NOT
+        # published, because nothing may forward an unpriced word toward a
+        # renderer, a log line or a browser assertion.
+        "push_cause": named,
+        # The normalised LATCHED cause, on the same terms, and None whenever the
+        # line is not drawn -- so a browser assertion or a probe reading this
+        # field sees exactly what the panel shows rather than what was available
+        # to show. The raw latch is not published either, for the same reason.
+        "push_cause_before": was,
         "reboot": False,
         "lines": lines,
         "softkeys": (settings_copy.BACK, middle, right),
@@ -426,6 +599,59 @@ def bright_view(percent):
         "softkey_events": ("" if down == percent else "brightness_down",
                            "",
                            "" if up == percent else "brightness_up"),
+    }
+
+
+def scores_view(result=None):
+    """The one destructive question in this tile, and afterwards its answer.
+
+    B7'S SHAPE, AND EVERY PART OF THE BAR IS THE RULE RATHER THAN A CHOICE:
+    ``KEEP`` on A commits nothing, the verb is on C, and **B DRAWS NOTHING AND
+    DOES NOTHING**. B is the primary action on every other screen in this app, so
+    a thumb that has been opening rows with it all afternoon must not be able to
+    erase a wearer's scores with a press it started before it read the question.
+    An empty slot is already this app's word for an inert key (I5).
+
+    THE QUESTION NAMES ITS WHOLE SCOPE, BOTH WAYS. Four lines: what goes (every
+    game's high score, and the scores still waiting to be sent), what this cannot
+    reach (a score already on the leaderboard -- that row is in a database and
+    only SQL can remove it), and what survives (the badge and the wifi). The
+    scope is the ruling: the wearer is PRESENT, which is exactly what makes taking
+    both kinds of score data defensible here and not from a fleet command.
+
+    ``result`` IS THE SCREEN AFTERWARDS, and the failure arm is why it exists at
+    all. A rewrite can fail on a full volume, and a wearer who walked away
+    believing their scores were gone would be wrong in the one direction nothing
+    later can correct. ``None`` is the question, ``True`` erased everything it
+    tried, ``False`` did not -- partly counts as ``False``, because "some of your
+    scores are still here" is the only honest reading of a partial wipe.
+    """
+    if result is None:
+        return {
+            "screen": SCORES,
+            "title": settings_copy.SCORES_TITLE,
+            "reboot": False,
+            "lines": [settings_copy.ascii_fold(line) for line in (
+                settings_copy.SCORES_LINE_CLEARS,
+                settings_copy.SCORES_LINE_SPOOL,
+                settings_copy.SCORES_LINE_SENT,
+                settings_copy.SCORES_LINE_KEEPS)],
+            "softkeys": (settings_copy.KEEP, "", settings_copy.ERASE),
+            "softkey_events": ("", "", "scores_erase"),
+        }
+    return {
+        "screen": SCORES,
+        "title": (settings_copy.SCORES_DONE_TITLE if result
+                  else settings_copy.SCORES_FAILED_TITLE),
+        "reboot": False,
+        "lines": [settings_copy.ascii_fold(
+            settings_copy.SCORES_DONE_LINE if result
+            else settings_copy.SCORES_FAILED_LINE)],
+        # NO VERB LEFT ON C. The question has been answered, and a second ERASE
+        # over a result the wearer has just read is a press with no question
+        # above it.
+        "softkeys": (settings_copy.BACK, "", ""),
+        "softkey_events": ("", "", ""),
     }
 
 
@@ -507,7 +733,7 @@ class Settings:
 
     def __init__(self, pairview=None, pairstate=None, driver=None, base_url=None,
                  pair_state=None, transport=None, network_control=None,
-                 push_control=None, brightness=None):
+                 push_control=None, brightness=None, score_control=None):
         if (pairview is None) != (pairstate is None):
             raise ValueError("pairview and pairstate must be supplied together")
         self._pairview = pairview
@@ -517,6 +743,19 @@ class Settings:
         self._transport = transport
         self._network_control = network_control
         self._push_control = push_control
+        #: The one thing in this tile that can DELETE something, injected like
+        #: every other capability so this module stays I/O-free and so the seam
+        #: -- not the model -- decides what a wipe is allowed to reach. `None` is
+        #: a tile that cannot erase, and the Scores row still exists on such a
+        #: badge: the row is about the wearer's own files, not about a library,
+        #: and a row that vanished when `/system/lib` was absent would teach the
+        #: wearer that their high scores are a networking feature.
+        self._score_control = score_control
+        #: None while the question is up; True/False once it has been answered.
+        #: Not a timer (a mashing thumb could cross a window) and not a toast
+        #: (this tile has no toast machinery): the screen the wearer pressed on
+        #: becomes the screen that reports what happened.
+        self._scores_result = None
         self.screen = MENU
         self.index = 0
         self.rows = ROWS_WITH_PUSH if push_control is not None else ROWS
@@ -589,6 +828,79 @@ class Settings:
             return None
         value = reader()
         return value if isinstance(value, str) else None
+
+    def _push_word(self, name):
+        """Call a one-word `_PushControl` diagnostic, or answer ``None``.
+
+        THREE FAIL-SOFT LAYERS, AND EACH ONE IS A REAL BADGE.
+
+        1. `getattr`, because `/system/lib` and this app are installed by
+           SEPARATE steps (OWNER-DECISIONS #1): a badge carrying a
+           `network_runtime` from before 2026-08-26 has a `_PushControl` with no
+           `cause` and one from before this stitch has no `previous_cause`, and a
+           bare `self._push_control.cause()` there is an AttributeError inside
+           `update()` -> `fatal_error` -> `machine.reset()`, every frame, for
+           ever. Missing accessor means the screen shows exactly what it showed
+           before the accessor existed and no extra line.
+        2. `try/except`, because these readers are not field reads the way `mode`
+           is. `NetworkService.push_cause` walks the live link, consults the
+           placement predicate and does a LAZY `import pushlink` to classify a
+           refusal -- a `/system/lib` missing that module raises ImportError from
+           inside the call -- and `push_cause_previous` reads a monotonic clock to
+           age the latch. A diagnostic may not be the thing that crashes the badge
+           it is diagnosing.
+        3. the type check, so a controller that returns a number or an object
+           degrades to no line rather than to a formatted repr.
+
+        ONE HELPER FOR BOTH READERS ON PURPOSE. Two copies of a four-layer guard
+        is two places for a layer to be dropped, and the layer that gets dropped
+        is the one whose absence is invisible until a badge resets in a loop.
+        """
+        if self._push_control is None:
+            return None
+        reader = getattr(self._push_control, name, None)
+        if not callable(reader):
+            return None
+        try:
+            value = reader()
+        except Exception:  # noqa: BLE001 - see layer 2 above
+            return None
+        return value if isinstance(value, str) else None
+
+    def push_cause(self):
+        """WHY push is not carrying, as one word, or ``None``.
+
+        Guarded by :meth:`_push_word`, which carries the reasoning. Read through
+        on every build for the same Card PW reason `push_mode` is: this answer
+        changes when the wearer WALKS somewhere.
+        """
+        return self._push_word("cause")
+
+    def push_cause_previous(self):
+        """The cause in force BEFORE this screen was opened, or ``None``.
+
+        THE ACCESSOR THAT EXISTS BECAUSE READING DESTROYS THE ANSWER.
+        `settings/__init__.py` calls `set_active(True)` while this tile is open,
+        which GRANTS the OWNER RULING #22 placement that `push_cause()` would
+        have reported -- so `CAUSE_PLACEMENT` is structurally unreachable from
+        :meth:`push_cause` here, and that is the exact mechanism that hid the
+        2026-08-26 doorbell root cause for a whole session. The runtime latches
+        the cause it replaces so this panel can answer the question an operator
+        actually has.
+
+        ``None`` IS AN ORDINARY ANSWER, NOT AN EDGE CASE, and it became a common
+        one when the latch got an age: it expires after
+        `network_runtime.PUSH_CAUSE_LATCH_MS` and an expired latch is DROPPED
+        rather than annotated, so this returns None on any badge whose doorbell
+        has been quiet for longer than that window. `push_view` renders nothing
+        for None, which is why no reserved-but-empty row appears and why a latch
+        that expires between two frames costs no layout shift: the line is absent
+        in both, or present in one and absent in the next with the question
+        moving up one pitch exactly as it does when the LIVE cause clears.
+
+        Guarded by :meth:`_push_word` for the same three reasons `push_cause` is.
+        """
+        return self._push_word("previous_cause")
 
     def row(self, index=None):
         return self.rows[self.index if index is None else index]
@@ -721,11 +1033,15 @@ class Settings:
                 library=self.library,
                 controllable=self._push_control is not None,
                 enabled=self.push_enabled(),
+                cause=self.push_cause(),
+                previous=self.push_cause_previous(),
             )
         if self.screen == SLEEP:
             return sleep_view()
         if self.screen == BRIGHT:
             return bright_view(self.brightness)
+        if self.screen == SCORES:
+            return scores_view(self._scores_result)
         return self.pair_view()
 
     # -- input ---------------------------------------------------------------
@@ -752,6 +1068,12 @@ class Settings:
                 self.screen = ROW_SCREENS[self.row()]
                 if self.screen == SLEEP:
                     self._sleep_ms = SLEEP_NOTE_MS
+                if self.screen == SCORES:
+                    # OPENING A QUESTION, NOT ANSWERING ONE, and the state is
+                    # cleared on the way IN rather than on the way out: a wearer
+                    # who erased, read the result and came back must meet the
+                    # question again, not somebody else's answer to it.
+                    self._scores_result = None
             return []
         if self.screen == BRIGHT:
             # BEFORE THE GENERIC `A` BRANCH BELOW, WHICH IS THE WHOLE POINT OF
@@ -761,9 +1083,26 @@ class Settings:
             # with a ladder they can only climb.
             return self._bright_key(key)
         if key == "A":
-            # Labelled, commits nothing, and never touches the pair flow.
+            # Labelled, commits nothing, and never touches the pair flow. On the
+            # erase question it is the KEEP the bar promises, which is the same
+            # behaviour under a different word rather than a second branch.
             self.screen = MENU
             return []
+        if self.screen == SCORES:
+            # B IS INERT HERE (B7), and only C acts. Reached AFTER the generic A
+            # branch because A means exactly what it means everywhere else -- and
+            # the answered screen has no verb at all, so a second C cannot erase
+            # again over a result the wearer is reading.
+            if key != "C" or self._scores_result is not None:
+                return []
+            if self._score_control is None:
+                # NOT A CRASH AND NOT A LIE. A tile with no wipe capability
+                # cannot have erased anything, so it says so on the same screen
+                # the wearer is already looking at.
+                self._scores_result = False
+                return []
+            self._scores_result = bool(self._score_control.wipe())
+            return [{"type": "scores_erased", "ok": self._scores_result}]
         if self.screen == NETWORK:
             if key == "B" and self._network_control is not None and self.library:
                 before = self.network_enabled()

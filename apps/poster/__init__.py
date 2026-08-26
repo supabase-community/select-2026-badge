@@ -29,7 +29,7 @@ same reason.  So the arrival is staged cheapest-first:
               no artwork module at all.  The badge is already readable at a
               metre here, which is most of what a badge is for.
     stage 2   the artwork, behind the name.  Exactly ONE of `skins`
-              (666,336 B) or `glyphskin` (41,235 B) is imported, chosen by
+              (667,219 B) or `glyphskin` (42,075 B) is imported, chosen by
               `identity_catalogue.kind_of`; identity imports both.
     stage 3   the marks, and only if the badge has any.  The mark sheet is an
               `image.load` a badge with no stickers has no reason to pay for.
@@ -280,7 +280,7 @@ _light(state["brightness"])
 # ARMED BETWEEN THE STAGES, deliberately: the stamp is a file stat and a codec
 # parse, cheap but not free, and it belongs after the NAME is on the panel and
 # before the call that could rasterise a skin.  A hit skips the render AND the
-# 666,336-byte `skins` import; a miss costs 64 bytes.  This app never WRITES the
+# 667,219-byte `skins` import; a miss costs 64 bytes.  This app never WRITES the
 # cache -- it is read-only by ruling, the editor fills it.
 # Design, invalidation and measurements: `docs/design/backdrop-cache.md`.
 if view is not None:
@@ -321,6 +321,90 @@ if view is not None:
           % (view.hits, view.renders, view.cache_stamp))
 
 
+# -- the BadgeLink placement opt-in ----------------------------------------
+#
+# TWO SOURCES, AND THEY SAY DIFFERENT THINGS -- worth separating here because
+# conflating them would let a later reader find a roster in a ruling that does
+# not contain one. OWNER RULING #22 establishes the MECHANISM (establishment is
+# allowed at the launcher, or in an app that opted in via `set_active`) and names
+# no apps. THE ROSTER is the owner's work order,
+# `docs/handoff/networking-endstate-2026-08-26/FINAL_PROMPT_badge.md` §7.1:
+# settings and home were already covered, poster and schedule are the two to
+# add, and everything else is left alone.
+#
+# THE POSTER IS THE PRODUCT'S RESTING STATE, AND THAT IS WHY THIS IS HERE.
+# `launcher/menu/idle.py` returns `poster` after 30 s, so an untouched badge
+# spends its whole day in this app -- and `network_runtime.
+# _placement_allows_establishment` is `at_launcher or active`, which means an
+# app that never calls `set_active(True)` silently withholds every connect
+# moment. Measured on hardware 2026-08-26: `wifi_online` at ~13 s, first push
+# moment at ~15-19 s, poster at ~32 s -- a **12.7-second doorbell window per
+# boot**, and then silence for the remaining 449 seconds of the capture. The
+# owner's opt-in list is settings, home, poster and schedule; the games and
+# badgecard are deliberately left out, because a game frame is the one place a
+# TLS handshake must not land.
+#
+# AND THE SERVER-SIDE COST OF THIS ROSTER HAS NEVER BEEN PRICED, which is worth
+# stating exactly here, beside the reason the roster exists, rather than in a
+# capacity doc nobody reads while editing this line.
+#
+# The roster is a CAPACITY control as well as a reachability one, and only the
+# reachability half was ever argued -- including by the review that asked for
+# this opt-in and by the lane that implemented it. Follow the two facts above to
+# their joint conclusion: the poster is join-allowed and it is where an untouched
+# badge spends its day, and every app exit is a `machine.reset()` that lands the
+# wearer at the LAUNCHER, which is also join-allowed. So **there is no ordinary
+# wearer state in which a badge is not permitted to join.** The only spacing left
+# is `pushlink.BOOT_JITTER_MS` -- twenty seconds, and it spaces a herd, not a
+# rate.
+#
+# THAT IS THE SAME DECISION SEEN FROM TWO SIDES, NOT TWO DECISIONS IN TENSION.
+# The 12.7-second window above is the wearer's complaint and this opt-in is its
+# fix; the fix also removed the last placement-shaped limit on how often the
+# fleet asks the server for a join. Nothing is reused across a switch either --
+# no session, no TLS, no socket survives a reset -- so every join is a COLD join
+# by construction and the fleet cannot amortise anything. If the join term turns
+# out to be expensive server-side (see NETWORKING_LANE_STATE.md §6, an open
+# measurement), the honest options are: keep the roster and pay it, widen
+# BOOT_JITTER_MS and pay doorbell latency after every switch, or make the
+# doorbell's recurrence cheaper than a fresh join -- which needs a soft reset
+# this platform may not offer, and is a question only Pimoroni can answer.
+#
+# DO NOT ADD AN APP TO THIS ROSTER WITHOUT THAT NUMBER. Each addition multiplies
+# fleet join rate by that app's share of wearer time, and this comment is the
+# only place that says so.
+#
+# A FIRMWARE-INJECTED BUILTIN, READ AS A BARE NAME, for the reason `settings`
+# spells out: MicroPython's `builtins` attribute lookup bypasses its own
+# override dictionary, so `builtins.badgelink_network = ...` is only visible to
+# ordinary name lookup.
+try:
+    _network = badgelink_network
+except NameError:
+    _network = None
+
+
+def _network_active(active):
+    """Tell BadgeLink this app is a tolerant place to establish, or stop.
+
+    EVERY CALL IS GUARDED, and the guard is not defensive style -- it is the
+    reset rule. An `AttributeError` raised on the launch path resets the badge
+    (docs/deploy.md), and a badge whose `/system/lib` predates `set_active`
+    would raise exactly that. So a missing seam makes the poster a poster, which
+    is what it was before this block existed.
+    """
+
+    if _network is None:
+        return
+    setter = getattr(_network, "set_active", None)
+    if not callable(setter):
+        return
+    try:
+        setter(bool(active))
+    except Exception as error:  # noqa: BLE001
+        print("POSTER_NETWORK stage=set_active error=%r" % error)
+
+
 def on_exit():
     """Put back everything that outlives this app.
 
@@ -329,8 +413,14 @@ def on_exit():
     return, so this is a backstop -- but the HOME irq route does not, and a
     backstop that costs two assignments is worth having on the one setting that
     could make the NEXT app look broken.
+
+    THE NETWORK OPT-IN IS RELEASED HERE TOO, and it has to be released on the
+    HOME route as well: `set_active` is a lasting property of where the badge is,
+    so an app that opted in and never opted out would leave a WSS establishment
+    admissible from inside the next app's frames.
     """
     badge.default_clear = _previous_clear
+    _network_active(False)
     print("POSTER_EXIT frames=%d failed=%s" % (frames, failed or "-"))
 
 
@@ -344,6 +434,12 @@ def update():
     on the panel stays there and an idle worn badge costs one VSYNC wait.
     """
     global frames, plain
+    # IDEMPOTENT AND BEFORE THE PAINT. `NetworkService.set_active` raises
+    # MOMENT_VIEW_TRANSITION on the False->True edge only, so calling it every
+    # frame costs one attribute lookup and one bool compare after the first --
+    # and doing it per frame rather than once at open is what survives a
+    # `set_active(False)` from anywhere else while the poster is still up.
+    _network_active(True)
     pressed = bool(badge.pressed())
     # NO IDLE POLL, and its absence is the 2026-08-24 ruling rather than an
     # oversight: the poster never dims, so there is no clock to advance and no

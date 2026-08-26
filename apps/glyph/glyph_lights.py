@@ -28,6 +28,17 @@ ZONE_COUNT = 4
 # Raw mean-mask energy per 8x3 logical quadrant that maps to full output.  The
 # values are measured from the committed badge-native assets.  Unknown future
 # techniques use a conservative generic scale.
+#
+# DELIBERATELY FIVE ENTRIES, AND CHECKED AGAIN ON 2026-08-26 rather than
+# completed.  Every value here is measured off the 16x6 deck
+# (`glyph/badge/glyph/assets/`), which neither the four-ring `ring-buffer`
+# rebuild nor `elephant` touched -- the rebuild is 32x12 only and `elephant`
+# has no 16x6 asset at all.  So `ring-buffer`'s 850 is still its measurement
+# and `elephant` correctly falls to DEFAULT_ENERGY_SCALE.  This table is also
+# NOT on the product path: the shipping viewer lights the dense deck through
+# `light_calibration_2x.calibration_for` and the coarse one through
+# `glyph_rich_lights`; only the lab probes reach this one, with
+# `energy_scale_multiplier=4` for 32x12.
 TECHNIQUE_ENERGY_SCALE = {
     "radar": 3600,
     "wave": 3600,

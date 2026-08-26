@@ -49,6 +49,7 @@ from snake_model import (
 )
 _load.tick("-- snake_model")
 from snake_profile import load_accent  # noqa: E402
+from score_sink import spool  # noqa: E402
 from snake_store import load, update_high_score  # noqa: E402
 _load.tick("-- snake_store")
 from snake_view import SnakeView  # noqa: E402
@@ -107,6 +108,18 @@ game = None
 # in this file.  Do not "tidy" it back towards the middle of the ladder.
 level_index = 3
 last_step = time.ticks_ms()
+# WHEN THE LIVE RUN STARTED, for the duration the leaderboard is sent.  Wall
+# time, measured, and it is the only honest source: no model state in this game
+# times the PLAYER.  `game["eaten"]` counts meals and the step clock counts
+# simulation, so `steps * LEVEL_MS` would be an in-game figure dressed up as a
+# measurement -- and a fabricated duration is worse than a missing one, because
+# nothing server-side can falsify it.
+#
+# A RESUME DOES NOT RESTART IT.  `start_game` is the only writer: the run the
+# wearer played is the one that began there, and a pause is INSIDE it.  Re-arming
+# this on resume would let a paused run report a duration shorter than the play it
+# contains, which is the one direction a floor check must not be fooled in.
+run_started = last_step
 food_frame = 0
 food_clock = last_step
 best = False
@@ -163,12 +176,13 @@ def commands_live(now):
 
 def start_game(now):
     global phase, game, last_step, light_kind, food_frame, food_clock, best, confirm_quit
-    global bloat_seen
+    global bloat_seen, run_started
     # The level is read ONCE, here, and lives in the game state from then on.
     # A wager the player could edit after seeing the board would not be one.
     game = new_game(view.COLS, view.ROWS, random_below, level_index + 1)
     phase = PLAYING
     last_step = now
+    run_started = now
     food_frame = 0
     food_clock = last_step
     light_kind = None
@@ -218,6 +232,12 @@ def bank_run(reason):
     inside the sink, `_publish` swallows everything a forwarder raises, and the
     remaining calls -- `open`, `flush`, `os.sync`, `os.rename` -- raise nothing
     else.  Catching wider would hide a real defect in the model instead.
+
+    AND IT IS ALSO THE SUBMISSION POINT, which is why the spool call is here
+    rather than in the three doors: every completed run submits (owner ruling,
+    2026-08-27), and this function is already the one place all three doors --
+    death, the labelled quit and HOME -- agree the run is over.  A door that
+    banked without submitting would be a client-side filter nobody ruled for.
     """
     global high_score, high_level, save_failed, saving
     saving = True
@@ -236,6 +256,34 @@ def bank_run(reason):
         )
         return False
     finally:
+        # SUBMITTED WHETHER OR NOT THE LOCAL SAVE LANDED, and after it either
+        # way: a losing run writes nothing at all (`commit` skips it to spare the
+        # flash) and still counts, and a full volume that cost the record must
+        # not also cost the leaderboard row.  `spool` never raises.
+        #
+        # INSIDE THE `saving` WINDOW, WHICH IS THE ONLY REASON IT IS IN THE
+        # `finally` AND NOT AFTER THE CALL.  `quit_game` does not clear `phase`
+        # until this returns, so a HOME interrupt arriving with `saving` already
+        # cleared re-enters `bank_run` on the same live run -- and where a second
+        # local write is merely wasted (the record is idempotent), a second
+        # submit is a SECOND ROW with a fresh idempotency key, so one run would
+        # appear twice on the leaderboard.  The window was microseconds wide and
+        # an append plus an `os.sync` would have made it milliseconds.
+        # GUARDED AT THE CALL SITE (owner ruling, 2026-08-27), and inside a
+        # `finally` the stakes are higher than elsewhere: an exception raised
+        # here REPLACES the one in flight, so an unguarded submit could both
+        # reset the badge and destroy the traceback that explained why.  An
+        # unguarded persistence write on game-over turned every death into a
+        # reset once already -- that is where `bank_run`'s own guard came from.
+        # `spool` swallows a raising store itself; what only this `try` catches
+        # is the argument evaluation and a `spool` that broke its contract.  The
+        # print is what stops the guard from hiding a real defect.
+        try:
+            spool("snake", game["score"],
+                  time.ticks_diff(time.ticks_ms(), run_started))
+        except Exception as error:  # noqa: BLE001 - a reset is the alternative
+            print("SNAKE_SPOOL_ERROR score={} err={}".format(
+                game["score"], repr(error)))
         saving = False
 
 

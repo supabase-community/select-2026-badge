@@ -37,8 +37,8 @@ cheapest-first:
     stage 1   THE NAME, at its final face, size and position.  The badge is
               already readable at a metre here, which is most of what a badge
               is for.
-    stage 2   the artwork behind it.  Exactly ONE of `skins` (666,336 B) or
-              `glyphskin` (41,235 B) is parsed, chosen by the catalogue.
+    stage 2   the artwork behind it.  Exactly ONE of `skins` (667,219 B) or
+              `glyphskin` (42,075 B) is parsed, chosen by the catalogue.
     stage 3   the marks, and only if the badge has any.
 
 DEGRADE, NEVER FAIL.  An escaping exception here is not a log line:

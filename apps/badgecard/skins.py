@@ -300,7 +300,7 @@ SUPA_SWEEPS = 2
 SUPA_ART_X0, SUPA_ART_Y0, SUPA_ART_W, SUPA_ART_H = 0.0560, -0.0100, 229.1913, 216.4292
 
 
-SUPA_ASPECT = 1.058967
+_SUPA_ASPECT = 1.058967
 
 
 SUPA_PIVOT = (0.30081, 0.52216)
@@ -369,10 +369,10 @@ def _supabase_box(buf):
     """The art's box: fit by height, centred, feet on SUPA_FOOT."""
     w, h = buf.width, buf.height
     bh = h * SUPA_FIT
-    bw = bh * SUPA_ASPECT
+    bw = bh * _SUPA_ASPECT
     if bw > w * 0.98:
         bw = w * 0.98
-        bh = bw / SUPA_ASPECT
+        bh = bw / _SUPA_ASPECT
     return ((w - bw) * 0.5, h * SUPA_FOOT - bh, bw, bh)
 
 
@@ -15638,10 +15638,12 @@ ARG = "Infinity"
 STATUS = "Running..."
 
 
-GAP = 0.2      # fraction of the circle that is open (keep < 0.5)
+# @skinlab {"type":"number","label":"Open arc fraction","group":"Motion","min":0.05,"max":0.45,"step":0.01}
+GAP = 0.2      # Keep below half so the spinner still reads as one interrupted ring.
 
 
-REST = 0.65    # where the gap sits at t = 0, in turns (matches the still)
+# @skinlab {"type":"number","label":"Rest angle (turns)","group":"Motion","min":0,"max":1,"step":0.01}
+REST = 0.65    # Preserve the authored still while allowing a full-turn phase adjustment.
 
 
 def _pg_sleep_layout(w, h):
@@ -15947,7 +15949,6 @@ SKINS = (
     ("CONTAINER SEA", 0, _g_container_sea, _g_container_sea_a, "bacteria"),
     ("INTERLOCK", 0, _g_interlock, None, "ignore"),
     ("OXIDE", 0, _oxide, _oxide_anim, "curse"),
-    ("SUPABASE", 0, _supabase, _supabase_anim, "badgewaremax"),
     ("TERMINAL", 0, _terminal, _terminal_anim, "smart"),
     ("TRACE MAP", 0, _g_trace_map, _g_trace_map_a, "absolute"),
     ("AMBER", 1, _amber, _amber_a, "yesterday"),
@@ -16031,6 +16032,15 @@ SKINS = (
     ('ANTHROPIC', 10, _anthropic, _anthropic_a, 'badgewaremax'),
     ('PG SLEEP', 11, _pg_sleep, _pg_sleep_a, 'smart'),
     ('SUPABASE SELECT', 12, _supabase_select, _supabase_select_a, 'badgewaremax'),
+    # MOVED TO THE TAIL, 2026-08-26, on the owner's instruction after a device
+    # review: *"supabase is good, but no longer the default. move it to the end"*.
+    # ITS GROUP CHANGED 0 -> 12 (BRAND -> EVENT) BECAUSE THE POSITION FORCED IT:
+    # `test_entries_are_contiguous_within_their_group` holds each group to one
+    # run, so a row at the tail must carry the tail group. EVENT is the honest
+    # home -- it sits beside `SUPABASE SELECT`, the other entry drawn from the
+    # same event's art. The group is an internal tag no app persists (see the
+    # note above `GROUPS`), so this moved a jump-key stop and nothing else.
+    ("SUPABASE", 12, _supabase, _supabase_anim, "badgewaremax"),
 )
 
 COUNT = len(SKINS)

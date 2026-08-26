@@ -56,6 +56,7 @@ from flappy_model import (  # noqa: E402
     step,
 )
 _load.tick("-- flappy_model")
+from score_sink import spool  # noqa: E402
 from flappy_store import load, update_high_score  # noqa: E402
 _load.tick("-- flappy_store")
 from flappy_view import FlappyView  # noqa: E402
@@ -104,6 +105,18 @@ game = None
 # file.  Do not "tidy" it back towards the middle of the ladder.
 level_index = 3
 last_step = time.ticks_ms()
+# WHEN THE LIVE RUN STARTED, for the duration the leaderboard is sent.  Wall
+# time, measured, and it is the only honest source: no model state in this game
+# times the PLAYER.  The step clock times the SIMULATION, so a tick count scaled
+# by the level's interval would be an in-game figure dressed up as a measurement
+# -- and a fabricated duration is worse than a missing one, because nothing
+# server-side can falsify it.
+#
+# A RESUME DOES NOT RESTART IT.  `start_game` is the only writer: the run the
+# wearer played is the one that began there, and a pause is INSIDE it.  Re-arming
+# this on resume would let a paused run report a duration shorter than the play
+# it contains, which is the one direction a floor check must not be fooled in.
+run_started = last_step
 best = False
 # Did the last commit attempt fail?  The RECORD is never damaged by a failed
 # write -- the sink renames into place or does nothing, so the old file
@@ -152,11 +165,12 @@ def commands_live(now):
 
 
 def start_game(now):
-    global phase, game, last_step, light_kind, best, confirm_quit
+    global phase, game, last_step, light_kind, best, confirm_quit, run_started
     # The load is read ONCE, here, and lives in the game state from then on.
     game = new_game(level_index + 1, random_below)
     phase = PLAYING
     last_step = now
+    run_started = now
     light_kind = None
     best = False
     confirm_quit = False
@@ -203,6 +217,28 @@ def finish_game(now):
                 game["score"], game["level"], repr(error)
             )
         )
+    # EVERY COMPLETED RUN SUBMITS (owner ruling, 2026-08-27): one line, no
+    # client-side filtering, because personal-best-on-the-badge would be
+    # judgment and all judgment is SQL and hot-patchable.  AFTER the local save,
+    # for `score_sink`'s non-negotiable reason -- disk first, disk wins -- and it
+    # runs whether or not that save landed: a losing run writes nothing at all
+    # and still counts, and a full volume that cost the record must not also cost
+    # the leaderboard row.  `spool` never raises and does nothing at all on a
+    # badge with no `/system/lib`.
+    # GUARDED AT THE CALL SITE ANYWAY (owner ruling, 2026-08-27), and it is a
+    # ruling rather than superstition: an unguarded persistence write on
+    # game-over turned every death into a badge RESET once already, which is
+    # where the save guard above comes from.  `spool` swallows a raising store
+    # itself, so what only THIS `try` can catch is the ARGUMENT EVALUATION and a
+    # `spool` from a build that broke its own contract -- both a reset if they
+    # escape.  The print is what stops the guard from hiding a real defect: the
+    # serial log names the class, and a silent `pass` here would not.
+    try:
+        spool("flappy", game["score"],
+              time.ticks_diff(now, run_started))
+    except Exception as error:  # noqa: BLE001 - a reset is the alternative
+        print("FLAPPY_SPOOL_ERROR score={} err={}".format(
+            game["score"], repr(error)))
     set_light("refused", now, 1400)
     print(
         "FLAPPY_FINISH score={} level={} cause={} high={} saved={}".format(
@@ -272,6 +308,25 @@ def quit_game(now):
                 game["score"], game["level"], repr(error)
             )
         )
+    # THE LABELLED DOOR SUBMITS TOO, and that is the ruling rather than a
+    # preference: deciding that a walked-away run "does not count" is judgment,
+    # and judgment is SQL's, where it can be changed mid-event.  This app already
+    # treats a quit as a completed run -- it banks it to flash three lines up --
+    # so the spool follows the door the record already went through.
+    # GUARDED AT THE CALL SITE ANYWAY (owner ruling, 2026-08-27), and it is a
+    # ruling rather than superstition: an unguarded persistence write on
+    # game-over turned every death into a badge RESET once already, which is
+    # where the save guard above comes from.  `spool` swallows a raising store
+    # itself, so what only THIS `try` can catch is the ARGUMENT EVALUATION and a
+    # `spool` from a build that broke its own contract -- both a reset if they
+    # escape.  The print is what stops the guard from hiding a real defect: the
+    # serial log names the class, and a silent `pass` here would not.
+    try:
+        spool("flappy", game["score"],
+              time.ticks_diff(now, run_started))
+    except Exception as error:  # noqa: BLE001 - a reset is the alternative
+        print("FLAPPY_SPOOL_ERROR score={} err={}".format(
+            game["score"], repr(error)))
     phase = INTRO
     light_kind = None
     confirm_quit = False

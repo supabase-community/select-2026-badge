@@ -168,13 +168,13 @@ Two rules on it:
 
 | | source form | bytecode form |
 |---|---:|---:|
-| the modules | 3,532,949 B | 805,913 B (23%) |
-| plus assets and the two files that stay source | +5,516,698 B | +5,516,698 B |
-| **staged `/system`** | **9,049,647 B** | **6,322,611 B** |
-| of the 12 MB FAT allocation | 72% | 50% |
+| the modules | 3,633,252 B | 813,603 B (22%) |
+| plus assets and the two files that stay source | +5,859,094 B | +5,859,094 B |
+| **staged `/system`** | **9,492,346 B** | **6,672,697 B** |
+| of the 12 MB FAT allocation | 75% | 53% |
 
-1. **Headroom.** Source form fits today. It fits with 3.5 MB in hand against 6.2 MB, and the assets are the part that grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
-2. **First-open latency, which is the one a wearer feels.** Every app exit is a full reset (`ARCHITECTURE.md` section 2), so *every* open is a cold open. The badge parses and compiles each `.py` it imports as one uninterruptible native call per module: nothing of ours can paint the panel while that runs, which is why a heavy app freezes its own loading animation. The largest module in this tree is `apps/badgecard/skins.py` at 666,336 B of source, which compiles to a 228,847 B `.mpy` that **still costs 630-765 ms to import cold on device** (a measured band across several runs, not a point estimate). Shipping the source would add the parse to that, on every open, forever.
+1. **Headroom.** Source form fits today. It fits with 2.9 MB in hand against 5.6 MB, and the assets are the part that grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
+2. **First-open latency, which is the one a wearer feels.** Every app exit is a full reset (`ARCHITECTURE.md` section 2), so *every* open is a cold open. The badge parses and compiles each `.py` it imports as one uninterruptible native call per module: nothing of ours can paint the panel while that runs, which is why a heavy app freezes its own loading animation. The largest module in this tree is `apps/badgecard/skins.py` at 667,219 B of source, which compiles to a 228,851 B `.mpy` that **still costs 630-765 ms to import cold on device** (a measured band across several runs, not a point estimate). Shipping the source would add the parse to that, on every open, forever.
 3. **A stray `.py` beside its own `.mpy` silently wins.** MicroPython stats the source first, so a badge holding both runs the source: no speed-up, possibly stale code, no error anywhere. That is the failure mode a mixed drag-and-drop-plus-build workflow produces, and it is exactly what `--verify-mount` reports as a stray.
 
 So: develop by drag and drop, ship the build. If you drop a source app onto a badge that carries this build, clear that app's directory first and run `--verify-mount` before you conclude anything about performance.

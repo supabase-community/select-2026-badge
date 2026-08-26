@@ -20,8 +20,8 @@ an app that imports out of a neighbour's directory refuses to start when the
 neighbour is not installed.  A copy is forced; a second EDITABLE copy is not.
 
 THE ARTWORK MODULES ARE IMPORTED LAZILY AND EXACTLY ONE OF THEM RUNS.
-`identity_view` used to import `skins` (666,336 B, ~120 function objects all
-executed at import to build one tuple) and `glyphskin` (41,235 B) at module
+`identity_view` used to import `skins` (667,219 B, ~120 function objects all
+executed at import to build one tuple) and `glyphskin` (42,075 B) at module
 scope, so every launch parsed both to draw one background.  A badge wears ONE
 entry, and `identity_catalogue.kind_of` already knows which module can draw it,
 so the import happens at the point of use.  Nothing about the picture changes;
@@ -133,7 +133,7 @@ def cache_stamp(app_root="", module_name="skins"):
 
     READING IT COSTS NO IMPORT, which is the other half of why it lives in the
     catalogue: `identity_catalogue` is imported at this module's scope already,
-    while `skins` is 666,336 bytes the whole cache exists to not import on a hit.
+    while `skins` is 667,219 bytes the whole cache exists to not import on a hit.
 
     `app_root` is the seam's own install directory, which is the one thing this
     module cannot derive: it has no `__name__` to read and no business knowing
@@ -164,7 +164,28 @@ TEXT_X = 6
 
 # The poster's nickname block.  A fraction of the canvas rather than a pixel, so
 # it survives the resolution flip the way `shared/ui.py` requires.
-NAME_FY = 0.12
+#
+# 0.12 -> 0.08, 2026-08-26, on the owner's instruction after a device review:
+# *"move the name in supabase up a little bit more."*  He approved the SIZE and
+# the LEGIBILITY on glass in the same session, so this moves the name and
+# nothing else -- `SUPA_FIT` (0.76) and `NAME_MAX_SCALE` stay where they are.
+#
+# IT REDUCES THE OVERLAP AND CANNOT END IT, and that is arithmetic rather than
+# an opinion.  The mascot's art box starts at 0.235 of the height
+# (`skins._supa_box`: `SUPA_FOOT - SUPA_FIT` = 0.995 - 0.76), and `SAM` in
+# `badgewaremax` at HIRES lands on scale 3 -- width-limited, not cap-limited --
+# whose INK measures 0.3042 of the canvas tall.  So the name covers the mascot
+# from its first row at any `NAME_FY` that keeps it on screen.  Measured through
+# the shipping renderer, `Poster.worn`, by diffing a named card against the same
+# card with no name:
+#
+#     SAM          ink 0.242..0.546  ->  0.202..0.505   (top clears 0.235 now)
+#     MAXIMILIANO  ink 0.158..0.263  ->  0.118..0.223   (clears the box entirely)
+#
+# i.e. a short name still crosses the mascot for 0.27 of the height, down from
+# 0.31. The second half of that fix -- if the owner wants one -- is `SUPA_FIT`
+# or the cap, and both were explicitly approved as they are.
+NAME_FY = 0.08
 # Widest integer scale the display face is allowed to reach, per unit of
 # `chrome.scale`.  Three is 36 px of type on a 120 px canvas, which is a poster;
 # four would leave no room for the second line.  At HIRES the ceiling is six,
@@ -192,9 +213,30 @@ NAME_MAX_SCALE = 2
 # MOVED WITH `NAME_FY`, and it has to be: this band is where the polarity
 # decision samples luminance, and the comment above says the sample and the
 # draw must not drift apart. It brackets the type -- two points above the name
-# top, down past where the second line lands under the tallest short name
-# (0.12 + 80/240 = 0.45).
-NAME_BAND_FY = (0.10, 0.50)
+# top, down past where the second line lands under the tallest short name.
+#
+# (0.10, 0.50) -> (0.06, 0.46), 2026-08-26, the same 0.04 `NAME_FY` moved, so
+# the bracket around the type is unchanged and only its position moved.
+#
+# THE POLARITY CONSEQUENCE IS MEASURED, NOT ASSUMED. Every one of the 107
+# catalogue entries was rendered through `Poster.background` and its band mean
+# taken under both bands. FIVE cross `DARK_ENOUGH` and therefore draw the name
+# in the other colour:
+#
+#     skin.vanish-point  0.3553 -> 0.3712   white -> BLACK
+#     skin.blinky        0.3833 -> 0.3512   BLACK -> white
+#     skin.not-loading   0.3055 -> 0.3797   white -> BLACK
+#     skin.palm-gloss    0.3140 -> 0.3600   white -> BLACK
+#     skin.resend        0.3320 -> 0.3638   white -> BLACK
+#
+# `not-loading` is going BACK: the 2026-08-21 move is what made it white. Every
+# one of the five reads within 0.03 of the threshold on both sides, which is
+# what "near the line" looks like rather than a defect, and each new reading
+# comes from where the type now actually sits. `skin.shear`, the other skin the
+# 2026-08-21 move flipped, does not move back. Recorded on the device punchlist
+# for eyes anyway, because a threshold crossing is exactly where a metric earns
+# a look.
+NAME_BAND_FY = (0.06, 0.46)
 # Every glyph is drawn eight times in the outline colour, then once in the fill.
 # An OUTLINE, never a box: a plate behind the name hides the artwork the wearer
 # chose, and the whole point of the picker is that they chose it.
@@ -981,7 +1023,7 @@ class Poster:
 
         THE IMPORT OF THE ARTWORK MODULE HAPPENS HERE, which is what lets a
         badge wearing a procedural skin never parse `glyphskin` and a badge
-        wearing a glyph entry never parse the 666,336 bytes of `skins`.
+        wearing a glyph entry never parse the 667,219 bytes of `skins`.
 
         AND THE PERSISTED CACHE IS READ HERE, for the same reason everything
         else about the cost model lives in this method: a hit costs one `open`,

@@ -46,7 +46,7 @@ import wallpaper
 
 # THE TWO ARTWORK MODULES ARE IMPORTED LAZILY, AND AT MOST ONE OF THEM RUNS.
 # `poster.py`'s trick, for the same measured reason and one more that is
-# specific to this file: `skins` is 666,336 bytes with ~120 function objects all
+# specific to this file: `skins` is 667,219 bytes with ~120 function objects all
 # executed at import, `glyphskin` is another 41,223 B, and a badge wears exactly
 # ONE background.  The extra reason is that this module is imported by the SEAM,
 # on the launch path, so that a wallpaper that was deleted by a host can be
@@ -130,7 +130,22 @@ MARK_BOTTOM = LABEL_TOP
 # leaving them behind would have made the badge and its own wallpaper disagree
 # about where the wearer's name goes. At 160x120 the old cap of 3 drew a short
 # name 60 px tall on a 120 px film: half the picture, same defect as the panel's.
-NAME_FY = 0.12
+#
+# MOVED AGAIN 2026-08-26, 0.12 -> 0.08, for the same reason and in the same
+# breath: the film is the SAME COMPOSITION AT HALF SIZE, so a `NAME_FY` that
+# tracked the poster once and stopped would put the wearer's name in one place
+# on the badge and another on the badge's own home screen.  `NAME_BAND_FY` has
+# no counterpart here -- this baker draws the name white and outlined, with no
+# polarity sample -- so `NAME_FY` is the whole of the change.
+#
+# ⚠ IT DOES NOT RE-BAKE AN EXISTING FILM, and `BAKE_VERSION` was deliberately
+# NOT bumped, following the 2026-08-22 precedent (`0c5382c1`) that moved these
+# same two constants and left it alone.  A badge holding a film baked before
+# this keeps the old name row on its launcher wallpaper until the wearer saves
+# again.  Whether that is worth a bump -- which re-bakes every badge once -- is
+# an owner call, not a silent one; `card_model.BAKE_VERSION`'s comment is the
+# argument for, and `test_card_effect.RecipeTests` pins the number.
+NAME_FY = 0.08
 NAME_MARGIN = 6
 NAME_MAX_SCALE = 2
 

@@ -264,6 +264,55 @@ SLEEP_LINE_WAKE = "Any button but HOME wakes it"
 SLEEP_LINE_RESTART = "The badge restarts when it wakes"
 
 
+# -- erasing the scores ------------------------------------------------------
+#
+# THE ONLY DESTRUCTIVE ACTION IN THIS TILE, so it is the only place here that
+# follows B7's confirmation shape: KEEP on A, B EMPTY AND INERT, the verb on C.
+# The precedent is `badgecard`'s RESET BADGE, and this copy owes it two rules.
+#
+# THE MODAL NAMES WHAT IT TAKES *AND* WHAT IT KEEPS. `badgecard`'s confirmation
+# ends on "SCORES AND WIFI ARE KEPT" because a wearer standing at a conference
+# deciding whether to press C is exactly the person who needs to know what
+# survives. This screen is the other side of that sentence -- the one press on
+# this badge that DOES take the scores -- so it has to be equally exact about the
+# boundary, and `badgecard`'s promise stays true: resetting a card still keeps
+# the scores, and this row still keeps the card.
+#
+# AND IT MUST NOT OVERCLAIM. Erasing is local and nothing more. A score already
+# sent to the leaderboard is a row in a database this badge cannot reach; the
+# owner can delete those in SQL, the badge cannot, and copy that implied
+# otherwise would be a promise the wearer could disprove by looking at the board.
+# `SCORES_LINE_SENT` is that limit, in the wearer's words.
+#
+# "EVERY GAME" RATHER THAN "ALL FIVE", and the number is the trap: the production
+# roster ships a SUBSET of the five games, so a badge in a wearer's hand may have
+# three of them and a count would be visibly wrong. `scorebox.GAME_STATE_PATHS`
+# names five paths on purpose (a dev badge has all of them, and erasing a file
+# that is not there costs nothing), but the copy must not.
+ROW_SCORES_LABEL = "Scores"
+SCORES_TITLE = "Erase scores"
+SCORES_LINE_CLEARS = "Erases every game's high score"
+SCORES_LINE_SPOOL = "and any score not sent yet"
+SCORES_LINE_SENT = "Scores already sent stay sent"
+SCORES_LINE_KEEPS = "Your badge and wifi are kept"
+#: A on the question, and the word is `badgecard`'s: a wearer who met this
+#: decision there meets the same answer here.
+KEEP = "KEEP"
+#: C on the question. "ERASE" and not "WIPE": it is the verb the title uses, and
+#: a bar whose word differs from the question's is a bar the wearer has to
+#: translate.
+ERASE = "ERASE"
+#: THE RESULT SCREEN, because a destructive press with no feedback is a press the
+#: wearer has to guess about -- and the failure case is the one that matters. A
+#: rewrite can fail on a full volume, and a wearer who walked away believing
+#: their scores were gone would be wrong in the one direction that cannot be
+#: corrected later.
+SCORES_DONE_TITLE = "Scores erased"
+SCORES_DONE_LINE = "Every game starts from nothing"
+SCORES_FAILED_TITLE = "Not all erased"
+SCORES_FAILED_LINE = "The badge could not write. Try again"
+
+
 # -- the brightness ladder ---------------------------------------------------
 #
 # THE RUNG NAMES ARE `shared/backlight.py`'s AND THIS FILE DOES NOT RESTATE
@@ -387,6 +436,204 @@ PUSH_LINE_OFF = "The network is turned off"
 PUSH_LINE_STATE = "Updates: {}"
 
 
+# -- WHY the doorbell is not carrying: the second Updates line ---------------
+#
+# THE DEFECT THIS CLOSES COST THE OWNER DAYS AND A HARDWARE SESSION MOST OF A
+# MORNING. "Updates  Connecting" is `pushlink` mode `trying`, and `trying` is ONE
+# WORD FOR EIGHT DISTINCT STATES -- four of them permanent for the boot, and one
+# in which the doorbell object was never built at all
+# (`NetworkService.push_mode()` answers `PUSH_MODE_TRYING` whenever `self._push`
+# is None and both preferences are on). The owner had one symptom and no cause.
+# `docs/handoff/networking-endstate-2026-08-26/DOORBELL_ROOTCAUSE_FINDINGS.md`
+# §6 D1 is the finding; §6 "the seam, defined precisely" is the interface, and
+# this table is the half it says is ours.
+#
+# A WEARER CANNOT ACT ON MOST OF THE DIFFERENCE, which is why
+# `network_runtime.push_cause()` is a SECOND line and not a new row word: the
+# glance stays "Connecting", and the screen behind it is where the difference is
+# spelled out. That is the rule the network row already follows for its six
+# transport literals and the Updates row already follows for its three "Normal"
+# modes.
+#
+# EVERY WORD BELOW IS OURS, CHOSEN FROM A CLOSED SET, AND NEVER THE SERVER'S.
+# `push_cause()` reads the server's refusal string for ONE BIT (is this an
+# authorization refusal?) and discards the text, because a string minted by a
+# system that knows nothing about which glyphs this badge carries renders as
+# tofu. The same rule governs this table: the KEYS are `network_runtime`'s eight
+# literals and the VALUES are copy priced against the band by
+# `test_settings_fit.py`, so there is no path by which unbaked text reaches the
+# renderer.
+#
+# THE MAP IS TOTAL AND ASSERTED TOTAL. `test_settings_seam.py`'s
+# `test_every_push_cause_the_runtime_can_name_has_wearer_copy` fails the fast
+# lane if the runtime grows a ninth cause, because on this canvas an unmapped
+# word is not a cosmetic gap -- the glyph set is pre-baked, so it is missing
+# glyphs on a wearer's screen.
+#
+# ONE CAUSE IS MASKED BY THE ACT OF READING IT, and that is worth knowing before
+# trusting this line as a diagnostic. `_placement_allows_establishment()` is True
+# for an app that called `set_active(True)`, and `settings/__init__.py` calls
+# exactly that while the Updates screen is open -- so opening the screen GRANTS
+# the placement the cause would have reported. `in an app` is therefore
+# effectively unreachable HERE (only an app-exit frame can produce it), and the
+# state that actually hid the 2026-08-26 root cause is read off serial's
+# `event=push_withheld reason=in an app`, not off this panel. The copy is still
+# required, still priced and still rendered: the map may not have a hole in it.
+PUSH_CAUSE_NOT_STARTED = "It has not started yet"
+#: The one line a wearer can ACT on. HOME leaves the app, and leaving an app is
+#: `machine.reset()` into the launcher, where placement always allows an
+#: establishment (spec §4.5). Naming HOME in body copy is this app's existing
+#: idiom (`SLEEP_LINE_WAKE`); what `docs/badge-button-rules.md` §10 forbids is a
+#: HOME LABEL in the softkey bar, which this is not.
+PUSH_CAUSE_PLACEMENT = "Press HOME to connect"
+#: An attempt is in flight RIGHT NOW, which is the one state the wearer should
+#: simply wait out. Said explicitly rather than left as a blank second line,
+#: because "no line" has to keep meaning "there is nothing to explain".
+PUSH_CAUSE_ESTABLISHING = "Connecting right now"
+#: "Wi-Fi" rather than "the network": the row above already owns the word
+#: network, and a conference attendee reads a missing radio faster than a
+#: missing network.
+PUSH_CAUSE_NO_SIGNAL = "No Wi-Fi signal"
+#: An authorization refusal, and the one cause an operator has to be able to
+#: read off the panel. "The server" is this app's existing word for it
+#: (`NET_LINE_CONNECTED`, `NET_LINE_UNREACHABLE`); "this badge" is what makes it
+#: a refusal of the holder rather than an outage.
+PUSH_CAUSE_REFUSED = "The server refused this badge"
+#: NOT an authorization refusal -- a rate limit or a shard fault, which layer 2
+#: retries on its own backoff and which clears itself. The second clause is the
+#: whole value of the line: it says do nothing.
+PUSH_CAUSE_SERVER_BUSY = "The server is busy, trying again"
+#: Demoted, with the slow bounded re-arm armed. "Later" and not "shortly",
+#: because the re-arm is deliberately slow and a promise of soon would be one
+#: the transport has not made.
+PUSH_CAUSE_RETRY_LATER = "It will try again later"
+#: Wanted, allowed, nothing wrong: between attempts (boot jitter, a reconnect
+#: backoff, waiting for a tolerant moment). "A good moment" is the internal
+#: "tolerant moment" without the jargon, and it is honestly vague because the
+#: wait genuinely has several causes and none of them is actionable.
+PUSH_CAUSE_WAITING = "Waiting for a good moment"
+
+#: ``network_runtime.PUSH_CAUSES`` literal -> the second line. Keyed on bare
+#: strings for the same reason ``PUSH_WORDS`` is: the model spells the literals
+#: as constants and the seam test asserts them against the real module, so this
+#: file stays importable on a host with no ``/system/lib``.
+PUSH_CAUSE_LINES = {
+    "not started": PUSH_CAUSE_NOT_STARTED,
+    "in an app": PUSH_CAUSE_PLACEMENT,
+    "connecting": PUSH_CAUSE_ESTABLISHING,
+    "no signal": PUSH_CAUSE_NO_SIGNAL,
+    "refused": PUSH_CAUSE_REFUSED,
+    "server busy": PUSH_CAUSE_SERVER_BUSY,
+    "retry later": PUSH_CAUSE_RETRY_LATER,
+    "waiting": PUSH_CAUSE_WAITING,
+}
+
+
+# -- WHY it was not carrying BEFORE this screen was opened -------------------
+#
+# THE OBSERVER EFFECT, AND IT IS THE MECHANISM THAT HID THE 2026-08-26 ROOT
+# CAUSE FOR A WHOLE SESSION. `settings/__init__.py` calls `set_active(True)`
+# while this tile is open, and OWNER RULING #22 placement is exactly what that
+# grants -- so opening the Updates screen GRANTS THE PLACEMENT THE SCREEN CAME
+# TO REPORT. `push_cause()` therefore cannot return `in an app` to a reader on
+# this panel: not because the state never happened, but because looking ended
+# it. The block above notes that; this block is the fix.
+#
+# `network_runtime` latches the cause it replaces and exposes it as
+# `previous_cause()`, so the panel can answer the question an operator actually
+# has -- "why did it fail BEFORE I came to look" -- with a value that survives
+# the act of asking.
+#
+# EVERY STRING BELOW IS PAST TENSE AND CARRIES `PUSH_WAS_MARK`, AND THAT IS AN
+# ENFORCED INVARIANT RATHER THAN A HOUSE STYLE. A past fact rendered as present
+# is precisely the failure the runtime's own clear-on-join branch exists to
+# prevent, and re-introducing it one layer up in the UI would defeat that branch
+# entirely. `network_runtime.PUSH_CAUSE_LATCH_MS`'s comment names the risk
+# exactly -- "a display that has to say 'this is historical' is one edit away
+# from not saying it" -- so the marker is asserted by
+# `test_settings_seam.py::test_every_past_push_cause_is_marked_as_past` instead
+# of trusted. An edit that drops it fails the fast lane.
+#
+# THE MAP IS FLAT ON PURPOSE: ONE STRING PER CAUSE, NO FRESHNESS QUALIFIER.
+# There is deliberately no "a moment ago" / "hours ago" tier and no relative-time
+# token, because THE RUNTIME OWNS FRESHNESS, not this copy: the latch expires
+# after `network_runtime.PUSH_CAUSE_LATCH_MS` and an expired latch READS AS
+# ABSENT (`previous_cause()` returns None and drops the value). So a rendered
+# past line is always inside that window by construction, and a staleness
+# qualifier would be copy restating a guarantee the answer already carries.
+# Do not add one (coordinator ruling, 2026-08-26; `settings/README.md`
+# § "The past cause line").
+#
+# THESE ARE NOT THE LIVE LINES WITH A PREFIX, AND THE BAND IS WHY. Prefixing
+# `PUSH_CAUSE_LINES` reaches 263.50 px of the 308 px content width for
+# `server busy` (85.6%), which clears the band but blows the 75% margin
+# `test_settings_fit.py` requires of a cause line -- on the one screen whose
+# whole audience is already confused. Rewritten short, the worst past line is
+# 189.79 px (61.6%), NARROWER than the widest live line in BOTH FACES (215.55 px
+# vector, 189.00 px bitmap), so the extra row costs the screen no width at all.
+# THE BITMAP FACE IS NOT A FORMALITY HERE: it is 2 px tighter than the vector one
+# on this table's worst string and it is what rejected the first `retry later`
+# draft, which the vector face passed with 23 px to spare. Every number is pinned
+# in `test_every_past_cause_line_fits_the_band_in_both_faces` and
+# `test_the_past_line_never_makes_the_screen_tighter_than_it_was`.
+#
+# ONE IS A STATEMENT WHERE THE LIVE LINE IS AN INSTRUCTION, and that is not a
+# style choice either: live `in an app` says "Press HOME to connect" because
+# HOME is the fix. In the past tense that instruction is WRONG -- the wearer is
+# standing in Settings, placement is already granted, and pressing HOME would
+# act on a condition that has gone. So the past form reports and never directs.
+#: The shared past marker, spelled once so the seam test can assert every value
+#: carries it. "Earlier" and not "Before", which invites "before what?".
+PUSH_WAS_MARK = "Earlier: "
+#: No doorbell object existed yet. Nothing had been attempted.
+PUSH_WAS_NOT_STARTED = "Earlier: it had not started"
+#: THE ONE THIS WHOLE BLOCK EXISTS FOR. A statement, never "Press HOME" -- see
+#: the instruction/statement note above. "Held it back" rather than "blocked",
+#: because `PUSH_LINE_BLOCKED` already owns "block" on this screen for the
+#: venue's kill switch and two meanings for one word here would be a real
+#: ambiguity, not a pedantic one.
+PUSH_WAS_PLACEMENT = "Earlier: an app held it back"
+#: An establishment was in flight.
+PUSH_WAS_ESTABLISHING = "Earlier: it was connecting"
+#: The radio was not associated. "Wi-Fi" for the same reason the live line uses
+#: it: the row above owns the word network.
+PUSH_WAS_NO_SIGNAL = "Earlier: there was no Wi-Fi"
+#: An authorization refusal. "It" is the join rather than the badge, which keeps
+#: the line short without claiming the refusal has been lifted.
+PUSH_WAS_REFUSED = "Earlier: the server refused it"
+#: A rate limit or a shard fault, not an authorization refusal. The live line's
+#: "trying again" clause is dropped on purpose: it is advice about NOW, and this
+#: line is about then.
+PUSH_WAS_SERVER_BUSY = "Earlier: the server was busy"
+#: Demoted, with the slow bounded re-arm armed. The live line's own past tense,
+#: word for word: "It will try again later" -> would. It is also the SHORTEST
+#: string here, and that was forced rather than chosen -- the first draft, "it
+#: was set to try later", measured 191.00 px in the BITMAP FALLBACK against the
+#: 189.00 px widest live line there, so it would have become the widest thing on
+#: this screen on a badge whose `/system` was rebuilt without the `.af` outlines.
+#: The vector face said 192.71 against 215.55 and hid that completely
+#: (`test_the_past_line_never_makes_the_screen_tighter_than_it_was` caught it).
+PUSH_WAS_RETRY_LATER = "Earlier: it would try later"
+#: Wanted, allowed, nothing wrong: between attempts. Distinct from
+#: `PUSH_WAS_ESTABLISHING`, which is an attempt actually in flight.
+PUSH_WAS_WAITING = "Earlier: it was between tries"
+
+#: ``network_runtime.PUSH_CAUSES`` literal -> the PAST line, keyed exactly as
+#: ``PUSH_CAUSE_LINES`` is and asserted set-equal to it and to the runtime's own
+#: tuple in both directions. A ninth cause fails the fast lane here as well as
+#: there, because the past line is drawn from the same pre-baked glyph set.
+PUSH_WAS_LINES = {
+    "not started": PUSH_WAS_NOT_STARTED,
+    "in an app": PUSH_WAS_PLACEMENT,
+    "connecting": PUSH_WAS_ESTABLISHING,
+    "no signal": PUSH_WAS_NO_SIGNAL,
+    "refused": PUSH_WAS_REFUSED,
+    "server busy": PUSH_WAS_SERVER_BUSY,
+    "retry later": PUSH_WAS_RETRY_LATER,
+    "waiting": PUSH_WAS_WAITING,
+}
+
+
 # -- what the view draws that no view-model supplies -------------------------
 
 #: The no-encoder path: honest, legible and typeable, and never a fake QR — a
@@ -425,9 +672,21 @@ def every_string():
     out.add(ROW_PUSH_LABEL)
     out.add(ROW_SLEEP_LABEL)
     out.add(ROW_BRIGHT_LABEL)
+    out.add(ROW_SCORES_LABEL)
     out.add(SLEEP_TITLE)
     out.add(SLEEP_LINE_WAKE)
     out.add(SLEEP_LINE_RESTART)
+    out.add(KEEP)
+    out.add(ERASE)
+    out.add(SCORES_TITLE)
+    out.add(SCORES_LINE_CLEARS)
+    out.add(SCORES_LINE_SPOOL)
+    out.add(SCORES_LINE_SENT)
+    out.add(SCORES_LINE_KEEPS)
+    out.add(SCORES_DONE_TITLE)
+    out.add(SCORES_DONE_LINE)
+    out.add(SCORES_FAILED_TITLE)
+    out.add(SCORES_FAILED_LINE)
     out.add(BRIGHT_TITLE)
     # EVERY RUNG, in all three places a rung name is drawn: the body line, the
     # composed menu row and the two softkeys. The ladder is five names, so this
@@ -438,6 +697,14 @@ def every_string():
         out.add("{}  {}".format(ROW_BRIGHT_LABEL, name))
     out.update(STATUS_WORDS.values())
     out.update(PUSH_WORDS.values())
+    # EVERY CAUSE, from the table rather than a list, so a ninth one is priced
+    # against the band by the same lane that refuses to let it be unmapped.
+    out.update(PUSH_CAUSE_LINES.values())
+    # AND EVERY PAST FORM, on the same terms. These are drawn only on a badge
+    # whose doorbell was failing BEFORE the wearer walked to this screen, which
+    # is the rarest copy in the app and therefore the copy most likely to reach a
+    # panel unpriced -- the exact shape of the `TURN...` and `ECLIN` defects.
+    out.update(PUSH_WAS_LINES.values())
     out.update((
         PAIR_VALUE_UNAVAILABLE, PAIR_VALUE_REVOKED, PAIR_VALUE_LINKED,
         PAIR_VALUE_UNLINKED, NET_NOT_INSTALLED, NET_LINE_CONNECTED,

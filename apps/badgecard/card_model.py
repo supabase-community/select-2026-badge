@@ -99,7 +99,19 @@ STICKER_SCAN_MAX = 256
 # What a badge nobody has configured wears.  `poster`'s defaults, restated here
 # rather than imported because that app must not depend on this one; the tests
 # pin every one of them against `poster/badge/poster/badge_state.py`.
-DEFAULT_BACKGROUND = "skin.supabase"
+# THE DEFAULT MOVED FROM `skin.supabase` TO `glyph.ring-buffer`, 2026-08-26,
+# on the owner's instruction from a device review: *"supabase is good, but no
+# longer the default. move it to the end and use the new ring-buffer as the
+# default."*  It is an id and nothing else: `faces.face_of` derives the display
+# face from it (`badgewaremax`), `catalogue.kind_of` returns `glyph`, and the
+# deck ships inside `assets/glyphskins.gpk`, so no other constant follows it.
+# WHAT IT DOES NOT SET, checked because a comment landed on 2026-08-26 claiming
+# it did: the CASE LIGHTS.  `light_calibration_2x.calibration_for("ring-buffer")`
+# is (10, 1, 0.45), but this app zeroes the four rear channels at its entry seam
+# (`__init__.py`, `badge.caselights(0)`) and so does `poster`, so an unconfigured
+# badge shows this deck with the lights DARK.  Those scales are the `glyph`
+# viewer tile's, not this app's.
+DEFAULT_BACKGROUND = "glyph.ring-buffer"
 DEFAULT_NAME = ""
 # THE EFFECT A NEW BADGE WEARS. One line, and it is the owner's to swap;
 # `shared/effects.py` holds the shipped set and the evidence behind the pick.
