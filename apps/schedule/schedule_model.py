@@ -150,6 +150,29 @@ def parse_utc_offset(value):
     return value
 
 
+def canonical_artifact_id(value):
+    """Return a canonical lowercase UUID string, or raise ``ValueError``.
+
+    MicroPython does not ship CPython's ``uuid`` module.  The badge only needs
+    the one representation Postgres emits, so validating its fixed-width text
+    form is both smaller and stricter than carrying a partial UUID parser.  A
+    non-canonical spelling must not become a cache key: the conditional GET and
+    the inner/outer payload comparison need byte-for-byte identity.
+    """
+
+    _require(isinstance(value, str), "artifact id must be UUID text")
+    _require(len(value) == 36, "artifact id must be a canonical UUID")
+    _require(value[8] == "-" and value[13] == "-" and value[18] == "-"
+             and value[23] == "-", "artifact id must be a canonical UUID")
+    hexadecimal = "0123456789abcdef"
+    for index, character in enumerate(value):
+        if index in (8, 13, 18, 23):
+            continue
+        _require(character in hexadecimal,
+                 "artifact id must use canonical lowercase UUID spelling")
+    return value
+
+
 # NO WEEKDAY HELPER LIVES HERE ANY MORE, and its absence is the doctrine.
 #
 # `weekday_iso` and `weekday_badgeware` existed for ONE caller: the dial's
@@ -201,100 +224,129 @@ def sanitize_title(value):
     return "".join(safe)
 
 
-def normalize(data):
-    _require(isinstance(data, dict), "schedule root must be an object")
-    _require(data.get("schema") == SCHEMA, "unsupported schedule schema")
-    event = data.get("event")
-    _require(isinstance(event, dict), "event must be an object")
-    event_id = event.get("id")
-    event_name = event.get("name")
-    _require(isinstance(event_id, str) and event_id, "event id required")
-    _require(isinstance(event_name, str) and event_name, "event name required")
-    start_date = parse_date(event.get("start_date"))
-    end_date = parse_date(event.get("end_date", event.get("start_date")))
-    _require(start_date <= end_date, "event date window reversed")
-    day_start = parse_time(event.get("day_start", "00:00"))
-    day_end = parse_time(event.get("day_end", "23:59"))
-    _require(day_start < day_end, "event day window reversed")
+class ScheduleNormalizer:
+    """The shipping validator with a one-session cooperative step seam.
 
-    # FOUR OPTIONAL `event` FIELDS. Optional is the load-bearing word: the
-    # schema version is matched EXACTLY, so making any of these required would
-    # reject every agenda file already on a badge, and this app's whole
-    # day-of story is a file somebody drops on the root by hand. Absent means
-    # "this file does not say", which the freshness line renders honestly.
-    #
-    # `utc_offset_min` (added 2026-08-24) is the fourth and it is the one whose
-    # ABSENCE COSTS SOMETHING: without it the app has no frame to read a synced
-    # badge's UTC clock in, so it claims no time at all. That is a deliberate
-    # refusal rather than a degradation by accident -- documented at
-    # `clock_state` -- and it still cannot be required, because every agenda file
-    # written before today omits it and a required field would turn each of those
-    # badges into an error screen. A silent NOW marker beats a wrong one.
-    generated_at = event.get("generated_at")
-    if generated_at is not None:
-        generated_at = parse_stamp(generated_at)
-    # The badgelink `version` string this agenda was built from, when it was
-    # built from one. Compared for EQUALITY against `/state/schedule.json`'s
-    # version and never parsed, so its shape stays badgelink's business.
-    source_version = event.get("source_version")
-    if source_version is not None:
-        _require(isinstance(source_version, str) and 0 < len(source_version) <= 64,
-                 "source version must be a short string")
-    # The header used to print `PST` as a literal, which is a lie on any event
-    # that is not in the Pacific. It is data now; a file that does not say gets
-    # no label rather than an invented one.
-    timezone = event.get("timezone", "")
-    _require(isinstance(timezone, str) and len(timezone) <= 5,
-             "event timezone must be a short label")
-    # THE LABEL'S ARITHMETIC HALF, and the two are ONE FACT that must move
-    # together. The label is what the header prints; this is what converts a
-    # synced badge's UTC clock into the frame every other time in this file is
-    # written in. A file that does not say gets NO CLOCK AT ALL rather than an
-    # assumed UTC==local -- see `clock_state`'s `CLOCK_NO_OFFSET`.
-    utc_offset_min = event.get("utc_offset_min")
-    if utc_offset_min is not None:
-        utc_offset_min = parse_utc_offset(utc_offset_min)
+    ``normalize`` below drives this object to completion for startup and host
+    tools.  A live refresh advances one :meth:`step` per frame.  Keeping both
+    paths on this same class is the parity guarantee: there is no second,
+    network-only interpretation of schema 2 to drift from the baked one.
+    """
 
-    raw_stages = data.get("stages")
-    _require(isinstance(raw_stages, list) and raw_stages, "at least one stage required")
-    stages = []
-    stage_by_id = {}
-    for index, raw in enumerate(raw_stages):
-        _require(isinstance(raw, dict), "stage must be an object")
-        stage_id = raw.get("id")
-        name = raw.get("name")
-        short = raw.get("short", name)
-        color_value = raw.get("color", [255, 255, 255])
-        _require(isinstance(stage_id, str) and stage_id and stage_id not in stage_by_id, "stage id must be unique")
-        _require(isinstance(name, str) and name, "stage name required")
-        _require(isinstance(short, str) and 1 <= len(short) <= 8, "stage short label must be 1-8 characters")
-        _require(isinstance(color_value, list) and len(color_value) == 3, "stage color must be RGB")
-        color_value = tuple(int(channel) for channel in color_value)
-        _require(all(0 <= channel <= 255 for channel in color_value), "stage color outside RGB")
-        stage = {
-            "id": stage_id,
-            "name": sanitize_title(name),
-            "short": sanitize_title(short),
-            "color": color_value,
-            "index": index,
+    def __init__(self, data):
+        _require(isinstance(data, dict), "schedule root must be an object")
+        _require(data.get("schema") == SCHEMA, "unsupported schedule schema")
+        event = data.get("event")
+        _require(isinstance(event, dict), "event must be an object")
+        event_id = event.get("id")
+        event_name = event.get("name")
+        _require(isinstance(event_id, str) and event_id, "event id required")
+        _require(isinstance(event_name, str) and event_name, "event name required")
+        start_date = parse_date(event.get("start_date"))
+        end_date = parse_date(event.get("end_date", event.get("start_date")))
+        _require(start_date <= end_date, "event date window reversed")
+        day_start = parse_time(event.get("day_start", "00:00"))
+        day_end = parse_time(event.get("day_end", "23:59"))
+        _require(day_start < day_end, "event day window reversed")
+
+        # FIVE OPTIONAL `event` FIELDS. Optional is the load-bearing word: the
+        # schema version is matched EXACTLY, so making any of these required
+        # would reject every agenda file already on a badge.
+        generated_at = event.get("generated_at")
+        if generated_at is not None:
+            generated_at = parse_stamp(generated_at)
+        source_version = event.get("source_version")
+        if source_version is not None:
+            _require(isinstance(source_version, str)
+                     and 0 < len(source_version) <= 64,
+                     "source version must be a short string")
+        timezone = event.get("timezone", "")
+        _require(isinstance(timezone, str) and len(timezone) <= 5,
+                 "event timezone must be a short label")
+        utc_offset_min = event.get("utc_offset_min")
+        if utc_offset_min is not None:
+            utc_offset_min = parse_utc_offset(utc_offset_min)
+        # Baked and manual schema-2 files predate hosted artifacts. The owned
+        # cache boundary separately requires this otherwise-optional identity.
+        source_artifact_id = event.get("source_artifact_id")
+        if source_artifact_id is not None:
+            source_artifact_id = canonical_artifact_id(source_artifact_id)
+
+        raw_stages = data.get("stages")
+        _require(isinstance(raw_stages, list) and raw_stages,
+                 "at least one stage required")
+        stages = []
+        stage_by_id = {}
+        for index, raw in enumerate(raw_stages):
+            _require(isinstance(raw, dict), "stage must be an object")
+            stage_id = raw.get("id")
+            name = raw.get("name")
+            short = raw.get("short", name)
+            color_value = raw.get("color", [255, 255, 255])
+            _require(isinstance(stage_id, str) and stage_id
+                     and stage_id not in stage_by_id,
+                     "stage id must be unique")
+            _require(isinstance(name, str) and name, "stage name required")
+            _require(isinstance(short, str) and 1 <= len(short) <= 8,
+                     "stage short label must be 1-8 characters")
+            _require(isinstance(color_value, list) and len(color_value) == 3,
+                     "stage color must be RGB")
+            color_value = tuple(int(channel) for channel in color_value)
+            _require(all(0 <= channel <= 255 for channel in color_value),
+                     "stage color outside RGB")
+            stage = {
+                "id": stage_id,
+                "name": sanitize_title(name),
+                "short": sanitize_title(short),
+                "color": color_value,
+                "index": index,
+            }
+            stages.append(stage)
+            stage_by_id[stage_id] = stage
+
+        raw_sessions = data.get("sessions")
+        _require(isinstance(raw_sessions, list) and raw_sessions,
+                 "at least one session required")
+        self.payload = data
+        self.event = {
+            "id": event_id,
+            "name": sanitize_title(event_name),
+            "start_date": start_date,
+            "end_date": end_date,
+            "day_start": day_start,
+            "day_end": day_end,
+            "generated_at": generated_at,
+            "source_version": source_version,
+            "timezone": sanitize_title(timezone),
+            "utc_offset_min": utc_offset_min,
+            "source_artifact_id": source_artifact_id,
         }
-        stages.append(stage)
-        stage_by_id[stage_id] = stage
+        self.stages = stages
+        self.stage_by_id = stage_by_id
+        self.raw_sessions = raw_sessions
+        self.sessions = []
+        self.session_ids = set()
+        self.index = 0
+        self.finished = False
+        self.result = None
 
-    raw_sessions = data.get("sessions")
-    _require(isinstance(raw_sessions, list) and raw_sessions, "at least one session required")
-    sessions = []
-    session_ids = set()
-    for raw in raw_sessions:
+    def step(self):
+        """Validate at most one session; return True when rows are exhausted."""
+
+        if self.index >= len(self.raw_sessions):
+            return True
+        raw = self.raw_sessions[self.index]
         _require(isinstance(raw, dict), "session must be an object")
         session_id = raw.get("id")
         title = raw.get("title")
         stage_id = raw.get("stage_id")
         kind = raw.get("kind", KIND_TALK)
         raw_speakers = raw.get("speakers", [])
-        _require(isinstance(session_id, str) and session_id and session_id not in session_ids, "session id must be unique")
+        _require(isinstance(session_id, str) and session_id
+                 and session_id not in self.session_ids,
+                 "session id must be unique")
         _require(isinstance(title, str) and title.strip(), "session title required")
-        _require(stage_id in stage_by_id, "session references unknown stage")
+        _require(stage_id in self.stage_by_id, "session references unknown stage")
         _require(kind in KINDS, "session kind must be one of {}".format(KINDS))
         _require(isinstance(raw_speakers, list), "session speakers must be a list")
         speakers = []
@@ -333,9 +385,11 @@ def normalize(data):
         start = parse_time(raw.get("start"))
         end = parse_time(raw.get("end"))
         _require(start < end, "session end must follow start")
-        _require(day_start <= start and end <= day_end, "session outside event day")
-        session_ids.add(session_id)
-        sessions.append(
+        _require(self.event["day_start"] <= start
+                 and end <= self.event["day_end"],
+                 "session outside event day")
+        self.session_ids.add(session_id)
+        self.sessions.append(
             {
                 "id": session_id,
                 "title": sanitize_title(title.strip()),
@@ -345,29 +399,40 @@ def normalize(data):
                 "description": description,
                 "start": start,
                 "end": end,
-                "stage_index": stage_by_id[stage_id]["index"],
+                "stage_index": self.stage_by_id[stage_id]["index"],
             }
         )
-    sessions.sort(key=lambda item: (item["start"], item["stage_index"], item["id"]))
-    return {
-        "schema": SCHEMA,
-        "event": {
-            "id": event_id,
-            "name": sanitize_title(event_name),
-            "start_date": start_date,
-            "end_date": end_date,
-            "day_start": day_start,
-            "day_end": day_end,
-            "generated_at": generated_at,
-            "source_version": source_version,
-            "timezone": sanitize_title(timezone),
-            "utc_offset_min": utc_offset_min,
-        },
-        "stages": stages,
-        "stage_by_id": stage_by_id,
-        "sessions": sessions,
-        "stage_sessions": sessions_by_stage(stages, sessions),
-    }
+        self.index += 1
+        return self.index >= len(self.raw_sessions)
+
+    def finish(self):
+        """Finalize derived ordering after every row has passed validation."""
+
+        _require(self.index >= len(self.raw_sessions),
+                 "schedule validation is not complete")
+        if self.finished:
+            return self.result
+        self.sessions.sort(
+            key=lambda item: (item["start"], item["stage_index"], item["id"]))
+        self.result = {
+            "schema": SCHEMA,
+            "event": self.event,
+            "stages": self.stages,
+            "stage_by_id": self.stage_by_id,
+            "sessions": self.sessions,
+            "stage_sessions": sessions_by_stage(self.stages, self.sessions),
+        }
+        self.finished = True
+        return self.result
+
+
+def normalize(data):
+    """Validate schema 2 synchronously through the cooperative implementation."""
+
+    validation = ScheduleNormalizer(data)
+    while not validation.step():
+        pass
+    return validation.finish()
 
 
 def sessions_by_stage(stages, sessions):
@@ -445,13 +510,14 @@ def load_guarded(path):
         return None, describe_error(error)
 
 
-# THE DAY-OF OVERRIDE.  `/` is the writable LittleFS root; `/system` is the FAT
-# partition the app is baked into.  A file dropped at `/schedule.json` therefore
-# replaces the agenda WITHOUT reflashing or rebuilding bytecode -- which is the
-# only realistic way to fix a wrong room, a swapped speaker or a shifted start
-# time on the morning of the event, when the alternative is a USB cable and a
-# Disk Mode pass per badge.
+# THE MANUAL DAY-OF OVERRIDE.  `/` is writable LittleFS; `/system` is the FAT
+# partition the app is baked into.  A file at `/schedule.json` therefore replaces
+# the displayed agenda without reflashing or rebuilding bytecode.  It remains the
+# per-badge emergency path beside the hosted whole-snapshot cache: manual wins on
+# screen while the one-open request may refresh `/state/schedule-v2.json`
+# underneath it, so removing the override reveals the newest last-good download.
 OVERRIDE_PATH = "/schedule.json"
+CACHE_PATH = "/state/schedule-v2.json"
 BAKED_NAME = "schedule.json"
 
 
@@ -500,6 +566,110 @@ def load_with_override(override=OVERRIDE_PATH, baked=BAKED_NAME):
     if value is None:
         return None, None, notice, error
     return value, baked, notice, None
+
+
+def load_network_cache(path=CACHE_PATH):
+    """Load the owned downloaded artifact, requiring its hosted identity.
+
+    The general schema keeps ``event.source_artifact_id`` optional so a baked
+    or manual schema-2 file remains valid.  A file at this owned cache path is
+    different: without the UUID the next open cannot safely ask whether it is
+    current, so it is rejected and the app falls back to baked data.
+    """
+
+    value, error = load_guarded(path)
+    if value is None:
+        return None, error
+    try:
+        canonical_artifact_id(value["event"].get("source_artifact_id"))
+    except (ValueError, TypeError) as problem:
+        return None, describe_error(problem)
+    return value, None
+
+
+def load_with_cache(override=OVERRIDE_PATH, cache=CACHE_PATH, baked=BAKED_NAME):
+    """Load display data plus the independent last-good network snapshot.
+
+    Returns ``(display, source, notice, error, cached, cache_error)``.  Display
+    precedence is manual override, then valid downloaded cache, then baked.
+    ``cached`` is returned independently even while the override wins because
+    the conditional GET must name the last downloaded artifact, never a manual
+    file that merely resembles one.
+
+    A corrupt cache is not allowed to hide the baked agenda and is not promoted
+    to a wearer-facing override notice.  It remains diagnosable through
+    ``cache_error`` and a successful later open atomically replaces it.
+    """
+
+    cached = None
+    cache_error = None
+    if _exists(cache):
+        cached, cache_error = load_network_cache(cache)
+
+    notice = None
+    if _exists(override):
+        value, error = load_guarded(override)
+        if value is not None:
+            return value, override, None, None, cached, cache_error
+        notice = sanitize_title("{} rejected: {}".format(override, error))
+
+    if cached is not None:
+        return cached, cache, notice, None, cached, None
+
+    value, error = load_guarded(baked)
+    if value is None:
+        return None, None, notice, error, None, cache_error
+    return value, baked, notice, None, None, cache_error
+
+
+def save_network_cache(payload, artifact_id, path=CACHE_PATH, open_fn=open,
+                       sync_fn=None, rename_fn=None, remove_fn=None,
+                       validation=None):
+    """Validate and atomically persist one bare schema-2 hosted payload.
+
+    Validation happens before the temporary file is opened, then the same
+    normalized identity is checked against the RPC envelope.  Rename is the
+    commit point, so a write, sync or validation failure leaves the previous
+    cache readable.  A stranded ``.tmp`` is best-effort cleanup only; failure to
+    remove it must never obscure the original write error.
+    """
+
+    expected = canonical_artifact_id(artifact_id)
+    if validation is None:
+        normalized = normalize(payload)
+    else:
+        # A completed validator is a proof token tied by object identity to the
+        # exact decoded payload being written. This lets the live refresh avoid
+        # repeating all session work in its flash frame without weakening the
+        # standalone saver used by host tests and recovery tools.
+        _require(isinstance(validation, ScheduleNormalizer)
+                 and validation.payload is payload and validation.finished,
+                 "network cache validation proof is incomplete")
+        normalized = validation.result
+    _require(normalized["event"].get("source_artifact_id") == expected,
+             "inner and outer artifact identities differ")
+    temporary = path + ".tmp"
+    try:
+        with open_fn(temporary, "w") as output:
+            # Persist the server's bare shape, not ``normalize``'s tuples and
+            # derived indexes, so baked/manual/cache all speak identical JSON.
+            json.dump(payload, output)
+            flush = getattr(output, "flush", None)
+            if flush is not None:
+                flush()
+        sync = sync_fn if sync_fn is not None else getattr(os, "sync", None)
+        if sync is not None:
+            sync()
+        (rename_fn or os.rename)(temporary, path)
+    except Exception:
+        remover = remove_fn if remove_fn is not None else getattr(os, "remove", None)
+        if remover is not None:
+            try:
+                remover(temporary)
+            except OSError:
+                pass
+        raise
+    return normalized
 
 
 TBA = "TO BE ANNOUNCED"
@@ -985,9 +1155,11 @@ def parse_stamp(value):
 
 # ── FRESHNESS: WHAT THE BADGE CAN HONESTLY SAY ABOUT ITS OWN AGENDA ──────────
 #
-# THIS APP MAKES NO NETWORK CALL AND NEVER WILL. What it does is read state a
-# service on the same badge already maintains, plus two optional stamps carried
-# inside the agenda file itself, and say only what those support.
+# THIS APP NOW OFFERS ONE WHOLE-SNAPSHOT REQUEST PER OPEN. The schema-1 helpers
+# below remain because deployed BadgeLink state is still useful on serial and in
+# compatibility probes. They neither supply schema-2 agenda rows nor decide the
+# shipping panel mark; that truth is display source plus a successful response
+# during this open.
 #
 # WHAT BADGELINK ACTUALLY WRITES, read out of `badgelink/badge/badgelink/
 # schedule_store.py:68-69,506-543` rather than assumed:
@@ -1018,10 +1190,9 @@ def parse_stamp(value):
 #    the fleet will carry both libs at once. `read_link_state` reads it and
 #    `freshness` falls all the way back to the pre-Lane-F behaviour without it.
 #
-#    What it buys is NOT the version comparison, which it cannot answer: it is
-#    the STALENESS threshold, which stood the content's build age in for "how
-#    long since this badge could have learned about something newer". See
-#    `freshness`.
+#    What it buys is NOT the version comparison or a staleness gate. It is a
+#    one-directional lower bound for serial: recent proves recent contact; old
+#    proves nothing because unchanged checks do not rewrite it. See `freshness`.
 # 2. **Their rows are not this app's content.** Their schema is 1 and carries
 #    `{title, starts_at, ends_at, location, track}` ISO rows with no stage, no
 #    speaker list and no `HH:MM`; this app's schema is 2 and is matched exactly.
@@ -1202,7 +1373,12 @@ def sync_age_minutes(synced_at, now_stamp):
 
 
 def freshness(event, link_version, now_stamp=None, link_synced_at=None):
-    """`(verdict, age_minutes)` for the agenda currently on screen.
+    """Legacy `(verdict, age_minutes)` for serial and compatibility probes.
+
+    The schema-2 panel mark does not use this verdict; it follows display source
+    plus successful verification during this open. This older comparison stays
+    live because its serial marker and deployed schema-1 file remain useful for
+    diagnosis without becoming a second UI authority.
 
     `age_minutes` is the age of the content's own build stamp and is None
     whenever either half is missing — an agenda with no `generated_at`, or a
@@ -1337,3 +1513,20 @@ def freshness_mark(verdict, from_override=False):
     if verdict == FRESH_STALE:
         return MARK_STALE
     return MARK_DAY_OF if from_override else MARK_OFFLINE
+
+
+def display_freshness_mark(source, verified_this_open=False):
+    """The schema-2 source truth shown in the header after reboot.
+
+    No ``checked_at`` is persisted. A cache UUID therefore proves server
+    provenance but not currentness after a reboot (ring), while one successful
+    conditional response may upgrade it in RAM for this open (solid). Manual
+    and baked files stay day-of and offline respectively regardless of any
+    legacy schema-1 version record still present on the badge.
+    """
+
+    if source == OVERRIDE_PATH:
+        return MARK_DAY_OF
+    if source == CACHE_PATH:
+        return MARK_SYNCED if verified_this_open else MARK_STALE
+    return MARK_OFFLINE

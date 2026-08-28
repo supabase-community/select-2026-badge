@@ -20,13 +20,13 @@ normal level used by the supervisor, Pet, Schedule, all five games, Name Badge
 and Profile, plus Glyph's 100 % review level.  SETTINGS WAS ON THAT LIST AND
 CAME OFF IT ON 2026-08-24, when the owner moved the brightness row there: an app
 that HOSTS the ladder cannot open at a level the ladder did not choose, so it
-reads the store like the launcher, `poster` and `badgecard` do.  Measurement probes,
+reads the store like the launcher, `nametag` and `setup` do.  Measurement probes,
 off-roster labs, teardown zeroes, the playground compatibility layer and the
 two state-driven identity surfaces remain deliberately unchanged.  Their values
 are experimental conditions, blackouts or wearer data rather than app policy.
 
 THE UNIT.  A PERCENT, 0-100, integer.  Chosen because it is what the two things
-that PERSIST a brightness already store -- `poster/badge/poster/badge_state.py`
+that PERSIST a brightness already store -- `nametag/badge/nametag/badge_state.py`
 and the archived `identity/badge/identity/identity_model.py` both carry
 `brightness: 80` -- so picking the fraction instead would have meant migrating a
 saved file format to save a division.  `fraction()` converts at the edge, and the
@@ -72,7 +72,7 @@ DEFAULT = 80
 # visible behaviour and makes their different authority explicit.
 #
 # FOUR APPS DO NOT USE IT, and the number of them is the thing to watch: the
-# launcher, `poster`, `badgecard` and (since 2026-08-24) `settings` all open at
+# launcher, `nametag`, `setup` and (since 2026-08-24) `settings` all open at
 # the level stored in `/state/badgecard.json`.  Every app still on this constant
 # overrides the wearer's choice for as long as it is open.
 NORMAL = 85
@@ -126,7 +126,7 @@ def clamp(percent):
     stored brightness -- `badge_state.coerce`, `card_model.repair` and the
     launcher's own -- agree on the type as well as the range, which was the
     other half of the same defect: a store holding `55.5` would otherwise have
-    given the launcher 55 and the poster the factory 80, and the wearer would
+    given the launcher 55 and the nametag the factory 80, and the wearer would
     have watched the panel JUMP across the 45-second handoff.
     """
     if isinstance(percent, bool) or not isinstance(percent, (int, float)):

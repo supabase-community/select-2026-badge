@@ -1,8 +1,6 @@
-badgecard
-poster
+setup
+nametag
 schedule
 snake
 flappy
-pet
-glyph
 settings

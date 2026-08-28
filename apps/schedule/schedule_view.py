@@ -1,4 +1,4 @@
-"""Resolution-relative schedule renderer, drawn at a 1.5x HIRES design scale.
+"""Resolution-relative schedule renderer with a two-level HIRES type system.
 
 Two things changed from the v1 renderer and both are measurements, not taste.
 
@@ -16,7 +16,11 @@ The firmware word-wraps and ellipsizes inside a bounded `rect` natively, and
 variable-height block measured once into the layout cache: a title, then the
 speaker lines the agenda names under it. Speakers are the reason — half of the
 real ones are longer than the column, and wrapping shows them where truncation
-would have eaten the job title.
+would have eaten the job title. The real 2026 agenda made the second constraint
+visible: keeping credits under the title column made every speaker repay the
+permanent time gutter. Titles therefore stay at the proven 18 pt primary size,
+while complete time ranges and speaker/company lines use a 15 pt metadata tier;
+credits take the row width below the time/title line.
 """
 
 from schedule_model import (
@@ -46,6 +50,15 @@ from schedule_model import (
 # The LORES authoring metric this app was laid out against: `font.sins` at
 # scale 1. Every size below is a multiple of it, so UI_SCALE is the one dial.
 BASE_LINE_PX = 12
+
+# 15 pt beside the 18 pt primary face at the shipping 1.5x scale. The pinned
+# rasteriser measures a 10 px cap at 15 pt = 16.1 arcminutes at 400 mm, so this
+# is a real secondary tier without dropping below the repository's chosen 15'
+# design bar. A ratio keeps `UI_SCALE` the one build dial: 12/15/18/24 pt
+# primaries resolve to 10/13/15/20 pt metadata rather than adding a second
+# independently tuned setting.
+META_NUM = 5
+META_DEN = 6
 
 # The only outline face on the badge with a full Latin-1 range. It is NOT on
 # ROM: `font.<name>` opens /rom/fonts/<name>.ppf, while the .af outlines live on
@@ -77,18 +90,16 @@ MAX_WRAP_LINES = 2
 # THE NUMBERS, MEASURED IN THE PINNED PICOVECTOR RUNTIME OVER EVERY REACHABLE
 # SCROLL POSITION OF BOTH STAGES IN BOTH CLOCK STATES
 # (`schedule/host/description_density.mjs`, which exits non-zero if they move):
-# one described line is `_wrapped_height(..., 1)` + `pad // 2`, and the cap is
-# `text_h` rather than a line step, so the row grows by
-# 20 px (`text_h + pad // 2`) and NOT by `line_step + pad//2` -- this comment
-# said the latter until 2026-08-26. That buys zero blocks
-# on most screens, one on the synced-clock landing (3 -> 2), and two at worst
-# (Build Stage, unset clock, 5 -> 3; an offline badge has 25 px more list to lose
-# because it draws no NOW strip). A SECOND wrapped line adds `line_step`, 23 px,
-# taking the row to 43 px, and costs a further block on 10 of the 28 screens
-# without buying one back anywhere -- which is what settles the cap at one.
+# one described line is `_wrapped_height(..., 1, metadata=True)` + `pad // 2`,
+# and the cap is `meta_h` rather than a primary line step, so the row grows by
+# 17 px (`meta_h + pad // 2`). A SECOND wrapped line would add `meta_step`, 19
+# px, taking the detail to 36 px. Against the real 13+13 agenda, the one-line
+# form costs one readable block on the synced landing and two at worst; the
+# 2026-08-27 sweep is `schedule/host/description_density.mjs`.
 #
-# Charged ONLY to rows that carry a description -- the published SELECT 2026
-# agenda carries none, so the shipping build is unchanged.
+# Charged ONLY to rows that carry a description. The real agenda uses it for
+# Atrium/location and the Main party's `Atrium · Supabase` label, so this is live
+# density now rather than a future-schema allowance.
 #
 # It is a bound on the BLOCK, not on the data: the string is ellipsized here and
 # stored in full, so a day-of override may hold a sentence and a future detail
@@ -165,7 +176,7 @@ BAR_MM = 4.875                           # the band is a physical quantity, not 
 
 class ScheduleView:
     def __init__(self, screen, color, font, image, rect, schedule, scale=1.0, notice=None,
-                 softkeys=False):
+                 softkeys=False, face_state=None):
         self.screen = screen
         self.color = color
         self.font = font
@@ -211,7 +222,12 @@ class ScheduleView:
         self.past_muted = color.rgb(78, 87, 106)
         self.current_fill = color.rgb(18, 86, 65)
         self.now_fill = color.rgb(12, 49, 42)
-        self.selection = color.rgb(255, 72, 168)
+        # A CURSOR IS NOT A SCHEDULE STATE. The magenta rail in the first real-
+        # agenda capture was the brightest mark on the page and competed with
+        # the green NOW fill/rail, even though it only meant "the row the keys
+        # will move from". Neutral slate keeps it findable at the panel edge and
+        # reserves hue for the stage/clock truth the wearer is scanning for.
+        self.selection = color.rgb(172, 187, 214)
         self.hatch = color.rgb(30, 36, 52)
         self.notice_fill = color.rgb(58, 32, 12)
         self.notice_ink = color.rgb(255, 176, 84)
@@ -236,11 +252,21 @@ class ScheduleView:
         self.bar_edge = color.rgb(255, 255, 255, 64)
         self.chevron = color.rgb(255, 255, 255, 200)
 
-        self._select_face()
+        self._select_face(face_state)
         screen.font = self.face
         self.text_h = 0
         self.text_h = int(self._measure("Ag")[1])
         self.line_step = max(1, int(self.text_h * LINE_HEIGHT + 0.5))
+        # Bitmap faces cannot express a fractional secondary size. That is a
+        # safe fallback rather than a hidden second font: HIRES vector is the
+        # only shipping surface, while a unit missing outlines still sees every
+        # field at the primary bitmap metric instead of failing at launch.
+        self.meta_size = (
+            max(1, int(self.font_size * META_NUM / META_DEN + 0.5))
+            if self.vector else self.font_size
+        )
+        self.meta_h = int(self._measure("Ag", font_size=self.meta_size)[1])
+        self.meta_step = max(1, int(self.meta_h * LINE_HEIGHT + 0.5))
         self.pad = max(3, int(int(screen.width) / 64 + 0.5))
         self.gap = max(3, self.pad + self.pad // 2)
         # Descenders reach past the em box (measured: 2 px below at 18 pt), so a
@@ -248,11 +274,15 @@ class ScheduleView:
         # gets this much slack; it is empty space, never an extra wrapped line,
         # because wrapping is decided by width alone.
         self.descent = max(2, int(self.text_h / 4 + 0.5))
+        self.meta_descent = max(2, int(self.meta_h / 4 + 0.5))
 
-        self.bar_h = self.line_step + self.pad // 2
+        # Event/clock and NOW copy are metadata; stage names and session titles
+        # remain primary. The smaller two chrome rows recover 8 px of the 240 px
+        # panel without making the agenda itself smaller.
+        self.bar_h = self.meta_step + self.pad // 2
         self.underline_h = max(2, int(self.ui_scale + 0.5))
         self.tab_h = self.line_step + self.pad // 2 + self.underline_h
-        self.strip_h = self.line_step + self.pad // 2
+        self.strip_h = self.meta_step + self.pad // 2
         self.block_gap = max(2, self.pad)
         # ONE OPTIONAL BAND, and it costs a row of the list only when it exists.
         # A rejected `/schedule.json` means the wearer is reading the BAKED
@@ -261,13 +291,18 @@ class ScheduleView:
         # channel a wearer has. `notice` is already sanitized by
         # `load_with_override`, and `_text` ellipsizes what will not fit.
         self.notice = notice or None
-        self.notice_h = (self.line_step + self.pad // 2) if self.notice else 0
+        self.notice_h = (self.meta_step + self.pad // 2) if self.notice else 0
 
         self._measure_softkey_bar()
         # Widest time range in the real data decides the column, so the column
         # is a fact about the schedule rather than a guess about time formats.
+        # Measuring it in the metadata tier reclaims about 15 px at 1.5x while
+        # retaining every start/end digit and the ASCII range separator.
         self.time_w = int(
-            max([self._measure(format_range(session))[0] for session in self.sessions] or [0]) + 0.5
+            max([
+                self._measure(format_range(session), font_size=self.meta_size)[0]
+                for session in self.sessions
+            ] or [0]) + 0.5
         )
         self.content_x = self.pad + self.time_w + self.gap
         # The scroll chevrons live on the right edge, so the content column
@@ -276,12 +311,22 @@ class ScheduleView:
         self.content_w = max(
             8, int(screen.width) - self.content_x - self.pad - self.scroll_gutter
         )
+        # Speaker/company and description lines sit BELOW the time/title line,
+        # so making them repay the time column bought no alignment and forced
+        # the real longest credits into four wrapped lines. A two-pixel indent
+        # clears the selection rail; the remainder of the row is their honest
+        # width. At 15 pt this is enough for the two 47-character Supabase
+        # credits that overflowed the old 18 pt / 209 px column.
+        self.detail_x = self.pad + max(2, self.pad // 2)
+        self.detail_w = max(
+            8, int(screen.width) - self.detail_x - self.pad - self.scroll_gutter
+        )
         self.tab_x, self.tab_w = self._tab_positions()
         # Every width a frame needs is measured HERE, once. Chrome is small
         # enough that re-measuring it per frame looks free, and it is exactly
         # the mistake this app's own layout cache exists to avoid.
         self.hint = "A/C"
-        self.hint_w = int(self._measure(self.hint)[0] + 0.5)
+        self.hint_w = int(self._measure(self.hint, font_size=self.meta_size)[0] + 0.5)
         # THE CLOCK CORNER SAYS ONE THING OR NOTHING, since the 2026-08-24 clock
         # ruling collapsed the three trust states into two presentations. It used
         # to have three candidates and two of them were the problem: a
@@ -300,7 +345,10 @@ class ScheduleView:
         # reading must not shuffle against the screen edge as the minute ticks.
         self.timezone = self.event.get("timezone") or ""
         self.clock_w = int(
-            self._measure("00:00 " + self.timezone if self.timezone else "00:00")[0] + 0.5
+            self._measure(
+                "00:00 " + self.timezone if self.timezone else "00:00",
+                font_size=self.meta_size,
+            )[0] + 0.5
         )
         # THE FRESHNESS MARK'S CELL, AT THE HEADER'S TOP-LEFT CORNER, with the
         # event name after it. A fixed cell in a fixed corner: the mark is only
@@ -365,7 +413,8 @@ class ScheduleView:
         # shot; it is not defensible now the dense build SHIPS, because then
         # UP/DOWN would be the only live keys in the app with nothing on screen
         # naming them. The chevrons cost 3 px of the content column and no list
-        # rows, where the bar costs 26 px and one whole agenda block, so the two
+        # rows. The 26 px bar keeps three readable blocks at the real landing but
+        # raises the whole Main day from 3.24 to 3.82 screens, so the two
         # affordances are not the same trade and must not share one switch.
         self.scroll_gutter = self.pad
         count = len(self.stages)
@@ -391,7 +440,7 @@ class ScheduleView:
 
     # -- construction ------------------------------------------------------
 
-    def _select_face(self):
+    def _select_face(self, face_state=None):
         """Pick the face and point size UI_SCALE asks for on this canvas.
 
         LORES is deliberately excluded from the dial. It is already
@@ -405,6 +454,18 @@ class ScheduleView:
         self.vector = False
         if not hires:
             self.face = self.font.sins
+            return
+        if face_state is not None:
+            # A changed snapshot constructs its view offscreen while the old
+            # one remains live. Loading MonaSans again is not a cheap lookup:
+            # VAL-020-CH measured every load as a distinct ~111 ms / 73,792 B
+            # object. Both views have the same panel and UI scale, so sharing
+            # the already-loaded immutable face avoids retaining two copies.
+            self.face, self.vector, self.font_size = face_state
+            if self.vector:
+                # Antialias is screen state rather than face state. Reassert it
+                # so this path has exactly the initial vector semantics.
+                self.screen.antialias = self.image.X4
             return
         face = None
         name = VECTOR_FACE
@@ -433,81 +494,172 @@ class ScheduleView:
             x += width + self.gap
         return positions, widths
 
-    def _measure(self, text, width=None):
+    def _measure(self, text, width=None, font_size=None):
+        size = self.font_size if font_size is None else font_size
         if not text:
+            if hasattr(self, "meta_size") and size == self.meta_size:
+                return (0, self.meta_h)
             return (0, self.text_h if hasattr(self, "text_h") else 0)
         if width is None:
-            return self.screen.measure_text(text, font_size=self.font_size)
+            return self.screen.measure_text(text, font_size=size)
         return self.screen.measure_text(
             text,
             self.rect(0, 0, int(width), 1 << 12),
-            font_size=self.font_size,
+            font_size=size,
             line_height=LINE_HEIGHT,
         )
 
-    def _wrapped_height(self, text, width, lines=MAX_WRAP_LINES):
+    def _wrapped_height(self, text, width, lines=MAX_WRAP_LINES, metadata=False):
         """Measured wrapped height, capped at `lines` wrapped lines.
 
         The cap is an argument rather than a constant because the description
         line is allowed ONE (see DESCRIPTION_WRAP_LINES) while titles and speaker
-        credits are allowed two; the default keeps every existing caller
-        unchanged.
+        credits are allowed two. `metadata` selects the measured 15 pt tier for
+        details while the default keeps titles at the primary metric.
         """
-        height = int(self._measure(text, width)[1] + 0.5)
-        ceiling = self.text_h + (lines - 1) * self.line_step
+        size = self.meta_size if metadata else self.font_size
+        text_h = self.meta_h if metadata else self.text_h
+        line_step = self.meta_step if metadata else self.line_step
+        height = int(self._measure(text, width, font_size=size)[1] + 0.5)
+        ceiling = text_h + (lines - 1) * line_step
         return min(height, ceiling)
+
+    def _measure_session(self, session):
+        """Return one block's immutable layout entry.
+
+        This is a separate unit because a network replacement arrives while
+        the old agenda is still interactive.  Measuring one row per later
+        frame keeps the complete real agenda from becoming one long callback
+        pause, while startup can still run the same operation to completion
+        under the loading screen.
+        """
+
+        title_h = self._wrapped_height(session["title"], self.content_w)
+        speakers = []
+        total = title_h
+        for line in speaker_lines(session):
+            height = self._wrapped_height(line, self.detail_w, metadata=True)
+            speakers.append((line, height))
+            total += height + self.pad // 2
+        # THE LABEL LINE, MEASURED HERE OR NOT AT ALL. An empty description
+        # buys no measurement and no height, which is what makes a row
+        # without one byte-identical to the build that shipped before the
+        # field existed -- the fail-soft this app owes 800 badges.
+        #
+        # Indexed, not `.get()`, like `title`/`kind`/`speakers` beside it:
+        # every view in this app is built from `normalize`, which always
+        # supplies the key. A defensive default here would only hide a
+        # session dict that came from somewhere it should not have.
+        description = session["description"]
+        description_h = 0
+        if description:
+            description_h = self._wrapped_height(
+                description, self.detail_w, DESCRIPTION_WRAP_LINES, metadata=True)
+            total += description_h + self.pad // 2
+        return {
+            "time": format_range(session),
+            "title": session["title"],
+            "title_h": title_h,
+            "speakers": speakers,
+            "description": description,
+            "description_h": description_h,
+            # A metadata time range is one line tall. `max` matters on the
+            # bitmap fallback, where a tiny primary title must never let the
+            # full range leak into the following block.
+            "height": max(total, self.meta_h) + self.block_gap,
+        }
+
+    def begin_layout_cache(self):
+        """Reset the cooperative row-measurement cursor for an offscreen view."""
+
+        self.layout_cache = {}
+        self._layout_index = 0
+
+    def build_layout_step(self, on_session=None):
+        """Measure at most one row; return True once every row is cached.
+
+        The caller draws the existing view after each step.  Keeping this
+        method bounded to one session is the frame-budget seam; a future agenda
+        may move from ten Build rows to eight (or any other count) without a
+        hard-coded batch size or a partial cache becoming visible.
+        """
+
+        index = getattr(self, "_layout_index", 0)
+        if index >= len(self.sessions):
+            return True
+        session = self.sessions[index]
+        if on_session:
+            on_session("-- measuring %s" % session["id"][:12])
+        self.layout_cache[session["id"]] = self._measure_session(session)
+        self._layout_index = index + 1
+        return self._layout_index >= len(self.sessions)
 
     def build_layout_cache(self, on_session=None):
         """Measure every block once. Never re-measure inside a frame.
 
-        `on_session` is the loading screen's seam. This walks fourteen sessions
-        wrapping and measuring every line, which is the longest DIVISIBLE
-        stretch in this app's load: it is a loop, so a frame fits between two
-        iterations and the bar keeps moving through it. Default None, so every
-        other caller is unchanged.
+        `on_session` is the loading screen's seam. This walks every published
+        session, wrapping and measuring every line, which is the longest
+        DIVISIBLE stretch in this app's load: it is a loop, so a frame fits
+        between two iterations and the bar keeps moving through it. Naming the
+        data instead of a row count keeps the scheduling invariant true when an
+        operator replaces the agenda. Default None, so every other caller is
+        unchanged.
         """
-        cache = {}
-        for session in self.sessions:
-            if on_session:
-                on_session("-- measuring %s" % session["id"][:12])
-            title_h = self._wrapped_height(session["title"], self.content_w)
-            speakers = []
-            total = title_h
-            for line in speaker_lines(session):
-                height = self._wrapped_height(line, self.content_w)
-                speakers.append((line, height))
-                total += height + self.pad // 2
-            # THE LABEL LINE, MEASURED HERE OR NOT AT ALL. An empty description
-            # buys no measurement and no height, which is what makes a row
-            # without one byte-identical to the build that shipped before the
-            # field existed -- the fail-soft this app owes 800 badges.
-            #
-            # Indexed, not `.get()`, like `title`/`kind`/`speakers` beside it:
-            # every view in this app is built from `normalize`, which always
-            # supplies the key. A defensive default here would only hide a
-            # session dict that came from somewhere it should not have.
-            description = session["description"]
-            description_h = 0
-            if description:
-                description_h = self._wrapped_height(
-                    description, self.content_w, DESCRIPTION_WRAP_LINES)
-                total += description_h + self.pad // 2
-            cache[session["id"]] = {
-                "time": format_range(session),
-                "title": session["title"],
-                "title_h": title_h,
-                "speakers": speakers,
-                "description": description,
-                "description_h": description_h,
-                "height": total + self.block_gap,
-            }
-        self.layout_cache = cache
-        return cache
+        self.begin_layout_cache()
+        while not self.build_layout_step(on_session=on_session):
+            pass
+        return self.layout_cache
 
     # -- state -------------------------------------------------------------
 
     def visible(self):
         return self.stage_sessions[self.stage]
+
+    def adopt_navigation(self, previous):
+        """Preserve stage, selected session and scroll anchor by semantic ID.
+
+        A whole-snapshot update can delete or reorder rows.  Numeric indexes
+        alone would therefore move the wearer to an unrelated talk; IDs retain
+        the same row when it survives, while clamped old indexes are the honest
+        fallback when it does not (including a future ten-to-eight Build edit).
+        """
+
+        old_stage_by_id = {
+            stage["id"]: index for index, stage in enumerate(previous.stages)
+        }
+        new_stage_by_id = {
+            stage["id"]: index for index, stage in enumerate(self.stages)
+        }
+        for stage_id, new_index in new_stage_by_id.items():
+            old_index = old_stage_by_id.get(stage_id)
+            if old_index is None:
+                continue
+            old_rows = previous.stage_sessions[old_index]
+            new_rows = self.stage_sessions[new_index]
+            by_id = {row["id"]: index for index, row in enumerate(new_rows)}
+
+            old_selected = previous.selected[old_index]
+            selected_id = (
+                old_rows[old_selected]["id"]
+                if 0 <= old_selected < len(old_rows) else None
+            )
+            fallback = min(old_selected, max(0, len(new_rows) - 1))
+            self.selected[new_index] = by_id.get(selected_id, fallback)
+
+            old_scroll = previous.scroll[old_index]
+            scroll_id = (
+                old_rows[old_scroll]["id"]
+                if 0 <= old_scroll < len(old_rows) else None
+            )
+            scroll_fallback = min(old_scroll, max(0, len(new_rows) - 1))
+            self.scroll[new_index] = by_id.get(scroll_id, scroll_fallback)
+
+        old_stage_id = (
+            previous.stages[previous.stage]["id"]
+            if previous.stages else None
+        )
+        self.stage = new_stage_by_id.get(old_stage_id, 0)
+        self.ensure_visible()
 
     def _update_list_top(self):
         self.list_top = (
@@ -672,19 +824,21 @@ class ScheduleView:
 
     # -- drawing -----------------------------------------------------------
 
-    def _text(self, value, x, y, width, height, pen):
+    def _text(self, value, x, y, width, height, pen, metadata=False):
+        size = self.meta_size if metadata else self.font_size
+        descent = self.meta_descent if metadata else self.descent
         self.screen.pen = pen
         self.screen.text(
             value,
-            self.rect(int(x), int(y), int(width), int(height) + self.descent),
-            font_size=self.font_size,
+            self.rect(int(x), int(y), int(width), int(height) + descent),
+            font_size=size,
             line_height=LINE_HEIGHT,
             align=(self.image.LEFT, self.image.TOP),
             overflow=self.image.ELLIPSES,
         )
 
     def _clock_reading(self):
-        """`11:50 PST`, or NOTHING. Two answers since 2026-08-24, and that is the
+        """`HH:MM TZ`, or NOTHING. Two answers since 2026-08-24, and that is the
         whole clock ruling on one screen.
 
         The owner's words are "we either get a real time from a server or don't
@@ -730,20 +884,22 @@ class ScheduleView:
         # vanishes on an untrusted badge and a mark that moved with it would not
         # survive being described to somebody across a room.
         self._draw_fresh_mark(self.mark_x, self.bar_h // 2)
+        text_y = max(0, (self.bar_h - self.meta_h) // 2)
         if self.title:
             self._text(
-                self.title, self.title_x, self.pad // 4, self.title_w, self.text_h,
-                self.fresh_ink,
+                self.title, self.title_x, text_y, self.title_w, self.meta_h,
+                self.fresh_ink, metadata=True,
             )
         reading = self._clock_reading()
         if reading:
             self._text(
                 reading,
                 int(screen.width) - self.pad - self.clock_w,
-                self.pad // 4,
+                text_y,
                 self.clock_w + 1,
-                self.text_h,
+                self.meta_h,
                 self.muted,
+                metadata=True,
             )
 
     def _draw_fresh_mark(self, x, mid_y):
@@ -847,10 +1003,11 @@ class ScheduleView:
             self._text(
                 self.hint,
                 int(screen.width) - self.pad - self.hint_w,
-                y + self.pad // 4,
+                y + max(0, (self.tab_h - self.underline_h - self.meta_h) // 2),
                 self.hint_w + 1,
-                self.text_h,
+                self.meta_h,
                 self.dim,
+                metadata=True,
             )
         screen.pen = self.rule
         screen.rectangle(0, y + self.tab_h - 1, int(screen.width), 1)
@@ -864,8 +1021,9 @@ class ScheduleView:
         screen.pen = self.notice_fill
         screen.rectangle(0, y, int(screen.width), self.notice_h)
         self._text(
-            self.notice, self.pad, y + self.pad // 4,
-            int(screen.width) - self.pad * 2, self.text_h, self.notice_ink,
+            self.notice, self.pad, y + max(0, (self.notice_h - self.meta_h) // 2),
+            int(screen.width) - self.pad * 2, self.meta_h, self.notice_ink,
+            metadata=True,
         )
 
     def _strip_line(self):
@@ -914,8 +1072,9 @@ class ScheduleView:
         screen.pen = self.now_fill
         screen.rectangle(0, y, int(screen.width), self.strip_h)
         self._text(
-            self._strip_line(), self.pad, y + self.pad // 4,
-            int(screen.width) - self.pad * 2, self.text_h, self.text,
+            self._strip_line(), self.pad, y + max(0, (self.strip_h - self.meta_h) // 2),
+            int(screen.width) - self.pad * 2, self.meta_h, self.text,
+            metadata=True,
         )
 
     def _draw_hatch(self, y, height):
@@ -939,15 +1098,16 @@ class ScheduleView:
         return self.phases[index]
 
     def _draw_phase_rail(self, index, y, height, phase):
-        """The NOW/NEXT marker, drawn in the gutter nothing else uses.
+        """The NOW/NEXT marker, drawn beside the time/title line.
 
         WHY THE GUTTER. `self.gap` sits between the time column and the content
-        column and is empty on every row, at every scale, in both resolutions --
-        so a marker there costs no title characters, no list rows and no
-        measurement. Every other candidate spends something: a `NOW` tag on the
-        right takes width off every title, and the left edge is already the
-        selection bar, which a phase marker must not be confusable with (one is
-        where the wearer is, the other is where the clock is).
+        column on the first line, so a marker there costs no title characters,
+        no list rows and no measurement. Credits use the full row underneath;
+        the rail ends with the title rather than cutting through them. Every
+        other candidate spends something: a `NOW` tag on the right takes width
+        off every title, and the left edge is already the selection bar, which a
+        phase marker must not be confusable with (one is where the wearer is,
+        the other is where the clock is).
 
         Solid for the live row, a dotted run of the same bar for the next one --
         the same solid/dotted vocabulary the tab underline already uses for
@@ -981,7 +1141,11 @@ class ScheduleView:
         if index == self.selected[self.stage]:
             screen.pen = self.selection
             screen.rectangle(0, y - self.pad // 4, max(2, self.pad // 2), height + self.pad // 2)
-        self._draw_phase_rail(index, y, height, phase)
+        # Detail lines now span the row below this first line. Keeping the phase
+        # marker beside the title preserves the empty-gutter placement without
+        # drawing a rail through speaker names that legitimately cross under the
+        # time column.
+        self._draw_phase_rail(index, y, cached["title_h"], phase)
         # PAST IS TWO STEPS DOWN, NOT HIDDEN AND NOT GREYED OUT LIKE A DISABLED
         # CONTROL. A row that has ended still answers "what did I miss", and
         # `docs/engineering-findings.md` forbids hiding the list outright.
@@ -996,26 +1160,46 @@ class ScheduleView:
             description_pen = self.past_muted
         else:
             time_pen = self.muted
-            title_pen = self.muted if session["kind"] == KIND_BREAK else self.text
+            # The source's hyphen-only unscheduled row stays exactly a hyphen:
+            # no invented TBA, session type or explanation. Muted ink makes the
+            # placeholder intentional without promoting it over named sessions.
+            title_pen = (
+                self.muted
+                if session["kind"] == KIND_BREAK or cached["title"] == "-"
+                else self.text
+            )
             speaker_pen = self.muted
             # THREE STEPS OF INK FOR THE BLOCK'S THREE LEVELS: what it is
             # (`text`), who is on it (`muted`), the detail an eye may skip
             # (`dim`). The label is the only line here a wearer can ignore
             # without losing the agenda, so it is the quietest.
-            description_pen = self.dim
-        self._text(cached["time"], self.pad, y, self.time_w + 1, self.text_h, time_pen)
+            # `dim` is a third readable step on the near-black list, but it
+            # loses too much contrast on the green current fill. The live row
+            # collapses speaker/description to one metadata ink just as the
+            # past row collapses its lower tiers: hierarchy survives in size
+            # and order, while `Atrium · Supabase` remains legible at the party.
+            description_pen = self.muted if index in self.current else self.dim
+        self._text(
+            cached["time"], self.pad, y, self.time_w + 1, self.meta_h, time_pen,
+            metadata=True,
+        )
         self._text(cached["title"], self.content_x, y, self.content_w, cached["title_h"], title_pen)
         line_y = y + cached["title_h"] + self.pad // 2
         for line, line_h in cached["speakers"]:
-            self._text(line, self.content_x, line_y, self.content_w, line_h, speaker_pen)
+            self._text(
+                line, self.detail_x, line_y, self.detail_w, line_h, speaker_pen,
+                metadata=True,
+            )
             line_y += line_h + self.pad // 2
         # LAST, UNDER THE NAMES, and the order is the block's reading order:
         # what, who, then the detail. An empty description draws nothing at all
         # -- never an empty rect, which on a hatched break row would read as a
         # rendering fault rather than as an absent field.
         if cached["description"]:
-            self._text(cached["description"], self.content_x, line_y, self.content_w,
-                       cached["description_h"], description_pen)
+            self._text(
+                cached["description"], self.detail_x, line_y, self.detail_w,
+                cached["description_h"], description_pen, metadata=True,
+            )
         return height
 
     def _draw_softkeys(self, labels):

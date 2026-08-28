@@ -1,6 +1,6 @@
 # Supabase Select 2026 badge software -- source export
 
-This is the software that would ship to the ~800 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `153a63bdf078` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
+This is the software that would ship to the ~800 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `599cea74de2a` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
 
 ## Status
 
@@ -36,7 +36,7 @@ Badgeware runs source `.py` directly, so to hack on one app you drag its directo
 
 This is development-only, and you drag individual apps rather than the whole tree, for four honest reasons:
 
-1. **The whole source tree does not fit the volume at once.** In source form the staged `/system` is 75% of the 12 MB FAT against 53% as bytecode (`BUILDING.md` section 2.5 has the table), and with everything uncompiled it overflows. So you drag only the apps you want to hack on, not the whole lineup.
+1. **The whole source tree does not fit the volume at once.** In source form the staged `/system` is 29% of the 12 MB FAT against 12% as bytecode (`BUILDING.md` section 2.5 has the table), and with everything uncompiled it overflows. So you drag only the apps you want to hack on, not the whole lineup.
 2. **The two stock fonts must already be on the badge.** `DynaPuff` and `IndieFlower` ship with the firmware. Dragging an app does not touch them, but do not wholesale-replace `/system/assets/fonts`: that would remove them.
 3. **Each app carries its own copy of the shared layer.** The shared modules an app imports already sit inside that app's own directory in this tree, so dropping a WHOLE app directory is self-contained. A partial drop that leaves those files behind breaks the app.
 4. **A stray `.py` beside its own `.mpy` silently wins.** Do not drop a source app on top of a bytecode install without clearing that app's directory first, or the badge runs stale source with no error anywhere. `BUILDING.md` section 2.5 covers this.
@@ -48,6 +48,12 @@ From this export's root to a running badge, copy and paste. You need Python 3.8 
 **Step 0, before any of this: check the badge's firmware.** This tree is built against Badgeware **v3.0.2** and its bytecode will not import on an older image. Flash first and install second, and use the plain `...-micropython.uf2` rather than the `-with-filesystem` one unless you want the badge reset to stock apps. **`BUILDING.md` section 0** has the check, the two flavours and what a mismatch looks like.
 
 ```sh
+# Stop on the first failure (-e) and on an unset variable (-u). Without these, pasting
+# the block into an ordinary shell runs every line below whether or not the one above
+# it worked, and an empty $MOUNT becomes a path. No `pipefail`: nothing here pipes, and
+# it is a bash builtin that dash (Debian's /bin/sh) errors on.
+set -eu
+
 # 1. The Badgeware release clone: the stock launcher files and two fonts come from it.
 #    BESIDE this tree, not inside it: the two clones are ~294 MB and every file
 #    in here is hashed in MANIFEST.json.
@@ -72,19 +78,14 @@ MOUNT=/media/$USER/Tufty2350      # Linux, or /run/media/$USER/Tufty2350
 #MOUNT=/media/$USER/TUFTY         # Linux, observed short name
 #MOUNT=/Volumes/TUFTY             # macOS, observed short name
 
-# 5. Clear the install roots first: copying over the top leaves stock apps and strays.
-rm -r "$MOUNT/apps" "$MOUNT/assets"
+# 5. Install, then eject -- CHAINED, so the eject cannot run unless the install
+#    verified. --install checks the build is complete and built from this tree,
+#    checks $MOUNT is a mounted badge, and only then clears the four roots, copies
+#    and hashes every file against the build. It refuses before it deletes anything.
+python3 tools/build.py --install "$MOUNT" && umount "$MOUNT"
+#python3 tools/build.py --install "$MOUNT" && diskutil eject "$MOUNT"   # macOS
 
-# 6. Copy by root: manifest.json is the build's own proof file and must not install.
-cp -R build/system/apps build/system/assets \
-      build/system/main.py build/system/secrets.py "$MOUNT/"
-
-# 7. The install's only proof: every file on the volume hashed against the build.
-python3 tools/build.py --verify-mount "$MOUNT"
-
-# 8. Eject cleanly, then open one app: an install is not a test.
-umount "$MOUNT"                # Linux
-#diskutil eject "$MOUNT"       # macOS: use this line instead
+# 6. Open one app on the badge. An install is not a test.
 ```
 
 Step 2 is a different clone from step 1 and you need both: `mpy-cross` is built from MicroPython at the pinned commit, and the four stock launcher files and two stock `.af` faces come out of the Badgeware release. Every input above is either in this package or in one of those two clones.
@@ -97,17 +98,17 @@ It does, and that is the right development loop: your own README's "Installing A
 
 We precompile the thing we hand you for three measured reasons:
 
-1. **Headroom.** The modules here are 3,633,252 B as source and 813,603 B as bytecode, 22%. With assets, the installed tree is 6,672,697 B, 53% of the 12 MB volume; as source it would be 9,492,346 B, 75%. Both fit today. The assets are what grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
-2. **First-open latency, which is the one a wearer feels.** MicroPython compiles each `.py` at import, as one uninterruptible native call per module, and every app exit resets the badge, so every open is a cold open. The largest module here is 667,219 B of source; even precompiled to a 228,851 B `.mpy`, its cold import measures 630-765 ms on device. Shipping source adds the parse to that, on every open.
+1. **Headroom.** The modules here are 2,647,922 B as source and 479,693 B as bytecode, 18%. With assets, the installed tree is 1,459,579 B, 12% of the 12 MB volume; as source it would be 3,627,808 B, 29%. Both fit today. The assets are what grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
+2. **First-open latency, which is the one a wearer feels.** MicroPython compiles each `.py` at import, as one uninterruptible native call per module, and every app exit resets the badge, so every open is a cold open. The largest module here is 326,156 B of source; even precompiled to a 102,465 B `.mpy`, its cold import measures 630-765 ms on device. Shipping source adds the parse to that, on every open.
 3. **Fleet integrity.** 800 badges get a byte-identical, hash-verified install, and a stray `.py` beside its own `.mpy` silently wins: no speed-up, possibly stale code, no error. That is the failure `tools/build.py --verify-mount` exists to catch.
 
 `BUILDING.md` section 2.5 is the full treatment, including how to mix the two safely.
 
 Full detail, pins, and troubleshooting: **`BUILDING.md`**. It carries the pins with their one open caveat, `--check` (build twice, prove byte-identical output), a build without the release clone (`--skip-menu`, `--no-stock-fonts`), firmware flashing, and the refusals the build will not budge on.
 
-It is not a repository dump and it is not a release. It is the boot file, the launcher, 8 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **209 files, 9,979,825 bytes**.
+It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **186 files, 5,541,440 bytes**.
 
-Those two numbers are the PAYLOAD: everything in this tree except this README and `MANIFEST.json`, the two files that cannot quote a total including themselves without changing it. `MANIFEST.json` lists 210 rows (the payload plus this README) and does not hash itself; its `totals.payload` repeats the two numbers above, and the exporter's `readme-matches-manifest` gate reads this paragraph back and fails the build if any of the three disagrees.
+Those two numbers are the PAYLOAD: everything in this tree except this README and `MANIFEST.json`, the two files that cannot quote a total including themselves without changing it. `MANIFEST.json` lists 187 rows (the payload plus this README) and does not hash itself; its `totals.payload` repeats the two numbers above, and the exporter's `readme-matches-manifest` gate reads this paragraph back and fails the build if any of the three disagrees.
 
 ## Start here
 
@@ -129,15 +130,14 @@ The order is the launcher's grid order and it comes from `apps-roster.json`, **w
 
 | app | installs at | what it is |
 |---|---|---|
-| `badgecard` | `/system/apps/badgecard` | the badge editor and the worn badge itself: name, skin, stickers, effect |
-| `poster` | `/system/apps/poster` | the worn badge as a read-only full-screen poster, opened in 14 modules instead of 27 |
-| `schedule` | `/system/apps/schedule` | the offline conference agenda: two stage tabs, fourteen sessions, no network |
+| `setup` | `/system/apps/setup` | the badge editor and the worn badge itself: name, skin, stickers, effect |
+| `nametag` | `/system/apps/nametag` | the worn badge as a read-only full-screen poster, opened in 14 modules instead of 27 |
+| `schedule` | `/system/apps/schedule` | the offline conference agenda: two stage tabs, 26 rendered rows, no network |
 | `snake` | `/system/apps/snake` | Snake on an 8 px grid where the food is the Supabase mark; nine levels trade pace for payout |
 | `flappy` | `/system/apps/flappy` | tap-to-fly where you are a client connection and the pipes are a pooler's slots |
-| `pet` | `/system/apps/pet` | virtual-pet care sim where the creature is your database project |
-| `glyph` | `/system/apps/glyph` | a player for 36 recorded cell-stream animations, with the rear case lights in sync |
 | `settings` | `/system/apps/settings` | pairing, the network switch, optional updates, screen brightness, and the badge's only route to off |
 | `menu` | `/system/apps/menu` | the boot host: the app grid, the hold shortcut, the loading screen and the idle ladder |
+| `glyph` | `/system/apps/glyph` | a player for 36 recorded cell-stream animations, with the rear case lights in sync |
 
 Each app directory carries its own short `README.md`: what it does, its controls, and anything a reader would not guess.
 
@@ -183,7 +183,7 @@ What in this tree is **export-only** and does not install:
 - `.gitignore` and `CONTRIBUTING.md` -- furniture for the published source repository this tree is mirrored into;
 - `shared/` -- the canonical copies, explained in `shared/README.md`;
 - `tools/build.py` -- the compiler front end;
-- `apps/poster/tests/` -- one host suite, shipped as a worked example.
+- `apps/nametag/tests/` -- one host suite, shipped as a worked example.
 
 `apps/snake/PROVENANCE.md` and `apps/flappy/PROVENANCE.md` -- the attribution records for the two apps derived from somebody else's work -- **do** install, and that is deliberate: a licence notice that stays behind on the build host is not a licence notice. They are in `build/system` and on a verified volume.
 
@@ -202,9 +202,9 @@ Everything else in that file is yours, including a comment above the `launch()` 
 
 ## The shared layer, and why every app has its own copy of it
 
-The badge puts exactly one directory on `sys.path`: the app's own. An app *can* import from another app's directory, but then it refuses to start unless that other app happens to be installed -- a bad trade on a badge whose HOME key can launch anything in any order. So the copies are forced, and what is not forced is keeping them in sync by hand: `scripts/sync_ui.py` owns one table of canonical sources and their consumers, and `--check` hashes every copy on every CI run.
+The badge puts exactly one directory on `sys.path`: the app's own. An app *can* import from another app's directory, but then it refuses to start unless that other app happens to be installed -- a bad trade on a badge whose HOME key can launch anything in any order. So the copies are forced, and what is not forced is keeping them in sync by hand: `scripts/sync_ui.py` owns one table of canonical sources and their consumers. Maintainers run the repository's production lane by hand, and that lane invokes `--check`; there is no tracked CI configuration or hook setup.
 
-`shared/` in this export holds the 12 canonical modules the shipping lineup vendors. `shared/README.md` is the whole map, including the 9 modules whose canonical copy is not a `shared/` file.
+`shared/` in this export holds the 12 canonical modules the shipping lineup vendors. `shared/README.md` is the whole map, including the 10 modules whose canonical copy is not a `shared/` file.
 
 ## What a wearer experiences
 
@@ -219,7 +219,7 @@ The badge puts exactly one directory on `sys.path`: the app's own. An app *can* 
 - **The network runtime.** BadgeLink -- the `/system/lib` payload, its transport, its pairing and its realtime client -- is not in this tree. It is written and it works; it is dark until it earns its way in, and the software above is built so that its absence costs exactly the features that need it and nothing else. The one visible seam is the Settings tile's pairing view, which guards its three imports and says so when they are missing.
 - **The research repository.** Benchmarks, device probes, measurement reports, design records, the skin lab, the glyph labs, the keyboard bench and every `evidence/` directory stay behind. The numbers quoted in the comments in this source come from those reports; the reports themselves are a much larger body of work than the software.
 - **Host tooling.** Every `*/host/` tree: the catalogue generators, the asset bakers, the `mpy-cross` build, the browser playground and the deploy scripts.
-- **The test suites**, with one exception. The shipping apps carry 107 host test modules totalling roughly 55,000 lines -- a codebase larger than the software it tests, and not the thing to read first. `apps/poster/tests/` ships as the worked example: it is the smallest suite in the repository, and it pins the two invariants this README claims out loud (the staged arrival, and the panel resolution being decided in exactly one place). **It runs from this tree, and the exporter proves it:** the `included-tests-run` gate executes `python3 -m unittest discover -s apps/poster/tests -v` from the export root on every build and refuses on any error or failure. A few of its cases pin the app against trees this export omits -- the archived editor it replaced, and `scripts/sync_ui.py` -- and those SKIP from here, with the reason printed. The gate counts the skips so an all-skip suite could not pass as green.
+- **The test suites**, with one exception. The shipping apps carry 107 host test modules totalling roughly 55,000 lines -- a codebase larger than the software it tests, and not the thing to read first. `apps/nametag/tests/` ships as the worked example: it is the smallest suite in the repository, and it pins the two invariants this README claims out loud (the staged arrival, and the panel resolution being decided in exactly one place). **It runs from this tree, and the exporter proves it:** the `included-tests-run` gate executes `python3 -m unittest discover -s apps/nametag/tests -v` from the export root on every build and refuses on any error or failure. A few of its cases pin the app against trees this export omits -- the archived editor it replaced, and `scripts/sync_ui.py` -- and those SKIP from here, with the reason printed. The gate counts the skips so an all-skip suite could not pass as green.
 - **Two of the three fonts, which YOU already have.** `DynaPuff-Medium.af` and `IndieFlower-Regular.af` are Pimoroni's own, shipped in the Badgeware **v3.0.2** release, and the pinned release publishes no licence grant, so they are in neither this export nor the repository. **They still ship on the badge** -- this tree replaces `/system` wholesale, so dropping either is a removal rather than an omission. You supply them from your own release clone:
 
   ```sh
@@ -228,7 +228,7 @@ The badge puts exactly one directory on `sys.path`: the app's own. An app *can* 
 
   The build verifies both against pinned SHA-256s before copying them and refuses the build without them unless you pass `--no-stock-fonts` and accept a `/system` that regresses a stock badge. `BUILDING.md` §2 has the hashes and `assets/fonts/README.md` has the whole story. `assets/fonts/` here holds the one face this project owns: MonaSans-Medium.af, an OFL rebuild of github:github/mona-sans 2.0.8.
 - **The stock launcher base.** Four files of Pimoroni's own menu app are patched rather than replaced; `apps/menu/README.md` names them, their pinned hashes and the five patches.
-- **Apps that were built and are not shipping.** `MANIFEST.json` records 24 excluded app directories, each with the reason `apps-roster.json` gives for it -- archived predecessors, dev labs, comparison tiles and instruments. The roster's own list carries 26 reasons: the extra 2 are for directories the app registry no longer names. They are in the repository, not in this export.
+- **Apps that were built and are not shipping.** `MANIFEST.json` records 25 excluded app directories, each with the reason `apps-roster.json` gives for it -- archived predecessors, dev labs, comparison tiles and instruments. The roster's own list carries 27 reasons: the extra 2 are for directories the app registry no longer names. They are in the repository, not in this export.
 - **Secrets, of any kind.** There is no `secrets.py` in this tree, no network credential, no private address and no `/state` content, and the exporter fails loudly rather than emitting one -- see its `gate_secrets`.
 
 ## Verifying this export
@@ -249,4 +249,6 @@ python3 -c "import hashlib,json;r=sorted(json.load(open('MANIFEST.json'))['files
 
 Both prove this tree is self-consistent; neither proves it is ours. The canonical commit is in `MANIFEST.json`'s `provenance` and in this document's header, and the exporter that assembled the tree lives in that repository, not in this one. The export is deterministic by construction -- sorted walks, `copyfile` so no host metadata rides along, and no wall-clock timestamp in any generated file -- so two runs from one commit produce the same `tree_hash`, which the exporter's own `--check` asserts in the full repository.
 
-21 gates run on every build and there is no warning tier, because a warning in a build log is how something ships. Their results are in `MANIFEST.json`. The one that matters most is the first: no credential, no private address, no `/state` content, no `secrets.py`. The one most likely to catch a real mistake is `imports-resolve`, which proves every import in every app either lands inside that app's own directory, is a firmware module, or sits inside a `try/except ImportError` -- because the badge puts exactly one path on `sys.path` and this export drops `/system/lib` on purpose. The ones that exist because an outside engineer read an earlier cut of this package and found them missing are `included-tests-run` (execute the shipped suite from the artifact), `readme-matches-manifest` (this document's counts against the manifest's), `building-md-pins` (every pin in `BUILDING.md` against the file in our repository that owns it), `roster-ships-and-matches`, `provenance-records-present` and `no-device-identifiers`. Two more came from a second reading of the package after those landed: `hold-contract-consistent`, which reads the launcher's `HOLD_MS` out of this export and refuses any sentence anywhere in it that names a different hold duration (a stale one survived a fix because the string was split across two source lines), and `internal-exhaust-census`, which counts the internal residue still in this source -- validation-row identifiers, quoted decisions, paths into reports you do not have -- in every text file and in the manifest. Its per-file counts go to a maintainer report kept outside this package, because that ledger is our cleanup homework, not yours. It is REPORT-ONLY except for the class that already refused (a bench badge's serial number), because what to remove and what to keep is a judgement rather than a rule.
+23 gates run on every build and there is no warning TIER, because a warning in a build log is how something ships: exactly two rows report rather than refuse, both are named below, and both are judgements our owner has not made yet. Their results are in `MANIFEST.json`. The one that matters most is the first: no credential, no private address, no `/state` content, no `secrets.py`. The one most likely to catch a real mistake is `imports-resolve`, which proves every import in every app either lands inside that app's own directory, is a firmware module, or sits inside a `try/except ImportError` -- because the badge puts exactly one path on `sys.path` and this export drops `/system/lib` on purpose. The ones that exist because an outside engineer read an earlier cut of this package and found them missing are `included-tests-run` (execute the shipped suite from the artifact), `readme-matches-manifest` (this document's counts against the manifest's), `building-md-pins` (every pin in `BUILDING.md` against the file in our repository that owns it), `roster-ships-and-matches`, `provenance-records-present` and `no-device-identifiers`. Two more came from a second reading of the package after those landed: `hold-contract-consistent`, which reads the launcher's `HOLD_MS` out of this export and refuses any sentence anywhere in it that names a different hold duration (a stale one survived a fix because the string was split across two source lines), and `internal-exhaust-census`, which counts the internal residue still in this source -- validation-row identifiers, quoted decisions, paths into reports you do not have -- in every text file and in the manifest. Its per-file counts go to a maintainer report kept outside this package, because that ledger is our cleanup homework, not yours. It is REPORT-ONLY except for the class that already refused (a bench badge's serial number), because what to remove and what to keep is a judgement rather than a rule.
+
+The two schedule/event gates are the ones whose stakes are the fleet's rather than a reviewer's. `schedule-covers-event-date` refuses a build whose baked agenda (`apps/*/schedule.json`) does not cover the conference day this package declares, which is **October 2, 2026**. The badges ship with networking off, so a badge carrying the wrong agenda cannot learn it is wrong and there is no path to correct 800 of them: the build is the last cheap place to catch it. `schedule-timezone-matches-event-date` derives the civil-time rule for that day from `America/Los_Angeles` and refuses a timezone label or UTC offset that is not actually in force at the San Francisco venue. The date gate's second half is the other report-only row -- a session title that reads as a placeholder is named with its file and line and does not block, because a session may legitimately be called `General Session` and that is not our call to make mechanically.

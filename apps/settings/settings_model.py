@@ -59,9 +59,9 @@ where pairview put them, on B and C.
 (owner ruling, 2026-08-24) A and C are the two ENDS of an ordered ladder and B
 carries the way back, which is §9.2(b) of the button rules rather than an
 exception to them — and it is the same bar the wearer met while the row lived in
-``badgecard``. :func:`bright_view` states what bounds it, and
+``setup``. :func:`bright_view` states what bounds it, and
 ``settings/README.md`` § "Brightness" records it. (There is no deviation TABLE in
-that README -- `badgecard` and `identity` keep registers, this tile does not --
+that README -- `setup` and `identity` keep registers, this tile does not --
 so the section is the record, and this pointer is exact on purpose: a reference to
 a table that does not exist reads as coverage nobody wrote.)
 """
@@ -92,17 +92,28 @@ SLEEP = "sleep"
 #: The brightness ladder's screen (owner ruling, 2026-08-24). A SCREEN rather
 #: than an in-place edit on the menu row, and that is forced rather than chosen:
 #: the ladder needs two keys, and on the menu UP and DOWN already move the
-#: selection while B opens. It arrives here whole from `badgecard`, where it
+#: selection while B opens. It arrives here whole from `setup`, where it
 #: lived for a day -- same rungs, same store, same one-press-per-rung
 #: motion -- so the only thing this app had to decide was the bar.
 BRIGHT = "bright"
 #: The score-erase question and its result (owner feature, 2026-08-27). THE ONLY
 #: DESTRUCTIVE SCREEN THIS TILE HAS, so it is the only one that follows B7's
 #: confirmation shape rather than acting on the row it was opened from. One screen
-#: constant covers the question and the answer: `badgecard` reuses `CONFIRM` for
+#: constant covers the question and the answer: `setup` reuses `CONFIRM` for
 #: the same reason -- it is one question with one subject, and a second screen id
 #: for "the same screen, afterwards" would need its own route for no behaviour.
 SCORES = "scores"
+#: The operator's screen (2026-08-27). THE ONLY SCREEN IN THIS TILE THAT IS NOT
+#: FOR THE WEARER, and it exists because on 2026-08-27 the badge KNEW the answer
+#: three separate times and had no way to say it -- an hour of guessing each
+#: time, over values `pushlink` had already computed and published to a serial
+#: port with nothing attached to it. `settings_copy`'s diagnostics block names
+#: the three incidents; the design rule they produced is that this screen
+#: SURFACES what the runtime already has and adds no counter, no state and no
+#: machinery of its own. The one thing it does own is the frame sweep, and that
+#: is here for the same reason: nothing else on this badge could show a wearer's
+#: eye the difference between a slow frame and a stopped one.
+DIAG = "diag"
 
 # Row identifiers. The tile is general-purpose on purpose: the owner's reasoning
 # for one Settings tile over a tile per need was that other settings-shaped needs
@@ -114,6 +125,7 @@ ROW_PUSH = "push"
 ROW_SLEEP = "sleep"
 ROW_BRIGHT = "bright"
 ROW_SCORES = "scores"
+ROW_DIAG = "diag"
 
 ROW_LABELS = {
     ROW_PAIR: settings_copy.ROW_PAIR_LABEL,
@@ -122,6 +134,7 @@ ROW_LABELS = {
     ROW_SLEEP: settings_copy.ROW_SLEEP_LABEL,
     ROW_BRIGHT: settings_copy.ROW_BRIGHT_LABEL,
     ROW_SCORES: settings_copy.ROW_SCORES_LABEL,
+    ROW_DIAG: settings_copy.ROW_DIAG_LABEL,
 }
 ROW_SCREENS = {
     ROW_PAIR: PAIR,
@@ -130,13 +143,14 @@ ROW_SCREENS = {
     ROW_SLEEP: SLEEP,
     ROW_BRIGHT: BRIGHT,
     ROW_SCORES: SCORES,
+    ROW_DIAG: DIAG,
 }
 
 #: THE FILES "ERASE SCORES" TAKES, BESIDES THE UNDELIVERED SPOOL. One per game,
 #: written by `shared/score_sink.py` and read as the wearer's high score.
 #:
 #: THIS TILE CARRIES ITS OWN COPY OF THE LIST AND DOES NOT IMPORT ONE, which is
-#: the same decision `badgecard` made about `badgecard_state` and for a stronger
+#: the same decision `setup` made about `setup_state` and for a stronger
 #: reason: `scorebox.GAME_STATE_PATHS` says the same five paths, but it lives in
 #: `/system/lib`, which the production payload DOES NOT SHIP
 #: (`apps-roster.json`: `production.system_lib.ship` is false). A wearer erasing
@@ -171,14 +185,14 @@ GAME_SCORE_PATHS = ("/state/snake.json", "/state/pong.json",
 #: the note is also what protects a blind UP-then-B.
 #:
 #: BRIGHTNESS SITS DIRECTLY ABOVE SLEEP (owner ruling, 2026-08-24: *"Take
-#: brightness out of badgecard. That should only exist in settings."*), and the
+#: brightness out of setup. That should only exist in settings."*), and the
 #: position is the one thing about the move this tile had to decide.
 #:
 #: It goes BELOW the network rows because it is the first row here that is about
 #: the badge in the wearer's hand rather than about the server, and Sleep is the
 #: other one: the menu reads as the connected things, then the two panel things.
 #:
-#: It does NOT take the last slot, and the temptation was real. `badgecard`'s
+#: It does NOT take the last slot, and the temptation was real. `setup`'s
 #: menu put this row last on exactly the argument above -- the first blind UP
 #: from the top lands on the last row, and B7 wants that to be a harmless one; a
 #: ladder is reversible in one press and destroys nothing, while Sleep blanks
@@ -195,21 +209,43 @@ GAME_SCORE_PATHS = ("/state/snake.json", "/state/pong.json",
 #: Brightness is pinned directly above it by its own; the destructive row
 #: therefore takes neither end and is two deliberate presses from anywhere.
 #:
-#: `badgecard` argues the opposite case and both are right: a properly gated
+#: `setup` argues the opposite case and both are right: a properly gated
 #: destructive row makes a BETTER wrap target than an ungated mildly-costly one,
 #: which is why RESET BADGE sits last there. The difference is what the seat is
 #: being traded against. There the alternative was SAVE TO HOME, which writes a
 #: 76,816-byte film on one press with no question; here the alternatives are a
 #: reversible ladder and a documented note, so there is nothing to improve by
 #: moving either of them and no reason to take a wrap seat at all.
-ROWS = (ROW_PAIR, ROW_NETWORK, ROW_SCORES, ROW_BRIGHT, ROW_SLEEP)
+#:
+#: DIAGNOSTICS SITS WITH THE NETWORK ROWS AND IS CONDITIONAL ON NOTHING, and the
+#: two halves of that sentence have different reasons.
+#:
+#: THE SEAT is chosen against the same two wrap-reachable seats the paragraph
+#: above weighs: the LAST row (the first UP from the top) and the SECOND (the
+#: first DOWN). It takes neither. Sleep's last place and Brightness's place
+#: directly above it are both recorded decisions with built mitigations, and
+#: Scores is deliberately away from both ends; this row goes after the network
+#: rows because that is what most of it describes, and before Scores because the
+#: destructive row's distance from a blind press is the thing being protected.
+#:
+#: UNCONDITIONAL, unlike Updates, and that is not an oversight. The Updates row
+#: is conditional because a row describing a transport this badge does not carry
+#: is a row that lies. This screen's OTHER half -- the frame sweep and the
+#: latched worst frame -- is about the panel, and every badge has a panel. So the
+#: argument is Brightness's rather than Updates': the row means something on an
+#: unprovisioned badge, and the push half degrades to one honest line
+#: (`settings_copy.DIAG_NO_PUSH`) exactly as the Network and Phone rows do. A
+#: badge that ships with no `/system/lib` at all -- which is the badge that SHIPS
+#: (`apps-roster.json`: `production.system_lib.ship` is false) -- still needs to
+#: be able to answer "is this thing dropping frames".
+ROWS = (ROW_PAIR, ROW_NETWORK, ROW_DIAG, ROW_SCORES, ROW_BRIGHT, ROW_SLEEP)
 #: The Updates row is CONDITIONAL: it appears only when the boot pump actually
 #: has a doorbell to control. A row that describes a transport this badge does
 #: not carry is a row that lies, and the tile already refuses to invent state.
 #: Brightness is conditional on nothing: every badge has a panel, so it is the
 #: second row after Sleep that means the same thing on an unprovisioned badge.
-ROWS_WITH_PUSH = (ROW_PAIR, ROW_NETWORK, ROW_PUSH, ROW_SCORES, ROW_BRIGHT,
-                  ROW_SLEEP)
+ROWS_WITH_PUSH = (ROW_PAIR, ROW_NETWORK, ROW_PUSH, ROW_DIAG, ROW_SCORES,
+                  ROW_BRIGHT, ROW_SLEEP)
 
 #: HOW LONG THE NOTE STAYS UP before `badge.sleep()` is called.
 #:
@@ -559,6 +595,304 @@ def push_view(mode, library=True, controllable=False, enabled=None, cause=None,
     }
 
 
+# -- the diagnostics screen --------------------------------------------------
+
+
+def _flag(record, key):
+    """A published bool as a word, or ``?`` when this build did not publish it.
+
+    THREE ANSWERS AND NOT TWO. A missing key is a real case -- `/system/lib` and
+    this app are installed by SEPARATE steps (OWNER-DECISIONS #1), and
+    `PushLink.snapshot()` has a conditional block of its own -- so a field the
+    badge never published must not read as `no`. That would be a measurement,
+    and there is none.
+    """
+    value = record.get(key)
+    if not isinstance(value, bool):
+        return settings_copy.DIAG_MISSING
+    return settings_copy.DIAG_YES if value else settings_copy.DIAG_NO
+
+
+def _number(value, ceiling=None):
+    """A counter as text, capped, or ``?``.
+
+    CAPPED AND NEVER CLIPPED. Clipping 12345 to `1234` is a wrong number a
+    reader would believe; `9999+` is a true statement about a value too wide for
+    a 308 px band. The ceiling is reachable in the field rather than
+    theoretical: an 800-badge fleet show is 799 suppressions on every badge, so
+    `doorbells_filtered` passes four figures after about a dozen shows.
+
+    `isinstance(value, bool)` IS EXCLUDED FIRST because `bool` is a subclass of
+    `int` in both runtimes, and a `True` rendered as `1` in a counter column is
+    the kind of wrong that reads as right.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return settings_copy.DIAG_MISSING
+    if ceiling is None:
+        ceiling = settings_copy.DIAG_COUNT_MAX
+    if value > ceiling:
+        return "{}+".format(ceiling)
+    return str(value)
+
+
+def _count(record, key, ceiling=None):
+    """One counter out of the published record. See :func:`_number`."""
+    return _number(record.get(key), ceiling)
+
+
+def diag_text(value):
+    """A runtime-supplied string, folded and bounded, ready to draw.
+
+    THE TWO HAZARDS ARE DIFFERENT AND BOTH ARE REAL. The FOLD closes the
+    alphabet: this app draws from a pre-baked 95-glyph set and `last_error` is
+    `pushlink._error_text`'s "ClassName: message" built from an arbitrary
+    exception, so an unrenderable code point becomes a visible `?` rather than
+    nothing at all. The BOUND closes the width: the same string can be 160
+    characters, and this screen has exactly eight bands for eight lines, so a
+    line allowed to wrap takes a band from a line below it.
+
+    `settings_copy.DIAG_TEXT_CHARS` is the bound and it is derived from the band
+    -- see it. Total, and never raises: every caller is on a draw path where a
+    raise is `machine.reset()`.
+    """
+    if value is None:
+        return None
+    text = settings_copy.ascii_fold(value)
+    return text[:settings_copy.DIAG_TEXT_CHARS]
+
+
+#: HOW LONG THE SWEEP TAKES TO CROSS THE PANEL ONCE.
+#:
+#: THE ELEMENT IS THE INSTRUMENT, NOT DECORATION. A number that has STOPPED
+#: updating and a number updating SLOWLY look identical at a glance -- that is
+#: how a 701 ms network stall sat unnoticed under a meter reporting `worst=58
+#: ms` -- so the screen carries something whose speed is a constant of WALL TIME
+#: rather than of frames. The comet advances by elapsed milliseconds, so a
+#: healthy badge shows smooth motion, a badge at half rate shows the same speed
+#: in visibly coarser steps, and a stalled badge shows the comet standing still
+#: and then JUMPING. None of those three is mistakable for another.
+#:
+#: 1500 ms, and the number is bounded at both ends by what an eye can read. At
+#: the measured 23 ms Settings frame the comet moves about 5 px per frame, which
+#: reads as motion rather than as a flicker; a 700 ms stall moves it about
+#: 144 px, which is nearly half the panel and unmissable. Much faster and a
+#: healthy frame becomes a jump too; much slower and a dropped frame stops being
+#: visible at all.
+#:
+#: **IT ALSO HAS TO STAY DIVISIBLE BY `settings_view._SWEEP_DIVISIONS`.** The
+#: track carries graduations so a jump can be MEASURED and not merely noticed,
+#: and at six divisions 1500 ms is six whole quarter-seconds. A period that made
+#: a division 187.5 ms would still draw correctly and would be countable by
+#: nobody. The view owns the geometry; this is the constraint it depends on.
+SWEEP_PERIOD_MS = 1500
+
+
+class FrameHealth:
+    """Entry-to-entry frame timing: a latched worst, and a constant-rate phase.
+
+    **IT TIMES ENTRY TO ENTRY, NOT THE WORK IN BETWEEN, AND THAT IS THE WHOLE
+    POINT.** `benchmark/badge/stutter_meter.py` timed its own `update()` and
+    said so in its first eight lines: the networking runs in `service.poll()`,
+    which `managed_update` calls AFTER the app's callback returns, so every
+    network stall was outside every number on its screen. It reported
+    `worst=58 ms` in the same capture whose telemetry showed a 701 ms network
+    frame. Measuring the gap between two ENTRIES puts the poll, the present and
+    everything else the frame actually costs inside the number.
+
+    **AND IT MUST NOT BECOME THE THING IT MEASURES.** Three rules, each with a
+    measured failure behind it:
+
+    * NO ALLOCATION. :meth:`tick` is integer arithmetic on preallocated
+      attributes and builds nothing -- no tuple, no dict, no string. The
+      readout string is composed by :func:`diag_view` from `worst_ms`, and
+      `worst_ms` changes only when a frame is the worst so far, which is rare
+      by construction.
+    * NO `print`, ANYWHERE ON THIS PATH. A `print` into a USB CDC that no host
+      is draining stalls the frame: the blocked-CDC arm measured 192 gaps in
+      485 s with a modal stalled frame of 1,018 ms and a worst of 3,032 ms,
+      against ZERO gaps on the same desk with the cable plugged in
+      (`benchmark/results/raw/2026-08-27-usb-cdc-print-blocking/`). That the
+      cost is per-CALL is INFERRED there and not measured; the gap is measured.
+    * NO FLASH WRITE ON A PER-EVENT PATH. A probe that flushed one LittleFS
+      write per logged line turned 600 frames / 2 gaps in 27 s into 1,200
+      frames / 1,199 gaps in 183 s -- the frame rate fell about 7x and the gap
+      count rose about 100x, self-amplifying, because every logged gap caused
+      the next one
+      (`benchmark/results/raw/2026-08-27-untethered-walk/`). This class holds
+      RAM only and there is nowhere for it to write.
+
+    IT TICKS ON EVERY SCREEN, NOT ONLY ITS OWN, and that is deliberate: the
+    stalls worth catching happen while the wearer is on Network or Updates,
+    where the runtime is allowed to establish. A meter that only counted while
+    somebody was looking at it would miss exactly the frame they came to
+    explain.
+    """
+
+    def __init__(self, period_ms=SWEEP_PERIOD_MS):
+        #: The worst entry-to-entry gap seen since the last reset, in ms.
+        self.worst_ms = 0
+        #: Where the sweep is in its cycle, in ms. Never a pixel: this module
+        #: owns no geometry and `settings_view` owns no decisions.
+        self.phase_ms = 0
+        #: Entries counted. THE FIRST ONE IS NOT A FRAME -- the gap in front of
+        #: it runs back to module construction, which is a different quantity
+        #: and a large one -- so `tick` records it and refuses to latch it.
+        self.frames = 0
+        #: PUBLIC, because `diag_view` publishes it and `settings_view` divides
+        #: by it. A private name here would be a private read there, which is
+        #: the shape a reviewer cannot tell from a leak.
+        self.period_ms = period_ms if period_ms > 0 else SWEEP_PERIOD_MS
+
+    def tick(self, elapsed_ms):
+        """One frame entry. Allocation-free; returns nothing that allocates.
+
+        `elapsed_ms` is `settings/__init__.py`'s own `time.ticks_diff(now,
+        _last_ms)` taken at the TOP of `update()`, which is already the
+        entry-to-entry quantity -- the seam computes it for the pair countdown
+        and the sleep note, so this reads a number that was going to exist
+        anyway rather than starting a second clock.
+        """
+        if (isinstance(elapsed_ms, bool) or not isinstance(elapsed_ms, int)
+                or elapsed_ms < 0):
+            # A hostile or absent delta may not poison a latch that has no other
+            # way to be corrected. Not reachable from the seam, which passes
+            # `ticks_diff`; reachable from a fixture, and from a runtime whose
+            # tick counter wrapped -- `ticks_diff` is SIGNED and negative across
+            # a wrap, and a negative worst frame is not a thing.
+            #
+            # `bool` IS EXCLUDED FIRST because it is a subclass of `int` in both
+            # runtimes: without this line a `True` becomes the latched worst
+            # frame and the panel reads `Worst frame True ms`.
+            return None
+        self.phase_ms += elapsed_ms
+        if self.phase_ms >= self.period_ms:
+            # `%` rather than a subtract loop: one operation whatever the size
+            # of the stall, so the frame AFTER a 3,032 ms gap is not itself slow.
+            self.phase_ms = self.phase_ms % self.period_ms
+        self.frames += 1
+        if self.frames > 1 and elapsed_ms > self.worst_ms:
+            self.worst_ms = elapsed_ms
+        return None
+
+    def reset(self):
+        """Drop the latch and start the measurement again.
+
+        THE SWEEP PHASE IS DELIBERATELY NOT RESET. The bar is a clock, not a
+        result: restarting it would make the one element on the screen that is
+        supposed to be continuous jump for a reason unrelated to frame health.
+        `frames` goes back to zero for the same reason it starts there -- the
+        gap across the press is a real frame, but the NEXT one is the first of
+        the new measurement and its predecessor belongs to the old one.
+        """
+        self.worst_ms = 0
+        self.frames = 0
+        return None
+
+    @property
+    def measured(self):
+        """True once two entries have been seen, so a worst frame exists."""
+        return self.frames > 1
+
+
+def diag_view(diagnostics, library=True, worst_ms=None, measured=False,
+              sweep_ms=0, sweep_period_ms=SWEEP_PERIOD_MS):
+    """The operator's screen: what push is doing, and how the frames are running.
+
+    THE DESIGN RULE, and it is the reason this function is a formatter and not a
+    machine: SURFACE WHAT THE RUNTIME ALREADY COMPUTES. Every push value here
+    comes out of `PushLink.snapshot()` by way of
+    `network_runtime.NetworkService.push_diagnostics()`; nothing on this path
+    counts, derives or stores anything. The three 2026-08-27 incidents that
+    forced the screen are in `settings_copy`'s diagnostics block, one per line
+    of this body.
+
+    IT DEGRADES IN TWO STEPS AND THEY MEAN DIFFERENT THINGS. No `/system/lib` is
+    the SHIPPING badge (`apps-roster.json`: `production.system_lib.ship` is
+    false) and says so with the tile's existing `NET_NOT_INSTALLED`. A library
+    that is present but has no doorbell -- no push factory, or a runtime older
+    than the accessor -- says `DIAG_NO_PUSH`, because "this badge cannot tell
+    you" is a different fact from "BadgeLink is not installed" and both are
+    different from a row of zeroes, which would be a measurement nobody took.
+
+    THE FRAME LINES SURVIVE BOTH, because they are about the panel and every
+    badge has one. That asymmetry is the whole reason the row is unconditional.
+
+    ORDER: what push is, why it is that, how it got there, what it heard, what
+    broke, and then the frame. The frame line is LAST because it is the one the
+    moving bar underneath it belongs to, and because `settings_view._draw_body`
+    reserves a band for every line still to come -- so the last line is the one
+    guaranteed not to be squeezed out.
+    """
+    lines = []
+    if not library:
+        lines.append(settings_copy.NET_NOT_INSTALLED)
+    elif not isinstance(diagnostics, dict) or not diagnostics:
+        lines.append(settings_copy.DIAG_NO_PUSH)
+    else:
+        record = diagnostics
+        mode = diag_text(record.get("mode"))
+        lines.append(settings_copy.DIAG_LINE_MODE.format(
+            mode if mode else settings_copy.DIAG_MISSING))
+        source = record.get("policy_source")
+        line = settings_copy.DIAG_POLICY_LINES.get(source)
+        if line is None:
+            # A source literal this build has never heard of, printed rather
+            # than smoothed over -- and bounded, because it crosses the same
+            # newer-`/system/lib` seam every other runtime string here does.
+            bounded = diag_text(source)
+            line = settings_copy.DIAG_POLICY_STATE.format(
+                bounded if bounded else settings_copy.DIAG_MISSING)
+        lines.append(line)
+        lines.append(settings_copy.DIAG_LINE_LINK.format(
+            _flag(record, "joined"), _flag(record, "socket_open"),
+            _flag(record, "targeted")))
+        lines.append(settings_copy.DIAG_LINE_SESSIONS.format(
+            _count(record, "sessions_joined"),
+            _count(record, "sessions_failed"),
+            _count(record, "failed_sessions", settings_copy.DIAG_SMALL_MAX),
+            _count(record, "demote_after", settings_copy.DIAG_SMALL_MAX)))
+        lines.append(settings_copy.DIAG_LINE_BELLS.format(
+            _count(record, "doorbells"), _count(record, "doorbells_filtered"),
+            # LAYER 2's COUNTER, ON LAYER 3's LINE, because it answers the same
+            # question one step further out: `Bells`/`other` count broadcasts
+            # that REACHED the doorbell, and this counts opcode-2 frames the
+            # decoder refused, which reach nothing. A live `0x04` UserBroadcast
+            # was captured on the wire on 2026-08-28 while the badge read
+            # `Bells 0  other 0`, so the two are no longer enough on their own.
+            # Lifted out of the nested layer-2 record by
+            # `network_runtime.PUSH_DIAGNOSTIC_CLIENT_KEYS`; absent -- and so
+            # `?` -- on a badge that has never opened a socket.
+            _count(record, "binary_frames_ignored")))
+        lines.append(settings_copy.DIAG_LINE_FLAGS.format(
+            _flag(record, "demoted"), _flag(record, "push_revoked")))
+        error = diag_text(record.get("last_error"))
+        if error:
+            # ONLY WHEN THERE IS ONE. An empty error line is a band spent saying
+            # nothing on a screen that has exactly eight of them.
+            lines.append(settings_copy.DIAG_LINE_ERROR.format(error))
+    if measured:
+        lines.append(settings_copy.DIAG_LINE_WORST.format(_number(worst_ms)))
+    else:
+        lines.append(settings_copy.DIAG_LINE_WORST_NONE)
+    lines = [settings_copy.ascii_fold(line) for line in lines]
+    return {
+        "screen": DIAG,
+        "title": settings_copy.DIAG_TITLE,
+        "reboot": False,
+        "lines": lines,
+        # THE PHASE, NOT A PIXEL. `settings_view` maps it onto the rail, so the
+        # geometry stays where every other geometry decision in this tile is and
+        # this module stays drawable on any canvas.
+        "sweep": sweep_ms,
+        "sweep_period": sweep_period_ms,
+        # B DRAWS NOTHING AND DOES NOTHING. Everything on this screen is a
+        # reading; the only command is the one that restarts the reading, and it
+        # goes on C rather than on the key a thumb has been opening rows with.
+        "softkeys": (settings_copy.BACK, "", settings_copy.DIAG_RESET),
+        "softkey_events": ("", "", "frames_reset"),
+    }
+
+
 def bright_view(percent):
     """The ladder, as this app's page: a title, one line and a three-key bar.
 
@@ -570,7 +904,7 @@ def bright_view(percent):
     low end on A and the high end on C, and B2 explicitly allows B to carry the
     way out when A is a direction. The alternative -- keeping A as BACK and
     putting the two directions on B and C -- would have made the SAME wearer
-    press different keys for the same control they met in `badgecard` the day
+    press different keys for the same control they met in `setup` the day
     before, to buy back a retreat that B already provides.
 
     WHAT BOUNDS THE DEVIATION, and each half is a test rather than a promise:
@@ -780,6 +1114,14 @@ class Settings:
         #: Milliseconds left on the sleep note, or None when it is not up.
         #: `tick` counts it down and emits the one action that ends the session.
         self._sleep_ms = None
+        #: THE FRAME METER, CONSTRUCTED HERE AND NEVER PER FRAME. It is not
+        #: injected like every other capability in this constructor, and the
+        #: difference is that it has no seam: it holds three integers, touches
+        #: no hardware and reads no clock of its own -- the seam hands it the
+        #: `ticks_diff` it was already computing. An injected meter would be a
+        #: capability a fixture could forget to supply, on the one screen whose
+        #: job is to work when nothing else does.
+        self.frames = FrameHealth()
         self.pair = None
         if pairstate is not None:
             self.pair = pair_state if pair_state is not None else pairstate.new_state()
@@ -902,6 +1244,41 @@ class Settings:
         """
         return self._push_word("previous_cause")
 
+    def push_diagnostics(self):
+        """The runtime's own push counters, as a dict, or ``None``.
+
+        SAME THREE FAIL-SOFT LAYERS AS :meth:`_push_word`, AND EVERY ONE OF THEM
+        IS A REAL BADGE -- `getattr` because `/system/lib` and this app are
+        installed by SEPARATE steps and a badge carrying a `network_runtime`
+        from before 2026-08-27 has a `_PushControl` with no `diagnostics`;
+        `try/except` because the forward reaches `PushLink.snapshot()`, which
+        walks the policy and the client and is not a field read; a type check
+        because a controller answering a list would otherwise reach `.get()`.
+        An AttributeError inside `update()` is `fatal_error` ->
+        `machine.reset()`, every frame, for ever.
+
+        NOT SHARED WITH :meth:`_push_word` even though the shape is identical,
+        because the two disagree on the last layer: that one demands `str` and
+        this one demands `dict`, and a helper taking the type as an argument
+        would be a guard whose strictness is a caller's decision. That is the
+        layer whose absence is invisible until a badge resets in a loop.
+
+        READ ONCE PER VIEW BUILD, AND ONLY ON ITS OWN SCREEN.
+        `NetworkService.push_diagnostics` builds two dicts per call, so
+        :meth:`view` calls this from the `DIAG` branch and nowhere else -- the
+        menu row deliberately carries no value for exactly this reason.
+        """
+        if self._push_control is None:
+            return None
+        reader = getattr(self._push_control, "diagnostics", None)
+        if not callable(reader):
+            return None
+        try:
+            value = reader()
+        except Exception:  # noqa: BLE001 - a reset is the alternative
+            return None
+        return value if isinstance(value, dict) else None
+
     def row(self, index=None):
         return self.rows[self.index if index is None else index]
 
@@ -927,6 +1304,15 @@ class Settings:
             # is how the panel is driven; a row that reported the second would
             # be asking somebody to learn a scale to read a status line.
             return backlight.name(self.brightness)
+        # DIAGNOSTICS CARRIES NO VALUE, AND THAT IS A COST DECISION AS WELL AS A
+        # COPY ONE. The obvious glance value is the latched worst frame, and it
+        # would be wrong twice: the menu model is rebuilt every frame, so a value
+        # that moves makes the ROOT screen redraw and rebuilds a `ui.ListView`
+        # row plate (an image allocation) each time it changes -- on the screen
+        # whose whole job is to cost nothing. And the push half would need
+        # `push_diagnostics()`, which builds two dicts per call, on every frame
+        # of the menu rather than on the screen that asked for it. The row is a
+        # door, like Sleep and Scores.
         return ""
 
     def menu_view(self):
@@ -1036,6 +1422,15 @@ class Settings:
                 cause=self.push_cause(),
                 previous=self.push_cause_previous(),
             )
+        if self.screen == DIAG:
+            return diag_view(
+                self.push_diagnostics(),
+                library=self.library,
+                worst_ms=self.frames.worst_ms,
+                measured=self.frames.measured,
+                sweep_ms=self.frames.phase_ms,
+                sweep_period_ms=self.frames.period_ms,
+            )
         if self.screen == SLEEP:
             return sleep_view()
         if self.screen == BRIGHT:
@@ -1087,6 +1482,21 @@ class Settings:
             # erase question it is the KEEP the bar promises, which is the same
             # behaviour under a different word rather than a second branch.
             self.screen = MENU
+            return []
+        if self.screen == DIAG:
+            # C RESTARTS THE MEASUREMENT AND NOTHING ELSE ACTS. Reached AFTER
+            # the generic A branch, because A means what it means everywhere
+            # else. The key exists because the stutter meter's method needs a
+            # floor you can zero: hold a steady animation, trigger ONE suspect
+            # operation by hand, read what it cost. A latch you cannot drop
+            # answers that question exactly once per boot.
+            #
+            # NO ACTION IS RETURNED. Everything this press changes lives in RAM
+            # in this object, so there is nothing for the seam to perform -- and
+            # the seam prints per action, which is a `print` a wearer's press
+            # would put on the frame path this screen exists to measure.
+            if key == "C":
+                self.frames.reset()
             return []
         if self.screen == SCORES:
             # B IS INERT HERE (B7), and only C acts. Reached AFTER the generic A
@@ -1212,7 +1622,21 @@ class Settings:
 
         ONE-SHOT: `_sleep_ms` becomes None as the action is emitted, so a seam
         whose sleep call somehow returns does not sleep again every frame.
+
+        THE FRAME METER IS FED FIRST, ABOVE EVERY SHORT-CIRCUIT BELOW, and the
+        placement is the measurement. `elapsed_ms` is the seam's own
+        `ticks_diff` taken at the top of `update()`, so it is the ENTRY-TO-ENTRY
+        gap -- the quantity `benchmark/badge/stutter_meter.py` could not see,
+        because it timed its own `update()` while the networking ran in
+        `service.poll()` afterwards and reported `worst=58 ms` during a 701 ms
+        stall. Fed on EVERY screen, not only its own: the stalls worth catching
+        happen on Network and Updates, where the runtime is allowed to
+        establish, and a meter that counted only while somebody watched it would
+        miss the frame they came to explain. `FrameHealth.tick` allocates
+        nothing and prints nothing, which is what makes this free enough to sit
+        on the frame path of every screen in the tile.
         """
+        self.frames.tick(elapsed_ms)
         if self._sleep_ms is not None:
             self._sleep_ms -= elapsed_ms
             if self._sleep_ms > 0:

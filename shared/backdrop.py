@@ -7,7 +7,7 @@ THIS FILE IS THE CANONICAL COPY.  EDIT IT HERE AND NOWHERE ELSE.
 
 WHY IT EXISTS.  The owner's 2026-08-21 verdict on the worn badge: *"badge feels
 instant but the artwork takes an extra half a second which is not ideal."*  That
-half second is `shared/poster.Poster.background` -- one `skins.render` into a
+half second is `shared/nametag.Nametag.background` -- one `skins.render` into a
 full-screen buffer, 63.752 ms median and 247.900 ms max at HIRES, and up to
 864 ms for the worst arm ever measured.  It is paid at STAGE 2 of the staged
 arrival, on the frame the wearer is watching, every single time the badge is
@@ -21,7 +21,7 @@ WHAT IS CACHED, AND WHAT IS DELIBERATELY NOT.  Only PROCEDURAL skins.  A GLYPH
 entry is painted by a live `glyphskin.SkinPainter` that owns the surface and
 diff-paints its animation INTO it -- a cached first frame would be overwritten
 by the painter's own keyframe and would have bought nothing.  Glyph entries keep
-the live path; `Poster.background` is where that split is made.
+the live path; `Nametag.background` is where that split is made.
 
 THE CACHE IS A CACHE, NOT STATE, AND THAT IS THE WHOLE RISK MODEL.  Every
 failure -- missing file, short file, wrong magic, wrong geometry, wrong stamp,
@@ -67,7 +67,7 @@ The `stamp` covers the things an id cannot: the renderer's own version, the
 catalogue's shape, and the artwork module's file size.
 
 FLAGS CARRIES THE INK POLARITY, and that is not an optimisation for its own
-sake: `Poster._sample_ink` is 189 `get()` calls, each boxing a `color` object,
+sake: `Nametag._sample_ink` is 189 `get()` calls, each boxing a `color` object,
 and its whole answer is one bit -- is the name band dark enough for white type.
 Storing the bit beside the pixels it was measured from keeps a cache hit free of
 the one piece of work that would otherwise still run per open.
@@ -95,13 +95,13 @@ MAX_ID = 48
 # geometry outside this is evidence the bytes are not a backdrop.
 MAX_DIM = 1024
 
-# bit0: the artwork's name band measured PALE, so the poster's type is black on
-# white rather than white on black.  `Poster._sample_ink` owns the threshold.
+# bit0: the artwork's name band measured PALE, so the nametag's type is black on
+# white rather than white on black.  `Nametag._sample_ink` owns the threshold.
 FLAG_PALE = 0x01
 
 # On top of the file itself, and it is `card_bake.DISK_SLACK`'s number for
 # `card_bake`'s reason: a volume filled to the last block cannot write
-# `badgecard.json` either, and losing the badge to save a cache is the wrong
+# `setup.json` either, and losing the badge to save a cache is the wrong
 # trade twice over.
 DISK_SLACK = 65536
 UNKNOWN_FREE = -1
@@ -289,10 +289,10 @@ def peek(path=PATH):
 def load_into(buffer, entry_id, width, height, mark, path=PATH):
     """Fill `buffer` with the cached pixels, or return None.  Never raises.
 
-    `buffer` is the SURFACE'S OWN BYTES -- `Poster.backdrop` is constructed as
+    `buffer` is the SURFACE'S OWN BYTES -- `Nametag.backdrop` is constructed as
     `image(w, h, buffer)` and Badgeware keeps a raw pointer to them, so a
     `readinto` here IS the blit source being repainted.  Nothing is copied,
-    nothing is allocated, and the surface the poster already blits every frame
+    nothing is allocated, and the surface the nametag already blits every frame
     is the surface that got filled.
 
     Returns the header on success, so the caller also gets the ink polarity.
@@ -343,7 +343,7 @@ def module_bytes(root, name="skins"):
     first when IMPORTING, but a deployed app carries only the bytecode, and the
     playground and the test lanes carry only the source.  Trying both in this
     order means the same app fingerprints itself consistently wherever it runs,
-    and a badge whose editor and poster carry DIFFERENT builds of the artwork
+    and a badge whose editor and nametag carry DIFFERENT builds of the artwork
     stamps differently and simply re-renders -- which is the correct outcome and
     is free.
 

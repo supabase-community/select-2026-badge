@@ -6,7 +6,7 @@ imported by a test (it needs the firmware's injected globals), and a delete path
 is the last thing in this tile that should be unit-testable only through a
 device. `settings/tests/test_settings_scores.py` drives this file directly.
 
-WHAT IT MAY TOUCH IS THE BOUNDARY, which is the lesson `badgecard`'s reset
+WHAT IT MAY TOUCH IS THE BOUNDARY, which is the lesson `setup`'s reset
 records: that app is handed exactly two writers and `test_card_reset` asserts the
 SIZE of that set, so "it cannot reach any other file" is structural rather than
 careful. This object removes the game records it was constructed with and empties

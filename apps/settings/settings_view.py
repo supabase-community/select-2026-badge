@@ -3,7 +3,7 @@
 
 THIS APP IS HIRES-ONLY. 320x240, 1:1, real vector outlines — one app, no LORES
 variant, no ``variant.py``, nothing to branch on. That holds for every identity
-surface: ``badgecard`` and ``poster`` are HIRES-only too, and only the games and
+surface: ``setup`` and ``nametag`` are HIRES-only too, and only the games and
 the launcher are LORES.
 
 WHAT THE OWNER SAW ON THE PHYSICAL BADGE (2026-08-21) AND WHERE IT CAME FROM.
@@ -82,6 +82,19 @@ PHOSPHOR = None
 DIM = None
 WARN = None
 
+# THE FRAME SWEEP'S OWN FOUR INKS, and they are SOLID rather than alpha on
+# purpose. `ui.Chrome.position` fades its progress thumb with an alpha white,
+# which is the right tool when the backdrop underneath is unknown; the sweep's
+# backdrop is a `BLACK` bed this same function paints one call earlier, so the
+# blend has exactly one possible answer and pre-mixing it costs the compositor
+# nothing per frame. They are also RESOLVED ONCE in `build()` for the reason
+# every other constant here is: `color.rgb` needs the runtime, and a per-frame
+# call would put four allocations into the one path that runs every frame.
+TRAIL_1 = None
+TRAIL_2 = None
+TRAIL_3 = None
+GRATICULE = None
+
 _chrome = None
 _list = None
 # `pairview.qr_layout`, handed in by the app. NOT imported here: `pairview` lives
@@ -113,10 +126,22 @@ QR_ECC = "ECC_MEDIUM"
 #: using 82 of them.
 QR_MAX_SCALE = 5
 
-#: The most body lines any screen this app draws can produce (the revoked
-#: network screen: status, reason, link state, restart instruction). One
-#: retained wrap block per slot, and a fit test asserts no model exceeds it.
-MAX_BODY_LINES = 5
+#: The most body lines any screen this app draws can produce. One retained wrap
+#: block per slot, and a fit test asserts no model exceeds it.
+#:
+#: EIGHT SINCE THE DIAGNOSTICS SCREEN (2026-08-27), and that screen is the whole
+#: reason: push mode, event policy, link, sessions, doorbells, flags, last error
+#: and the worst frame. It was five for the revoked network screen's four
+#: (status, reason, link state, restart instruction) plus one of slack.
+#:
+#: THE NUMBER IS BOUNDED BY GEOMETRY AND NOT BY TASTE. The content height is
+#: 214 px at a 21 px pitch, a one-line title costs the first band, and the
+#: diagnostics screen reserves the last one for the sweep rail -- so eight bands
+#: remain for eight lines, and `test_settings_fit` prices every one of them to
+#: fit a single band so none can steal a neighbour's. A ninth line would have
+#: nowhere to go; a ninth `_Wrap` block would cost RAM for a band that does not
+#: exist.
+MAX_BODY_LINES = 8
 
 #: Characters :func:`_pieces` prefers to break a long token after, and how far
 #: back it will look for one. A claim URL should break after a ``/`` rather than
@@ -369,6 +394,7 @@ def build(qr_layout=None):
     """
     global BLACK, BACKGROUND, PHOSPHOR, DIM, WARN, _chrome, _list, _qr_layout
     global _plate, _title, _body, _countdown, _caption
+    global TRAIL_1, TRAIL_2, TRAIL_3, GRATICULE
     _qr_layout = qr_layout
     _plate = _QrPlate()
     _title = _Wrap()
@@ -380,6 +406,15 @@ def build(qr_layout=None):
     PHOSPHOR = color.rgb(62, 207, 142)
     DIM = color.rgb(255, 255, 255, 150)
     WARN = color.rgb(255, 176, 72)
+    # `PHOSPHOR` at roughly 74% / 52% / 36%, then the graticule well under all
+    # three. THE SEPARATION IS THE REQUIREMENT, not the exact values: the
+    # dimmest trail chip passes over a graticule tick every 250 ms, and two inks
+    # a reader cannot tell apart there would turn the tick into a flicker in the
+    # tail rather than a fixed mark to measure a jump against.
+    TRAIL_1 = color.rgb(46, 154, 106)
+    TRAIL_2 = color.rgb(32, 108, 74)
+    TRAIL_3 = color.rgb(22, 74, 51)
+    GRATICULE = color.rgb(13, 40, 33)
     # The bitmap fallback is this app's own choice and not `shared/ui.py`'s
     # default; `settings_copy.BITMAP_FALLBACK` says why in full.
     _chrome = ui.Chrome(fallback=getattr(font, settings_copy.BITMAP_FALLBACK))
@@ -411,12 +446,40 @@ _QR_LEFT = 0
 _QR_EXTENT = 0
 _COLUMN_X = 0
 _COLUMN_W = 0
+_SWEEP_H = 0
+_SWEEP_TOP = 0
+_SWEEP_SPAN = 0
+_SWEEP_TICK_W = 0
+_SWEEP_SEGMENTS = 0
+_SWEEP_SEG_W = ()
+_SWEEP_SEG_Y = ()
+_SWEEP_SEG_BACK = ()
+_SWEEP_SEG_PEN = ()
+
+#: How many graduations the track carries, and therefore what one of them is
+#: WORTH IN MILLISECONDS: the comet crosses the whole track in one
+#: `settings_model.SWEEP_PERIOD_MS`, so a division is `period / 6` -- **250 ms
+#: at the shipped 1500 ms period.** That is the number that makes the ticks an
+#: instrument rather than decoration: the latched `worst` frame says a stall
+#: happened at some point since the last RESET, and the ticks say how long THIS
+#: jump was, by counting the marks the head crossed without being drawn on one.
+#: Six, because 1500 divides into six whole quarter-seconds and a reader can
+#: hold "three ticks is about three quarters of a second" without arithmetic;
+#: eight would be 187.5 ms a tick and countable by nobody.
+#:
+#: The count is not derived FROM the period on purpose. The view owns no
+#: decisions (`settings_model` does), and the drawing stays correct at any
+#: period -- only the sentence above changes, which is why it is written down.
+_SWEEP_DIVISIONS = 6
 
 
 def _derive():
     """Resolve every band from the chrome. Called by `build()` and nowhere else."""
     global _MARGIN, _LINE_H, _CONTENT_W, _QR_TOP, _QR_AVAILABLE, _QR_LEFT
     global _QR_EXTENT, _COLUMN_X, _COLUMN_W
+    global _SWEEP_H, _SWEEP_TOP, _SWEEP_SPAN, _SWEEP_TICK_W
+    global _SWEEP_SEGMENTS, _SWEEP_SEG_W, _SWEEP_SEG_Y, _SWEEP_SEG_BACK
+    global _SWEEP_SEG_PEN
     scale = _chrome.scale
     # Side margin: three logical pixels at LORES was 1.125 mm; this is that.
     _MARGIN = scale * 3
@@ -442,6 +505,56 @@ def _derive():
                                 max_scale=QR_MAX_SCALE)["extent"]
     _COLUMN_X = _QR_LEFT + _QR_EXTENT + scale * 4
     _COLUMN_W = _chrome.width - _COLUMN_X - _MARGIN
+    # THE FRAME SWEEP'S TRACK, along the bottom of the content area.
+    #
+    # 6 LOGICAL PX TALL (12 physical at HIRES) -- 2.25 mm, and it still costs
+    # the body exactly ONE band, which is the constraint that actually binds.
+    # THE PROOF IS ARITHMETIC AND `test_settings_fit` RUNS IT: `_draw_body`
+    # fills downward and needs one whole pitch below the eighth line's top, so
+    # in the VECTOR face (the tighter of the two -- 21 px against the bitmap
+    # fallback's 20) the eighth line ends at y=193 and the floor handed to
+    # `_draw_body` is `_SWEEP_TOP - scale` = 198. FIVE PIXELS OF SLACK, and a
+    # ninth band was never available at either height.
+    #
+    # It was 4 logical px until 2026-08-27. The extra two are what let the tail
+    # taper 12/8/6/4 instead of 8/6/4/2, where the last chip is a hairline --
+    # and a hairline that vanishes is a trail that stops reading as direction.
+    #
+    # THE COMET SPANS ABOUT AN EIGHTH OF THE TRACK, which is the SAME
+    # legibility budget the single block held and is kept for the same reason:
+    # narrower and a 1,018 ms stall (the modal stalled frame with an undrained
+    # USB CDC) moves it clean past its own body and the eye reads a teleport
+    # rather than a jump; wider and its edges stop being where the position is
+    # read from. 42 px against the old block's 38.
+    #
+    # WIDTHS ARE HEIGHTS, so every chip is square and the tail reads as one
+    # object decaying rather than as four bars of assorted proportion. The gap
+    # is 2 logical px: below that the chips fuse into a smear at speed, above it
+    # they read as separate objects rather than as one comet.
+    _SWEEP_H = scale * 6
+    _SWEEP_TOP = _chrome.content_h - _SWEEP_H - scale
+    _SWEEP_TICK_W = scale
+    gap = scale * 2
+    widths = (scale * 6, scale * 4, scale * 3, scale * 2)
+    backs = []
+    tops = []
+    back = 0
+    for width in widths:
+        # `back` is the distance from the comet's LEADING EDGE to this chip's
+        # left edge, because the leading edge is the sharp bright boundary an
+        # eye actually reads a position off -- and it is the point the
+        # graduations are spaced against, so a tick crossing is exactly one
+        # division of wall time and not a division minus a chip width.
+        back += width
+        backs.append(back)
+        tops.append(_SWEEP_TOP + (_SWEEP_H - width) // 2)
+        back += gap
+    _SWEEP_SEG_W = widths
+    _SWEEP_SEG_Y = tuple(tops)
+    _SWEEP_SEG_BACK = tuple(backs)
+    _SWEEP_SEG_PEN = (PHOSPHOR, TRAIL_1, TRAIL_2, TRAIL_3)
+    _SWEEP_SEGMENTS = len(widths)
+    _SWEEP_SPAN = backs[-1]
 
 
 def _margin():
@@ -614,6 +727,16 @@ def _draw_page(model):
     y = _draw_title(model.get("title", ""), _margin(), _content_w(), 2)
     if payload is not None:
         y = _draw_payload_text(payload, y)
+    sweep = model.get("sweep")
+    if sweep is not None:
+        # THE ONE SCREEN THAT RESERVES A BAND FOR SOMETHING THAT IS NOT COPY.
+        # The body has to stop above the rail rather than beside it: `_draw_body`
+        # fills downward until it runs out of bands, so without a floor the last
+        # line would be drawn through the moving block -- and the moving block is
+        # the instrument, not decoration.
+        _draw_body(model, y, floor=_SWEEP_TOP - _chrome.scale)
+        _draw_sweep(sweep, model.get("sweep_period"))
+        return
     y = _draw_body(model, y)
     match_code = model.get("match_code")
     if match_code:
@@ -632,7 +755,131 @@ def _draw_title(text, x, budget, max_lines):
     return y + _chrome.scale
 
 
-def _draw_body(model, y):
+def _draw_sweep(phase, period):
+    """The constant-rate comet, and the reason the whole screen redraws.
+
+    IT MOVES AT A CONSTANT SPEED IN WALL TIME, NOT IN FRAMES, and that is the
+    entire instrument. `phase` is milliseconds accumulated by
+    `settings_model.FrameHealth` from the seam's own entry-to-entry
+    `ticks_diff`, so the comet's position is a function of the CLOCK: a healthy
+    badge shows smooth motion, a badge at half rate shows the same speed in
+    visibly coarser steps, and a stalled badge shows the comet standing still
+    and then jumping about 144 px for a 700 ms gap. A number cannot do that --
+    a number that has stopped and a number updating slowly look identical at a
+    glance, which is how a 701 ms network stall sat under a meter reporting
+    `worst=58 ms`.
+
+    **NOTHING HERE IS EASED, SPRUNG, DAMPED OR COUNTED IN FRAMES, and no shape
+    this function draws may ever be.** Every one of those makes the drawn
+    position a function of something other than elapsed milliseconds, which is
+    the one property the screen exists for. The comet is prettier than the
+    block it replaces; it is not smoothed, and a frame that looks steppy is the
+    instrument WORKING.
+
+    THREE THINGS CHANGED ON 2026-08-27 AND EACH ONE BUYS A READING.
+
+    * **THE TRACK IS A LOOP, not a rail with a return flight.** The old block
+      travelled `_CONTENT_W - block` and then teleported the whole way back, so
+      once per period the screen showed a large legitimate jump -- and a stall
+      landing on it was camouflaged by the one artefact the instrument cannot
+      distinguish from its own subject. Every chip is now placed modulo
+      `_CONTENT_W`, so it flows off the right edge and onto the left in the
+      same frame. **After this, EVERY jump is a fault.**
+    * **GRADUATIONS.** `_SWEEP_DIVISIONS` marks, one per 250 ms at the shipped
+      period, spaced against the leading edge. The latch says a stall happened;
+      the marks say how big THIS one was, without a stopwatch and without
+      trusting a number that may itself be stale.
+    * **A TAIL, which is direction and only direction.** Three chips at fixed
+      offsets BEHIND the head, so the whole comet is a pure function of the
+      same phase -- it is not a history buffer, it cannot lag the head, and it
+      has nothing to allocate. It makes travel direction readable in a single
+      frame and in a photograph, which the symmetric block never was.
+
+    ALLOCATION-FREE, DELIBERATELY, on the one draw path that runs every frame.
+    Integer arithmetic and `screen.rectangle` only -- no `vec2`, no tuple, no
+    string, and the segment tables are built ONCE in `_derive()` and only
+    indexed here. This screen's model changes every frame by construction (the
+    phase moves), so `RetainedFrame` cannot skip it, and anything allocated
+    here would be allocated ~37 times a second by the instrument measuring the
+    cost of allocating things.
+
+    `while` RATHER THAN `for ... in range()` for both loops, for that same
+    rule: a `range` is an object, MicroPython's optimised-range path is a
+    compiler option rather than a language guarantee, and this is not a path to
+    find out on. An integer counter cannot allocate under any build.
+
+    WHAT IT COSTS: **10 `screen.rectangle` calls, 11 at the 127 phases of 1500
+    where a chip straddles the seam** (bed, 5 graduations, 4 chips, plus the
+    split -- only one chip can contain the seam at a time), against the 2 the
+    single block cost. At the device-measured ~0.063 ms per individual call
+    (4.515 ms for 72, and that probe measured *within 2% between LORES and
+    HIRES* because the cost is per-call boundary overhead rather than area --
+    `docs/engineering-findings.md`) the addition is **~0.57 ms**. The ceiling is
+    what matters rather than the delta: Settings' app work measured 12 ms p99 on
+    device, VSYNC rounds a frame up to a whole 11.43 ms quantum, and 12.6 ms is
+    in the same SECOND quantum 12 ms was. **The addition cannot buy a present**,
+    which is the only way an animation could corrupt its own reading.
+
+    DO NOT "OPTIMISE" THIS WITH `image.batch`, and the measurement is why it is
+    tempting: batching the same 72 calls ran 1.82x faster on device. It takes a
+    LIST OF TUPLES, so it allocates twice per frame on the one path in this app
+    that may not allocate at all -- and rebuilt per frame it keeps only 1.28x,
+    to buy 0.3 ms inside a quantum that already has ten to spare.
+
+    WHAT IT STILL CANNOT SEE, stated so nobody reads more into the picture than
+    is there: a stall of a whole multiple of the period lands the comet where it
+    started, so POSITION alone cannot show one. The latched worst frame is what
+    covers that, and it is why the two halves are on the same screen.
+
+    NO `print` HERE OR ANYWHERE UNDER IT. That rule is measured rather than
+    stylistic: with no host draining the USB CDC, shipping telemetry alone
+    produced 192 stalled frames in 485 s, modal 1,018 ms and worst 3,032 ms,
+    against ZERO on the same desk with the cable in
+    (`benchmark/results/raw/2026-08-27-usb-cdc-print-blocking/`).
+    """
+    if not isinstance(period, int) or period <= 0:
+        period = 1
+    if not isinstance(phase, int) or phase < 0:
+        phase = 0
+    if _CONTENT_W <= 0:
+        # Unreachable on a 320 px panel, and cheap next to the alternative: the
+        # modulo below would raise on a zero-width track, and a raise on a draw
+        # path is `fatal_error` -> `machine.reset()`, every frame, for ever.
+        return
+    # Integer arithmetic in this order so the multiply happens before the
+    # divide: `phase // period * _CONTENT_W` is zero for every frame but the
+    # last. `tip` is the leading edge as an OFFSET into the track, never a
+    # screen x, because everything below is modular and a margin inside a
+    # modulo is a bug waiting for the seam.
+    tip = (phase % period) * _CONTENT_W // period
+    screen.pen = BLACK
+    screen.rectangle(_MARGIN, _SWEEP_TOP, _CONTENT_W, _SWEEP_H)
+    screen.pen = GRATICULE
+    index = 1
+    while index < _SWEEP_DIVISIONS:
+        screen.rectangle(_MARGIN + index * _CONTENT_W // _SWEEP_DIVISIONS,
+                         _SWEEP_TOP, _SWEEP_TICK_W, _SWEEP_H)
+        index += 1
+    index = 0
+    while index < _SWEEP_SEGMENTS:
+        width = _SWEEP_SEG_W[index]
+        top = _SWEEP_SEG_Y[index]
+        # Python's `%` is non-negative for a positive modulus in both runtimes,
+        # which is the whole reason the seam needs no special case: a chip
+        # whose left edge is before the start of the track simply reappears at
+        # the end of it.
+        start = (tip - _SWEEP_SEG_BACK[index]) % _CONTENT_W
+        over = start + width - _CONTENT_W
+        screen.pen = _SWEEP_SEG_PEN[index]
+        if over > 0:
+            screen.rectangle(_MARGIN + start, top, width - over, width)
+            screen.rectangle(_MARGIN, top, over, width)
+        else:
+            screen.rectangle(_MARGIN + start, top, width, width)
+        index += 1
+
+
+def _draw_body(model, y, floor=None):
     """The model's lines, wrapped, bounded by the bands that actually remain.
 
     THE BUDGET IS THE SCREEN, NOT THE LINE. Each model line can wrap, so a
@@ -647,13 +894,20 @@ def _draw_body(model, y):
     count = len(lines)
     if count > MAX_BODY_LINES:
         # Not reachable from any model this app builds (`test_settings_fit`
-        # pins the maximum at four), and if it ever becomes reachable the extra
+        # pins the maximum at eight), and if it ever becomes reachable the extra
         # copy is dropped rather than drawn under the softkey bar.
         count = MAX_BODY_LINES
     budget = _content_w()
     pitch = _line_h()
+    # THE FLOOR IS A PARAMETER SINCE THE DIAGNOSTICS SCREEN, and it defaults to
+    # the whole content height so every other caller is untouched. That screen
+    # reserves the bottom strip for the frame sweep, and the reservation has to
+    # be taken out of the band arithmetic rather than drawn over afterwards --
+    # this loop fills downward until it runs out.
+    if floor is None:
+        floor = _chrome.content_h
     for index in range(count):
-        remaining = (_chrome.content_h - y) // pitch
+        remaining = (floor - y) // pitch
         if remaining < 1:
             break
         # Leave one band for each line still to come, so the LAST line — which

@@ -13,7 +13,8 @@ implications of making it hires?"*, having separately ruled that 2xHI glyphs
 changes, what it costs and what it does not cost.
 
 AND THEN HE ASKED FOR A SECOND ACT (2026-08-24): keep signal-ripple as the first
-animation, then go STRAIGHT into terminal-marquee -- both 32x12 at HIRES, both
+animation, then go STRAIGHT into a second deck -- terminal-marquee at the time,
+and `logo-sizzle` since the owner's 2026-08-28 ruling (see RIPPLE_SEQUENCE) -- both 32x12 at HIRES, both
 `held=1`, the ruled-final pacing.  So this module plays an ORDERED TUPLE now
 (`RIPPLE_SEQUENCE`), not one deck, and the same request carried a second half:
 **on this first-wake path ONLY, the generic loading screen must not appear -- the
@@ -171,7 +172,49 @@ GLYPH_ROOT = "/system/apps/glyph"
 # handles it (a new cell geometry re-reads the bank and gets its own tile cache,
 # which is `_GeometryCaches`' whole job) -- but both of these are 32x12, so the
 # shipped sequence never exercises that path.
-RIPPLE_SEQUENCE = ("signal-ripple", "terminal-marquee")
+# OWNER RULING 2026-08-28: the SECOND ACT IS NOW `logo-sizzle`, replacing
+# terminal-marquee. What that changed, measured with `ripple_cost.py` before the
+# swap rather than after:
+#
+#   deck              frames   authored period
+#   signal-ripple        128      6,720 ms
+#   terminal-marquee     120      9,600 ms   <- was
+#   logo-sizzle           35      2,380 ms   <- now
+#
+# **The ceremony's authored length falls 16,320 -> 9,100 ms.** That matters
+# beyond taste: the sequence was measured OVER the 7,000 ms the owner said he
+# would judge against, and `ripple_cost` named "trimming a deck's frame count"
+# as one of only four levers. This is that lever, taken by swapping rather than
+# by cutting.
+#
+# THE JOIN IS A DIFFERENT SHAPE NOW, and the module's own rule says to re-run
+# `--join` when the pair changes because the verdict is a property of the two
+# decks that meet. Re-run 2026-08-28:
+#
+#   signal-ripple f127 -> logo-sizzle f0
+#     outgoing ...  23 of 384 lit (6%)
+#     incoming ...   0 of 384 lit (0%)
+#     VERDICT: the outgoing frame IS the dark frame. No insertion.
+#
+# So the cut reads near-black -> BLACK, where terminal-marquee's read
+# near-black -> full (6% -> 87%). The old join was a signal dying and a terminal
+# waking; this one is a signal dying out completely and a logo arriving from
+# nothing. Both are deliberate cuts rather than dropouts, and the dark frame is
+# still free either way. **This is the half that needs eyes on glass** -- the
+# numbers say it is sound, they cannot say it looks right.
+#
+# WHAT IT COSTS: logo-sizzle is a SMALLER file (26,944 B vs 92,224 B) but builds
+# tiles on 19 of its 35 frames against terminal-marquee's 13 of 120, so the union
+# tile set GROWS: hires 128,000 -> 161,600 B, and the hires buffer total
+# 196,608 -> 229,376 B. Shorter and lighter on flash, heavier on RAM. The streams
+# are still freed one before the next loads, so the concurrent term is unchanged
+# at signal-ripple's 98,368 B.
+#
+# NO ASSET MOVE WAS NEEDED: the decks are read from the glyph app
+# (`GLYPH_ROOT`), and `logo-sizzle.gpa` already ships there. The soft per-stream
+# dependency above applies unchanged -- a profile carrying signal-ripple but not
+# logo-sizzle plays the first act and stops.
+RIPPLE_SEQUENCE = ("signal-ripple", "logo-sizzle")
 
 # 5x10 records for a cell finer than the classic 10x20, 10x20 otherwise. Same
 # rule as `glyph/badge/glyph/__init__.py:431` `_bank_choice`, restated rather
@@ -367,13 +410,23 @@ SKIPPABLE = False
 # both of them.**
 #
 #              bank   +  LUT   +  union tiles + memo   =  peak -> the next 8 KB
-#   LORES      5,100    10,240      32,000     32,768     80,108 ->  81,920
-#   HIRES     20,400    10,240     128,000     32,768    191,408 -> 196,608
+#   LORES      5,100    10,240      40,400     32,768     88,508 ->  90,112
+#   HIRES     20,400    10,240     161,600     32,768    225,008 -> 229,376
+#
+# **RE-DERIVED AGAIN 2026-08-28 when logo-sizzle replaced terminal-marquee, and
+# the union GREW rather than shrank.** logo-sizzle is the shorter, smaller deck
+# by every other measure -- 35 frames to 120, 26,944 B to 92,224 -- but it names
+# 102 distinct keys where terminal-marquee named 76, and it shares only 5 with
+# signal-ripple where the marquee shared 21. So the union went 160 -> 202 and
+# both headroom figures rose. **The shared-target saving is now nearly nothing**
+# (5 keys, not 21), which does not invalidate §THE SHARED TARGET but does mean it
+# is no longer where the win is. Nowhere near firing either way: the device
+# measured 8,215,840 B free after `gc.collect()`.
 #
 # * TILES: `cell_w * cell_h * 4` per distinct key, 200 B at a 5x10 cell and 800 B
 #   at 10x20 -- both confirmed against the device's own `GLYPH_MEM held=` figures
-#   (2,600 B and 10,400 B for radar's 13 tiles). **THE UNION IS 160 KEYS**:
-#   signal-ripple names 105 and terminal-marquee 76, they share 21, and one
+#   (2,600 B and 10,400 B for radar's 13 tiles). **THE UNION IS 202 KEYS**:
+#   signal-ripple names 105 and logo-sizzle 102, they share 5, and one
 #   `BlitTarget` outliving both renderers is what makes the shared 21 free
 #   (§THE SHARED TARGET in `play()`). 105 was the figure until the second deck
 #   joined; before that it was 93, which was a third deck's count entirely.
@@ -403,8 +456,8 @@ SKIPPABLE = False
 # both allocated directly to prove it against fragmentation rather than inferring
 # it.  The guard stays because it costs one comparison and turns a modal into a
 # skipped ceremony; it should stop being called this feature's biggest risk.
-STREAM_HEADROOM_BYTES = 81920
-STREAM_HEADROOM_BYTES_HIRES = 196608
+STREAM_HEADROOM_BYTES = 90112
+STREAM_HEADROOM_BYTES_HIRES = 229376
 
 
 # ---------------------------------------------------------------------------

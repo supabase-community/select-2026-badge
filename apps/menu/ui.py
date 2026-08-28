@@ -35,10 +35,11 @@ launcher.
 THE ONE PLACE THIS FILE DEVIATES FROM EVERY APP IN THE REPOSITORY: its
 `import loading` IS GUARDED. Every app's is bare, and `shared/loading.py` says
 why -- `scripts/sync_ui.py --check` runs in the production lane and guarantees
-the file is beside the app, so a try/except there would trade a failure CI
-catches for one it does not. That guarantee is about the REPOSITORY, not about
-a hand-run `rsync` into `/Volumes/TUFTY/apps/menu/`. In an app a
-missing module is a modal and a reset back into a launcher that still works; in
+the file is beside the app, so a try/except there would trade a failure the
+hand-run lane catches for one it does not. That guarantee is about the
+REPOSITORY, not about a hand-run `rsync` into `/Volumes/TUFTY/apps/menu/`. In
+an app, a missing module is a modal and a reset back into a launcher that still
+works; in
 the launcher it is `launch()` -> `fatal_error` -> modal -> `machine.reset()` ->
 boot -> the same failing import, which is the USB-recovery loop. The three
 forwarders are defined UNCONDITIONALLY for the same reason: the patched pinned
@@ -370,7 +371,7 @@ BANDS = (
 # cannot import -- and that raises into `fatal_error`, which blocks the HOME
 # SCREEN behind a modal and resets the badge. The guard is the affordance too:
 # no app, no bar, so nothing is ever offered that cannot happen.
-POSTER_APP = "/system/apps/poster"
+POSTER_APP = "/system/apps/nametag"
 
 # The owner's 2026-08-16 feel adjustment, as one named constant.
 HOLD_MS = 1500
@@ -434,14 +435,14 @@ def _installed(path):
 #
 # THE OWNER'S DESIGN, 2026-08-23, RETUNED 2026-08-24 (`docs/design/idle-and-off.md`
 # §1). Owner verbatim: *"should dim after 20 seconds of being inactive on the
-# home screen and then switch to the poster after another 10 seconds"*. So
-# twenty seconds without input dims the panel, thirty opens the poster, and
+# home screen and then switch to the nametag after another 10 seconds"*. So
+# twenty seconds without input dims the panel, thirty opens the nametag, and
 # there is NO third rung -- the automatic path always returns to the badge and
 # never to a dark panel. The numbers were 30 s and 45 s for one day.
 #
 # THE SCOPE IS THIS SCREEN, which the ruling states itself ("on the home
 # screen"), and it is why the launcher takes `idle.Panel`'s DEFAULTS while
-# `badgecard` passes `dim_ms=idle.CARD_DIM_MS` to keep the 30 s it shipped with.
+# `setup` passes `dim_ms=idle.CARD_DIM_MS` to keep the 30 s it shipped with.
 # That asymmetry is unruled; §5.1 of the design record carries it.
 #
 # WHY IT LIVES HERE AND NOT IN A GLOBAL SEAM, which is the design record's §4.3
@@ -458,8 +459,8 @@ def _installed(path):
 #
 # So the clock is ONE implementation (`shared/idle.py`, vendored by
 # `scripts/sync_ui.py` so the copies cannot drift) wired HERE and in
-# `badgecard`. It is deliberately NOT in `poster`, which had it for one day:
-# the owner ruled on 2026-08-24 that the poster never dims, because it is the
+# `setup`. It is deliberately NOT in `nametag`, which had it for one day:
+# the owner ruled on 2026-08-24 that the nametag never dims, because it is the
 # resting state this ladder exists to REACH. D1's justification is that the badge
 # "spends ~99 % of its life being read by strangers at 1-2 m" -- so the honest
 # statement of reach is that this screen is where a badge nobody is using SITS,
@@ -470,11 +471,11 @@ def _installed(path):
 # AND THE SECOND RUNG COULD NOT LIVE ANYWHERE ELSE EVEN IF IT WANTED TO.
 # Only the launcher can open an app: `supervisor/system/stock-v3.0.1-main.py`
 # takes ONE path out of `launch("/system/apps/menu")` and `reset()`s when that
-# app returns, so an app's own idle timer could reach the poster only by exiting
+# app returns, so an app's own idle timer could reach the nametag only by exiting
 # to the launcher and waiting out a second 30 s. The launcher is where this rung
 # belongs, and the existing 1500 ms hold already proves the handoff works.
 
-# WHERE THE WEARER'S BRIGHTNESS LIVES. `badgecard`'s store, read-only, and the
+# WHERE THE WEARER'S BRIGHTNESS LIVES. `setup`'s store, read-only, and the
 # root of it rather than a badge inside it: brightness is a property of the
 # PANEL, so switching between five saved badges must not change how bright the
 # screen is.
@@ -594,7 +595,7 @@ def _idle_step(down):
     signal = _idle.frame(touched)
     if signal == idle.WAKE:
         return _WOKE
-    if signal == idle.POSTER:
+    if signal == idle.NAMETAG:
         # THE SAME GUARD AS THE HOLD'S, for the same reason: handing `launch()`
         # a path it cannot import raises into `fatal_error`, which blocks the
         # home screen behind a modal and resets the badge. No badge app, no
@@ -730,7 +731,7 @@ GATE_MAX_BYTES = 4096
 #              builds tiles, so listing it changes nothing a wearer sees — it
 #              makes gating the home screen structurally impossible rather than
 #              incidentally impossible.
-#   `poster`   the name badge, and the one app reachable WITHOUT the grid: the
+#   `nametag`   the name badge, and the one app reachable WITHOUT the grid: the
 #              1.5 s hold and the idle ladder both launch `POSTER_APP` directly.
 #              Gating its tile would leave a hardware gesture opening an app the
 #              grid says is not installed.
@@ -741,7 +742,7 @@ GATE_MAX_BYTES = 4096
 #              payload that arrived over that network is the one failure this
 #              feature can cause and cannot undo.
 # Pinned equal to `enabled_apps.PROTECTED`; that tuple and this one are the knob.
-GATE_PROTECTED = ("menu", "poster", "settings")
+GATE_PROTECTED = ("menu", "nametag", "settings")
 
 # WHERE THE PINNED SCAN LOOKS, AND THE ONE DIRECTORY IT SKIPS BY NAME. The scan
 # receives its root as an argument (`Apps("/system/apps")`) and this module never
@@ -790,7 +791,7 @@ def _gate_tile(name):
     classes of name the scan then throws away: `menu`, which it skips by name,
     and any directory with no `__init__.py`/`.mpy`, which is what an interrupted
     Deploy leaves. So `{"schema": 1, "apps": ["menu"]}` against a tree whose
-    `poster/` and `settings/` were half-copied "matched" on `menu`, kept the
+    `nametag/` and `settings/` were half-copied "matched" on `menu`, kept the
     three protected names, and drew NOTHING — and the pinned base's
     `Apps.active` is `self.apps[self.active_index]`, read on the launcher's first
     frame, so zero tiles is an `IndexError` inside `launch()`: `fatal_error` →
@@ -909,7 +910,7 @@ def _commit(default):
     global _holding, _held_ms, _progress, _stale, _ready
 
     if _ready is None:
-        # A deployed badge runs compiled bytecode, so the poster's entry file
+        # A deployed badge runs compiled bytecode, so the nametag's entry file
         # is __init__.mpy there and __init__.py only on a source install
         # (the dev playground, or a hand-copied tree). Checking just .py
         # silently disabled the hold on every bytecode badge.
@@ -1062,7 +1063,7 @@ def _commit(default):
 #
 # HOW THAT LAST CLAUSE IS HONOURED, because it looks like a contradiction and is
 # not. "No random on the actual badge" is the ruling that put a FIXED effect on
-# `badgecard` (`shared/effects.py`: "no shuffle id, no `random` import, nothing
+# `setup` (`shared/effects.py`: "no shuffle id, no `random` import, nothing
 # here reads a clock"). The wearer's CARD is a saved artefact and a shuffling
 # card would mean a badge that looks different every time somebody reads it.
 # The LAUNCHER is not the card: it is a screen the wearer passes through, it
@@ -1072,7 +1073,7 @@ def _commit(default):
 # AND HOW IT RECONCILES WITH THE 2026-08-17 STILL RULING, which `_still_index`
 # below quotes: that ruling killed the FILM's frame cycling, because twelve
 # 80x60 frames stretched to 160x120 "looked laggy and blocky next to the same
-# badge rendered live in `poster`". It was a judgement about a low-resolution
+# badge rendered live in `nametag`". It was a judgement about a low-resolution
 # film played back badly, not about motion on the home screen in general. The
 # film is still frozen to one frame and this feature does not touch that; what
 # moves is a native whole-surface filter OVER that frozen frame, which has the
@@ -1200,14 +1201,14 @@ def _commit(default):
 # the instrument and the numbers.
 #
 # WHAT FELL TO LEGIBILITY, which beats prettiness and beats cost: `threshold`
-# (INK) and `palette_dither` (POSTER) both quantise the panel -- `shared/
+# (INK) and `palette_dither` (NAMETAG) both quantise the panel -- `shared/
 # effects.py` already records that on the palest skin in the catalogue the
 # artwork "collapses to a black blob and the name partly disappears into it" --
 # and `blur` reduces legibility by definition, which is the one thing a badge
 # may not do. `phosphor` would also take the emerald out of a Supabase badge,
 # and it is the most expensive candidate, so it loses twice.
 #
-# ONE FINDING THE BADGECARD ROW HAS THAT THIS SET DELIBERATELY DOES NOT INHERIT.
+# ONE FINDING THE SETUP ROW HAS THAT THIS SET DELIBERATELY DOES NOT INHERIT.
 # `shared/effects.py` drops `saturation` because `saturation(-256)` is
 # BYTE-IDENTICAL to `monochrome`. That is a statement about ONE argument value.
 # `saturation` here sweeps -96 to -16 and never reaches -256, so it is a colour
@@ -1273,7 +1274,7 @@ def _commit(default):
 #   negative in the guard, not a no-op" because the 8x8 grid can straddle narrow
 #   bands. A full-surface byte comparison has no such blind spot and still finds
 #   nothing, so the guard's one complaint in 27 rows was its one correct call.
-#   Recorded here because it was evidence about a shipped `badgecard` effect and
+#   Recorded here because it was evidence about a shipped `setup` effect and
 #   not only about this feature -- and **on 2026-08-24 that landed: `glitch` is
 #   removed from `shared/effects.SHIPPED` too** (13 filters plus NONE -> 12 plus
 #   NONE), on these numbers, with nothing re-measured.
@@ -1319,9 +1320,10 @@ def _commit(default):
 # nothing.) So on a light skin it is not an animation, it is a WASH-OUT: +28 of
 # mean luma into the 255 rail, which is the one thing a badge may not do to a
 # name, and the browser lane's own "blew the panel out" gate (mean < 232) would
-# fail it. On a flat dark skin it does nothing at all. The catalogue has 88 skins
-# and both kinds are in it, so a 1-in-7 roll would have been a no-op for some
-# wearers and a white-out for others. The rows that ship are whole-field or
+# fail it. On a flat dark skin it does nothing at all. The catalogue had 88 skins
+# when this was measured and has 26 since the 2026-08-27 cut; both kinds are
+# still in it (8 of the 26 are pale enough to take black type), so a 1-in-7 roll
+# would have been a no-op for some wearers and a white-out for others. The rows that ship are whole-field or
 # structural modulations whose reach does not depend on the card's lightness --
 # `contrast` animated on all five of those films too, and still lost its place on
 # the owner's eye rather than on this measurement.
@@ -1774,9 +1776,9 @@ def _still_index(film):
     THE HOME SCREEN IS A STILL, AND IT IS THE LAUNCHER THAT MAKES IT ONE. That
     is an owner ruling twice over: the wallpaper's default became STILL because
     a SMOOTH film "looked laggy and blocky next to the same badge rendered live
-    in `poster`" (`identity_model.DEFAULT_HOME_MOTION`), and on 2026-08-17 he
+    in `nametag`" (`identity_model.DEFAULT_HOME_MOTION`), and on 2026-08-17 he
     looked at a badge that was still animating and said so again. The home
-    screen is a sharp static badge; `poster` is where the CARD's motion lives.
+    screen is a sharp static badge; `nametag` is where the CARD's motion lives.
 
     ⚠ THAT LAST SENTENCE WAS UNQUALIFIED UNTIL 2026-08-23 AND IS NOW SCOPED.
     The 2026-08-23 shuffle ruling puts an animated FILTER over this frozen

@@ -2,26 +2,29 @@
   "apps": [
     {
       "asset_profile": null,
-      "files": 29,
+      "files": 30,
       "hidden": false,
-      "name": "badgecard",
-      "path": "apps/badgecard",
-      "source": "badgecard/badge/badgecard"
+      "name": "setup",
+      "path": "apps/setup",
+      "payload_only": false,
+      "source": "setup/badge/setup"
     },
     {
       "asset_profile": null,
-      "files": 14,
+      "files": 18,
       "hidden": false,
-      "name": "poster",
-      "path": "apps/poster",
-      "source": "poster/badge/poster"
+      "name": "nametag",
+      "path": "apps/nametag",
+      "payload_only": false,
+      "source": "nametag/badge/nametag"
     },
     {
       "asset_profile": null,
-      "files": 9,
+      "files": 10,
       "hidden": false,
       "name": "schedule",
       "path": "apps/schedule",
+      "payload_only": false,
       "source": "schedule/badge/schedule"
     },
     {
@@ -30,6 +33,7 @@
       "hidden": false,
       "name": "snake",
       "path": "apps/snake",
+      "payload_only": false,
       "source": "snake/badge/snake"
     },
     {
@@ -38,23 +42,8 @@
       "hidden": false,
       "name": "flappy",
       "path": "apps/flappy",
+      "payload_only": false,
       "source": "flappy/badge/flappy"
-    },
-    {
-      "asset_profile": null,
-      "files": 17,
-      "hidden": false,
-      "name": "pet",
-      "path": "apps/pet",
-      "source": "pet/badge/pet"
-    },
-    {
-      "asset_profile": "full",
-      "files": 59,
-      "hidden": false,
-      "name": "glyph",
-      "path": "apps/glyph",
-      "source": "glyph/badge/glyph"
     },
     {
       "asset_profile": null,
@@ -62,6 +51,7 @@
       "hidden": false,
       "name": "settings",
       "path": "apps/settings",
+      "payload_only": false,
       "source": "settings/badge/settings"
     },
     {
@@ -70,7 +60,17 @@
       "hidden": true,
       "name": "menu",
       "path": "apps/menu",
+      "payload_only": false,
       "source": "launcher/menu"
+    },
+    {
+      "asset_profile": null,
+      "files": 11,
+      "hidden": true,
+      "name": "glyph",
+      "path": "apps/glyph",
+      "payload_only": true,
+      "source": "glyph/badge/glyph"
     }
   ],
   "documents": [
@@ -90,7 +90,7 @@
     },
     {
       "name": "badge_grid",
-      "reason": "Name Badge experiment board, archived 2026-08-18. The badge_* family were experiments FOR badgecard.",
+      "reason": "Name Badge experiment board, archived 2026-08-18. The badge_* family were experiments FOR setup.",
       "source": "namebadge/build/badge_grid"
     },
     {
@@ -160,7 +160,7 @@
     },
     {
       "name": "identity",
-      "reason": "ARCHIVED 2026-08-18 (AGENTS.md). badgecard vendors the same renderer.",
+      "reason": "ARCHIVED 2026-08-18 (AGENTS.md). setup vendors the same renderer.",
       "source": "identity/badge/identity"
     },
     {
@@ -179,13 +179,18 @@
       "source": "pacman/badge/pacman"
     },
     {
+      "name": "pet",
+      "reason": "OFF THE PRODUCTION LIST, owner ruling 2026-08-28, together with the `glyph` TILE. The tree is untouched and stays in `PRODUCTION_TREES`, so the app is still compiled and reproducibility-checked; move the name back into `production.apps` and restore its description line to ship it again.",
+      "source": "pet/badge/pet"
+    },
+    {
       "name": "pong",
       "reason": "OFF THE PRODUCTION LIST, owner ruling 2026-08-24: minimal distribution for now. Same ruling, same shape and same reversibility as `breakout` above: move the name back to `apps` and restore its description line ([quotation removed]).",
       "source": "pong/badge/pong"
     },
     {
       "name": "profile",
-      "reason": "ARCHIVED: superseded by badgecard. Its runtimePath is /system/apps/badge, which would collide with nothing today but is the old curated-launcher `badge` tile.",
+      "reason": "ARCHIVED: superseded by setup. Its runtimePath is /system/apps/badge, which would collide with nothing today but is the old curated-launcher `badge` tile.",
       "source": "profile/badge/profile"
     },
     {
@@ -206,9 +211,244 @@
   ],
   "excluded_from_payloads": [
     {
-      "app": "pet",
-      "path": "probes.py",
-      "why": "dev harness"
+      "app": "glyph",
+      "path": "__init__.py",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/alphabet.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/arrow-cleanse.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/arrow-field.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/binary-island.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/brackets.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/column.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/fluid-field.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/marquee.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/memory-compactor.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/numbers.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/packet-router.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/radar.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/ring-buffer.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/signal-histogram.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/signal-ripple.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/terminal-marquee.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/tracks.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets/wave.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/alphabet.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/arrow-cleanse.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/arrow-field.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/binary-island.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/brackets.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/column.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/elephant.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/fluid-field.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/logo-left.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/logo-offset.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/logo-stack.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/logo-trail.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/marquee.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/memory-compactor.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/numbers.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/packet-router.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/radar.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/ring-buffer.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/signal-histogram.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/terminal-marquee.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/tracks.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "assets2x/wave.gpa",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "backlight.py",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "glyph_backdrop.py",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "glyph_lights.py",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "glyph_viewer.py",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "icon.png",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "loading.py",
+      "why": "not in the payload-only keep list"
+    },
+    {
+      "app": "glyph",
+      "path": "loading_sql.py",
+      "why": "not in the payload-only keep list"
     },
     {
       "app": "snake",
@@ -225,25 +465,25 @@
       "sha256": "195546f658b6308a1b64d85f78bc32d382e90cf19aab8cc5257cd012b3ed65f5"
     },
     {
-      "bytes": 7868,
+      "bytes": 8889,
       "generated": true,
       "note": "export-only: orientation for AI agents reading this package",
       "path": "AGENTS.md",
-      "sha256": "bdf78ca3da1a89008506dc0b66e7ca35afd3f3fc7e1da3e8d0412e672752c192"
+      "sha256": "7872d4597b9bdf6ebb4269797a0c7129e3b48347c261df2682eba6717afed568"
     },
     {
-      "bytes": 21704,
+      "bytes": 22100,
       "note": "export-only",
       "origin": "docs/source-export/ARCHITECTURE.md",
       "path": "ARCHITECTURE.md",
-      "sha256": "f9a200d0f1dc343903857fdd4249d0cc1919c4241cf8f158b672ff0ce20a397f"
+      "sha256": "b448ea95be9a774632ed5dd699a70a097177e300a6a380532a8e3961085e8d3b"
     },
     {
-      "bytes": 23205,
+      "bytes": 27723,
       "note": "export-only",
       "origin": "docs/source-export/BUILDING.md",
       "path": "BUILDING.md",
-      "sha256": "3eb8290f1e1026f2ce41efa641cfaf001627a1ab9f377bc8180f444a413808f0"
+      "sha256": "71c1de70fdfe33978f57a669a561e94f089a0277ffeb82205571db4bdb4ce392"
     },
     {
       "bytes": 1347,
@@ -253,206 +493,25 @@
       "sha256": "66ff3dd2a61516ea2bbf99660fae4c0c8ebe3490122247dbcdec3090d79ff483"
     },
     {
-      "bytes": 5704,
+      "bytes": 4514,
       "generated": true,
-      "note": "export-only: why the fleet ships with networking off",
+      "note": "export-only: what the network is for and what it costs",
       "path": "NETWORKING.md",
-      "sha256": "d8694e8a1a4a95fcfaccc0a8ac47b7488dd298de242e367dbf569336bc2e55a4"
+      "sha256": "b2ef30e2ea1e30c48eecf7a3a877afcb171e8def38a9cbc15a10673607c41c26"
     },
     {
-      "bytes": 27374,
+      "bytes": 28672,
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "f5cec83d6ed1b7b4ad89f32d99c48745fa65ed1b5ae7a9125f1247d7aaa574b0"
+      "sha256": "1b550e3f1b621992bee625fc52b5964a852560853996bc4455d98a48fa364159"
     },
     {
-      "bytes": 7710,
+      "bytes": 9122,
       "generated": true,
       "note": "export-only: the lineup contract tools/build.py reads",
       "path": "apps-roster.json",
-      "sha256": "7c8ba8904ab9b6ea302b5a1ca95b8a9e8b6ef7b6632d7697daa7a5937fc35f21"
-    },
-    {
-      "bytes": 2620,
-      "generated": true,
-      "note": "export-only",
-      "path": "apps/badgecard/README.md",
-      "sha256": "89dc73090be205016b12fd61a3d85f4a13706e0fa5275fd5d392c50d47a89fb9"
-    },
-    {
-      "bytes": 19298,
-      "origin": "badgecard/badge/badgecard/__init__.py",
-      "path": "apps/badgecard/__init__.py",
-      "sha256": "5f35ca7d48c851802cfc33594ce8747c334189c2b0ca3f157bc1a52dfcfe76e8"
-    },
-    {
-      "bytes": 398264,
-      "origin": "badgecard/badge/badgecard/assets/glyphskins.gpk",
-      "path": "apps/badgecard/assets/glyphskins.gpk",
-      "sha256": "c918393fb5bb9d9d0268bfe5b325f5a196bc1e05620d6354750614a7878d1c68"
-    },
-    {
-      "bytes": 43062,
-      "origin": "badgecard/badge/badgecard/assets/stickers-36-p8.png",
-      "path": "apps/badgecard/assets/stickers-36-p8.png",
-      "sha256": "fed7dcf6428635bd74f72ebca014d237f8326a003e098532982651bd944e1bd3"
-    },
-    {
-      "bytes": 27931,
-      "origin": "badgecard/badge/badgecard/backdrop.py",
-      "path": "apps/badgecard/backdrop.py",
-      "sha256": "be2598cb18a1d291d0544261f2068de736c3d4723edec5b4b0f7c7538ec62fea"
-    },
-    {
-      "bytes": 9950,
-      "origin": "badgecard/badge/badgecard/backlight.py",
-      "path": "apps/badgecard/backlight.py",
-      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
-    },
-    {
-      "bytes": 42949,
-      "origin": "badgecard/badge/badgecard/card_app.py",
-      "path": "apps/badgecard/card_app.py",
-      "sha256": "a7ab33debe3c306f8167b3adc493db32efb4a4d9558087920357a0a8784daee1"
-    },
-    {
-      "bytes": 51386,
-      "origin": "badgecard/badge/badgecard/card_bake.py",
-      "path": "apps/badgecard/card_bake.py",
-      "sha256": "2c4225889ac4c23bed140cbd6a67ad9ca9e8823cb228bbf4892855835214e64c"
-    },
-    {
-      "bytes": 6771,
-      "origin": "badgecard/badge/badgecard/card_board.py",
-      "path": "apps/badgecard/card_board.py",
-      "sha256": "611dbb7bda31146defe29516356044e0bdb942deb769f2fa204a3e8f4b923437"
-    },
-    {
-      "bytes": 8208,
-      "origin": "badgecard/badge/badgecard/card_cache.py",
-      "path": "apps/badgecard/card_cache.py",
-      "sha256": "60a6adf55d1e7966792f15c12a51e5811aacf1fec651b3e4b2d1f551474dfc3e"
-    },
-    {
-      "bytes": 7751,
-      "origin": "badgecard/badge/badgecard/card_faces.py",
-      "path": "apps/badgecard/card_faces.py",
-      "sha256": "2bd6b285a2143263f9185c0499f6f78d7b1a165a2dd82de3d76e1962f3c5c7c3"
-    },
-    {
-      "bytes": 44861,
-      "origin": "badgecard/badge/badgecard/card_model.py",
-      "path": "apps/badgecard/card_model.py",
-      "sha256": "c92d73b9caa1ba59ac443eeec7841d7258134f4fb290d5f5da0a0c121701c88a"
-    },
-    {
-      "bytes": 7238,
-      "origin": "badgecard/badge/badgecard/card_store.py",
-      "path": "apps/badgecard/card_store.py",
-      "sha256": "f2534896c61c14552a42a927b0f8a34727c2501b8e5bd3194962286ff1aa5cc0"
-    },
-    {
-      "bytes": 46553,
-      "origin": "badgecard/badge/badgecard/card_view.py",
-      "path": "apps/badgecard/card_view.py",
-      "sha256": "9d32784f6f59b7354edd4ee7e9b8eceaac444cca5b527bf36668e14461ce3b4d"
-    },
-    {
-      "bytes": 14415,
-      "origin": "badgecard/badge/badgecard/effects.py",
-      "path": "apps/badgecard/effects.py",
-      "sha256": "bb721b56c6fbf0c55949a4040dcf6a2d05773b9526dc1f01d9b5c1e635a147c9"
-    },
-    {
-      "bytes": 42075,
-      "origin": "badgecard/badge/badgecard/glyphskin.py",
-      "path": "apps/badgecard/glyphskin.py",
-      "sha256": "e7537723e467cd9783c599fd29294adf1f73082f899363fcad70243336ca55c5"
-    },
-    {
-      "bytes": 146,
-      "origin": "badgecard/badge/badgecard/icon.png",
-      "path": "apps/badgecard/icon.png",
-      "sha256": "1e8d181166ff7173cee411537e95cd69cf13e700e669f19aeb4550fdfac40923"
-    },
-    {
-      "bytes": 14322,
-      "origin": "badgecard/badge/badgecard/identity_catalogue.py",
-      "path": "apps/badgecard/identity_catalogue.py",
-      "sha256": "7b838def004482665d4bc9e7d1e683a4029707527207f970e9af49f0e169b02b"
-    },
-    {
-      "bytes": 5152,
-      "origin": "badgecard/badge/badgecard/identity_faces.py",
-      "path": "apps/badgecard/identity_faces.py",
-      "sha256": "2173f46bac274343fb06f30a1912e86a71b8d507da88927ecf5c8c927452db82"
-    },
-    {
-      "bytes": 13743,
-      "origin": "badgecard/badge/badgecard/identity_keyboard.py",
-      "path": "apps/badgecard/identity_keyboard.py",
-      "sha256": "019607a830790d05af07da6ffc86305c7887cc89cb30c6b5e117b063a67fa626"
-    },
-    {
-      "bytes": 6116,
-      "origin": "badgecard/badge/badgecard/identity_marks.py",
-      "path": "apps/badgecard/identity_marks.py",
-      "sha256": "c2d131bd2b40a27fa90040db59ad3f3fe8863106d3adec2796f0dd4a83f5ebf5"
-    },
-    {
-      "bytes": 16389,
-      "origin": "badgecard/badge/badgecard/idle.py",
-      "path": "apps/badgecard/idle.py",
-      "sha256": "6813adc13426d04bab7897540b03a220b5ec4b36ce6d9045bb39fc232ca58492"
-    },
-    {
-      "bytes": 16337,
-      "origin": "badgecard/badge/badgecard/kb_shell.py",
-      "path": "apps/badgecard/kb_shell.py",
-      "sha256": "31f116f02961d08196836dd6325c1e27fc1bdb1a52c4795278250a4e052c1769"
-    },
-    {
-      "bytes": 37609,
-      "origin": "badgecard/badge/badgecard/kbqwerty_board.py",
-      "path": "apps/badgecard/kbqwerty_board.py",
-      "sha256": "296d1ff98f982e44910ef37c09de84a4bf83d04fb0aa38914beb9cf99f40b32c"
-    },
-    {
-      "bytes": 21016,
-      "origin": "badgecard/badge/badgecard/loading.py",
-      "path": "apps/badgecard/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
-    },
-    {
-      "bytes": 13207,
-      "origin": "badgecard/badge/badgecard/loading_sql.py",
-      "path": "apps/badgecard/loading_sql.py",
-      "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
-    },
-    {
-      "bytes": 81216,
-      "origin": "badgecard/badge/badgecard/poster.py",
-      "path": "apps/badgecard/poster.py",
-      "sha256": "a79fb23f79d65391621fd5e4cf87eb36a96a3ecc114823002b4cb217216faa33"
-    },
-    {
-      "bytes": 667219,
-      "origin": "badgecard/badge/badgecard/skins.py",
-      "path": "apps/badgecard/skins.py",
-      "sha256": "488be04cee54027fdb8751e98c12de462112858d17d6aa3e3dab988a775b0d2e"
-    },
-    {
-      "bytes": 33327,
-      "origin": "badgecard/badge/badgecard/ui.py",
-      "path": "apps/badgecard/ui.py",
-      "sha256": "3e74801e22379df4ca5338ce3304bdc9a5d62a9fa8787e6f7a3151910571f435"
-    },
-    {
-      "bytes": 23508,
-      "origin": "badgecard/badge/badgecard/wallpaper.py",
-      "path": "apps/badgecard/wallpaper.py",
-      "sha256": "988d44bc0ed4e33c2dbcef30330a6906a8a6baced91e88caab36e2bfdb1b897d"
+      "sha256": "d9d6dab6928607d0eb8892c29984a16335ed5d109f9752f5e832e7994fe5a372"
     },
     {
       "bytes": 3083,
@@ -481,10 +540,10 @@
       "sha256": "73b59abf7c2b41f28dff0761e323ba0f80a812dea5fa1b2a231e421036cb38af"
     },
     {
-      "bytes": 9950,
+      "bytes": 9947,
       "origin": "flappy/badge/flappy/backlight.py",
       "path": "apps/flappy/backlight.py",
-      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
+      "sha256": "6f9ac25b592bfdba341b789d34618a49b334c60e00c8493f95aa96430b79a2a0"
     },
     {
       "bytes": 19844,
@@ -523,10 +582,10 @@
       "sha256": "809b18c78c2e99ca2bd6ed79fcef8c409b356ca9fa8605db7c87317a7abad8af"
     },
     {
-      "bytes": 21016,
+      "bytes": 21108,
       "origin": "flappy/badge/flappy/loading.py",
       "path": "apps/flappy/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
+      "sha256": "3f148d48d03f1edf191739c8a1a95f8d8e9adc2e78c81676ef0b673631a1657e"
     },
     {
       "bytes": 13207,
@@ -548,54 +607,6 @@
       "sha256": "c321cbab2dd8e808eb0ba42dc13890498ea658b4b336a945f5a59c2f47a14cf9"
     },
     {
-      "bytes": 56717,
-      "origin": "glyph/badge/glyph/__init__.py",
-      "path": "apps/glyph/__init__.py",
-      "sha256": "30066f3485995a4e26961c177ecba9d1ec8d8fff882c0c47635b9b993ccaafdd"
-    },
-    {
-      "bytes": 34624,
-      "origin": "glyph/badge/glyph/assets/alphabet.gpa",
-      "path": "apps/glyph/assets/alphabet.gpa",
-      "sha256": "2f4e7dbe207d30ab09d7c8c4747e90227fd2ebd0e1b07e6930853d3f0133dda9"
-    },
-    {
-      "bytes": 38464,
-      "origin": "glyph/badge/glyph/assets/arrow-cleanse.gpa",
-      "path": "apps/glyph/assets/arrow-cleanse.gpa",
-      "sha256": "c42e4c42d17426a7361d264d6a428c75edda9f1237945ffb7126a4780d42389b"
-    },
-    {
-      "bytes": 36928,
-      "origin": "glyph/badge/glyph/assets/arrow-field.gpa",
-      "path": "apps/glyph/assets/arrow-field.gpa",
-      "sha256": "a918b16c734df56db2816969dd199956e1aba7e4633d4696b598f69f5aa82c9d"
-    },
-    {
-      "bytes": 27712,
-      "origin": "glyph/badge/glyph/assets/binary-island.gpa",
-      "path": "apps/glyph/assets/binary-island.gpa",
-      "sha256": "7765245bacfa582038967c15a1a150aa13daf77af1bde2ea0a7c26e37cb5029b"
-    },
-    {
-      "bytes": 7744,
-      "origin": "glyph/badge/glyph/assets/brackets.gpa",
-      "path": "apps/glyph/assets/brackets.gpa",
-      "sha256": "9263b3fb2e9ced70dc25d6f7c3be580097a95da9ae7641f20b2151a82e13af06"
-    },
-    {
-      "bytes": 46144,
-      "origin": "glyph/badge/glyph/assets/column.gpa",
-      "path": "apps/glyph/assets/column.gpa",
-      "sha256": "d3c32d8dbd50418e2bfdb1d8245f3e90719126e8656737e6831310c876636484"
-    },
-    {
-      "bytes": 73792,
-      "origin": "glyph/badge/glyph/assets/fluid-field.gpa",
-      "path": "apps/glyph/assets/fluid-field.gpa",
-      "sha256": "e55cd3c241236fc25709dfdbd6c6031255235e2d2434e0d8471eb2ca0cb969f9"
-    },
-    {
       "bytes": 10240,
       "origin": "glyph/badge/glyph/assets/glyph-lut.bin",
       "path": "apps/glyph/assets/glyph-lut.bin",
@@ -608,136 +619,10 @@
       "sha256": "1b7beb1a625221b8c2771af7964d2c353ea5d528b07b2d12a64c2866b3a09edd"
     },
     {
-      "bytes": 30784,
-      "origin": "glyph/badge/glyph/assets/marquee.gpa",
-      "path": "apps/glyph/assets/marquee.gpa",
-      "sha256": "036a1c9a561bf02c9fb989a7803891fdeb318150c95d8f14a516bd115a2267d1"
-    },
-    {
-      "bytes": 61504,
-      "origin": "glyph/badge/glyph/assets/memory-compactor.gpa",
-      "path": "apps/glyph/assets/memory-compactor.gpa",
-      "sha256": "05ece861a54c8e21683de59b6e0cc8d9578e3f0a469257f6d5e7c3bb1cae23a3"
-    },
-    {
-      "bytes": 38464,
-      "origin": "glyph/badge/glyph/assets/numbers.gpa",
-      "path": "apps/glyph/assets/numbers.gpa",
-      "sha256": "9365c1b1e83553e958d68e49450c5a7ee2cea8c6f1789f42679d6c6dd4436306"
-    },
-    {
-      "bytes": 11584,
-      "origin": "glyph/badge/glyph/assets/packet-router.gpa",
-      "path": "apps/glyph/assets/packet-router.gpa",
-      "sha256": "829bff2059e171dd0ee3fe3b06c6d595485d20e7e502eaebca36a1fdbf8e478b"
-    },
-    {
-      "bytes": 18496,
-      "origin": "glyph/badge/glyph/assets/radar.gpa",
-      "path": "apps/glyph/assets/radar.gpa",
-      "sha256": "b913d1bee3e769d8c2026941c03c17a9287b784a6794dd4aafc7c1352c9ffd52"
-    },
-    {
-      "bytes": 36928,
-      "origin": "glyph/badge/glyph/assets/ring-buffer.gpa",
-      "path": "apps/glyph/assets/ring-buffer.gpa",
-      "sha256": "7e43833e3cd245e06591ee8371e9b857329d990b4b972c42dd6b5e6cd14c7867"
-    },
-    {
-      "bytes": 17920,
-      "origin": "glyph/badge/glyph/assets/signal-histogram.gpa",
-      "path": "apps/glyph/assets/signal-histogram.gpa",
-      "sha256": "be61ac7b8b3be08c60805c2431d1048335bc6e89b045887b4ebbd6d1580fd09f"
-    },
-    {
-      "bytes": 24640,
-      "origin": "glyph/badge/glyph/assets/signal-ripple.gpa",
-      "path": "apps/glyph/assets/signal-ripple.gpa",
-      "sha256": "b7ee2aaf5815f481a69a80353b94eeae379401ebcbe3d46ef2fafc9b59655728"
-    },
-    {
-      "bytes": 23104,
-      "origin": "glyph/badge/glyph/assets/terminal-marquee.gpa",
-      "path": "apps/glyph/assets/terminal-marquee.gpa",
-      "sha256": "915801c05e7968590110e2d2c36ba4423a391059e4183913f33ed774ae327a7a"
-    },
-    {
-      "bytes": 3136,
-      "origin": "glyph/badge/glyph/assets/tracks.gpa",
-      "path": "apps/glyph/assets/tracks.gpa",
-      "sha256": "5698e3bb01c450992ffffe507c83d0d1a9870dafe93ef5b3e3f039d50a548183"
-    },
-    {
-      "bytes": 12352,
-      "origin": "glyph/badge/glyph/assets/wave.gpa",
-      "path": "apps/glyph/assets/wave.gpa",
-      "sha256": "1fed2207bac4c77417db8eec9729a265eefe6e12f783c56139ad0ffde4c3a468"
-    },
-    {
-      "bytes": 483136,
-      "origin": "glyph/badge/glyph/assets2x/alphabet.gpa",
-      "path": "apps/glyph/assets2x/alphabet.gpa",
-      "sha256": "045decddf5612ce4d11478781f3a8971c3212f7d39f3b3ad3afcbf35a70eb798"
-    },
-    {
-      "bytes": 416320,
-      "origin": "glyph/badge/glyph/assets2x/arrow-cleanse.gpa",
-      "path": "apps/glyph/assets2x/arrow-cleanse.gpa",
-      "sha256": "0d7b68e05f394d18fa3e618edae7c46ad7569acd74c12abddc3421436dc8e729"
-    },
-    {
-      "bytes": 147520,
-      "origin": "glyph/badge/glyph/assets2x/arrow-field.gpa",
-      "path": "apps/glyph/assets2x/arrow-field.gpa",
-      "sha256": "7a2a165ca60f2b0ca2acb6ac4c261f757c3d9d1113bb666bb1c2c709b792d83b"
-    },
-    {
-      "bytes": 344128,
-      "origin": "glyph/badge/glyph/assets2x/binary-island.gpa",
-      "path": "apps/glyph/assets2x/binary-island.gpa",
-      "sha256": "980ad6970cbb780fd36c5482ac9ad997618a878841feb7ee3c99cee2b54f05a6"
-    },
-    {
-      "bytes": 30784,
-      "origin": "glyph/badge/glyph/assets2x/brackets.gpa",
-      "path": "apps/glyph/assets2x/brackets.gpa",
-      "sha256": "2a67f5fc481ddc0596ae386ea11ecb0bf005c548ca7f348c407b1d05624ee7dd"
-    },
-    {
-      "bytes": 549184,
-      "origin": "glyph/badge/glyph/assets2x/column.gpa",
-      "path": "apps/glyph/assets2x/column.gpa",
-      "sha256": "00328feeb116a3c153c6069f7f19ebbaa8156a7c502c4b8d737a3f50fb219cd2"
-    },
-    {
-      "bytes": 32320,
-      "origin": "glyph/badge/glyph/assets2x/elephant.gpa",
-      "path": "apps/glyph/assets2x/elephant.gpa",
-      "sha256": "44e947641a3276a8c3f013383b3ab05a2717a77dce8b8ef95395905aeca6e664"
-    },
-    {
-      "bytes": 294976,
-      "origin": "glyph/badge/glyph/assets2x/fluid-field.gpa",
-      "path": "apps/glyph/assets2x/fluid-field.gpa",
-      "sha256": "91a5f6bd74811391ae6f7bca6362d1832b9f999ad8c086b029e225b5e0c7b732"
-    },
-    {
       "bytes": 5100,
       "origin": "glyph/badge/glyph/assets2x/glyph-masks-2x.pfb",
       "path": "apps/glyph/assets2x/glyph-masks-2x.pfb",
       "sha256": "073573e02023e9f06feac4e209980de28281bf9457070d832f933b7a05293d46"
-    },
-    {
-      "bytes": 57664,
-      "origin": "glyph/badge/glyph/assets2x/logo-left.gpa",
-      "path": "apps/glyph/assets2x/logo-left.gpa",
-      "sha256": "84e29f49c3414ee3fdabf33cd6b8557ccb4cebed6be7f394de040167ee63ab2d"
-    },
-    {
-      "bytes": 57664,
-      "origin": "glyph/badge/glyph/assets2x/logo-offset.gpa",
-      "path": "apps/glyph/assets2x/logo-offset.gpa",
-      "sha256": "ad83daf7518e0f04c03daf7e6a87c82b124cebe035e71249fd00f1c2e68b6bff"
     },
     {
       "bytes": 26944,
@@ -746,106 +631,16 @@
       "sha256": "930d24406671b5bc8d9238e00f0fc1fa2bd7d6abfb485d1862d41121406efa8c"
     },
     {
-      "bytes": 57664,
-      "origin": "glyph/badge/glyph/assets2x/logo-stack.gpa",
-      "path": "apps/glyph/assets2x/logo-stack.gpa",
-      "sha256": "6d93da791843ad5df6042269cb1795a3cd8dbf4526f80cae9ad5e6c48b46c155"
-    },
-    {
-      "bytes": 57664,
-      "origin": "glyph/badge/glyph/assets2x/logo-trail.gpa",
-      "path": "apps/glyph/assets2x/logo-trail.gpa",
-      "sha256": "9fabfb1026883d620583926f1863d2891f406b15c57233f23165384c74aa548c"
-    },
-    {
-      "bytes": 122944,
-      "origin": "glyph/badge/glyph/assets2x/marquee.gpa",
-      "path": "apps/glyph/assets2x/marquee.gpa",
-      "sha256": "f59f82633aa738caf063fd3cff5d92ce2487697f890a556c9a2158a98eec98b0"
-    },
-    {
-      "bytes": 482368,
-      "origin": "glyph/badge/glyph/assets2x/memory-compactor.gpa",
-      "path": "apps/glyph/assets2x/memory-compactor.gpa",
-      "sha256": "cede6e4483363e91bb9acb77c545f3eca96554239eb11490063658a54b68036e"
-    },
-    {
-      "bytes": 510016,
-      "origin": "glyph/badge/glyph/assets2x/numbers.gpa",
-      "path": "apps/glyph/assets2x/numbers.gpa",
-      "sha256": "6f16af330433f224c11b18d8111a6b23c85ae3b26b09f8416fa229ca88746084"
-    },
-    {
-      "bytes": 46144,
-      "origin": "glyph/badge/glyph/assets2x/packet-router.gpa",
-      "path": "apps/glyph/assets2x/packet-router.gpa",
-      "sha256": "e41330a6db091fd24bf6950c2948bf7e0a71275e6dde180516d5f134e6bc3b96"
-    },
-    {
-      "bytes": 73792,
-      "origin": "glyph/badge/glyph/assets2x/radar.gpa",
-      "path": "apps/glyph/assets2x/radar.gpa",
-      "sha256": "12bdda7a8aff86fe0f80c3ebeeb42d138735073188094904029e46a7975991ec"
-    },
-    {
-      "bytes": 147520,
-      "origin": "glyph/badge/glyph/assets2x/ring-buffer.gpa",
-      "path": "apps/glyph/assets2x/ring-buffer.gpa",
-      "sha256": "68229bdad53d01a578d0b5ad7fbe349e5efffa6b7629db2fb3ce8e5f7d42147a"
-    },
-    {
-      "bytes": 79936,
-      "origin": "glyph/badge/glyph/assets2x/signal-histogram.gpa",
-      "path": "apps/glyph/assets2x/signal-histogram.gpa",
-      "sha256": "eb7912c6ae7f8c7434eae2750d1dde42f9b2fbc41ec81e95b4e689c40078a4e7"
-    },
-    {
       "bytes": 98368,
       "origin": "glyph/badge/glyph/assets2x/signal-ripple.gpa",
       "path": "apps/glyph/assets2x/signal-ripple.gpa",
       "sha256": "58185ebf8ef3be4da95834d9254827e03d133eea117940d553d863cffabfee04"
     },
     {
-      "bytes": 92224,
-      "origin": "glyph/badge/glyph/assets2x/terminal-marquee.gpa",
-      "path": "apps/glyph/assets2x/terminal-marquee.gpa",
-      "sha256": "fe2332cdf559ee2630552f5878d4d7ab352772f37c15947993093c0d1cf3225a"
-    },
-    {
-      "bytes": 24640,
-      "origin": "glyph/badge/glyph/assets2x/tracks.gpa",
-      "path": "apps/glyph/assets2x/tracks.gpa",
-      "sha256": "2e4142e09036ddd92662eee6f009490644112be83b9dd4238f447260b5c3ecf8"
-    },
-    {
-      "bytes": 49216,
-      "origin": "glyph/badge/glyph/assets2x/wave.gpa",
-      "path": "apps/glyph/assets2x/wave.gpa",
-      "sha256": "b9e394da4828dd9255456e5d0a9852d358ccd2192fa11af87dcd66473f687b15"
-    },
-    {
-      "bytes": 9950,
-      "origin": "glyph/badge/glyph/backlight.py",
-      "path": "apps/glyph/backlight.py",
-      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
-    },
-    {
-      "bytes": 4030,
-      "origin": "glyph/badge/glyph/glyph_backdrop.py",
-      "path": "apps/glyph/glyph_backdrop.py",
-      "sha256": "fca326d99eba5f6c0cb2e094c1c7426f3dadede026e2d12eaf1e9f772a58c85e"
-    },
-    {
-      "bytes": 9264,
-      "origin": "glyph/badge/glyph/glyph_lights.py",
-      "path": "apps/glyph/glyph_lights.py",
-      "sha256": "3b0421bdd578a5eea9d36169bc89a8f73aa42e71d75c9ebf64dbc209937411e1"
-    },
-    {
-      "bytes": 30143,
+      "bytes": 30135,
       "origin": "glyph/badge/glyph/glyph_render.py",
       "path": "apps/glyph/glyph_render.py",
-      "sha256": "f8269fd85578bf400252bd1c912a5528b4618461e978066d9fbb41ea4d8da23c"
+      "sha256": "3d020d5d3104070cf550972b41dd42fc85b1c0405f657c7a994c027ba3acec68"
     },
     {
       "bytes": 18392,
@@ -860,40 +655,16 @@
       "sha256": "62e0e2b0834a66762ba0bf08df62f114b2ca313e26aaafb713227fa3b8e0d022"
     },
     {
-      "bytes": 4837,
-      "origin": "glyph/badge/glyph/glyph_viewer.py",
-      "path": "apps/glyph/glyph_viewer.py",
-      "sha256": "7e9db0fc31d6bca21b1c196df58c429c33614f9862aa15679328f04c93e230d3"
-    },
-    {
       "bytes": 2603,
       "origin": "glyph/badge/glyph/glyph_vocab.py",
       "path": "apps/glyph/glyph_vocab.py",
       "sha256": "8e512f29a767d06a03e1a00da550f5da9e2b9757ea6c2d3c7e5927c5a7985c49"
     },
     {
-      "bytes": 216,
-      "origin": "glyph/badge/glyph/icon.png",
-      "path": "apps/glyph/icon.png",
-      "sha256": "a6ed1841fe833c07804c3dbd2f6461e6674b10b16f785b79db8b70d615192d2a"
-    },
-    {
-      "bytes": 2341,
+      "bytes": 2338,
       "origin": "glyph/badge/glyph/light_calibration_2x.py",
       "path": "apps/glyph/light_calibration_2x.py",
-      "sha256": "e21982f668341bf1dacfcd21af4a661cff832649ec591e128416c3f2f3f79418"
-    },
-    {
-      "bytes": 21016,
-      "origin": "glyph/badge/glyph/loading.py",
-      "path": "apps/glyph/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
-    },
-    {
-      "bytes": 13207,
-      "origin": "glyph/badge/glyph/loading_sql.py",
-      "path": "apps/glyph/loading_sql.py",
-      "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
+      "sha256": "882aa7bb3c05632f9eda5f9dcf943c9dcfd91c6a77813a908a508c37a67e6631"
     },
     {
       "bytes": 10827,
@@ -916,28 +687,28 @@
       "sha256": "6ea1e9c3fa902ff64192e9fff736a3972b76065d8908a0950927ffb3605133cb"
     },
     {
-      "bytes": 9950,
+      "bytes": 9947,
       "origin": "launcher/menu/backlight.py",
       "path": "apps/menu/backlight.py",
-      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
+      "sha256": "6f9ac25b592bfdba341b789d34618a49b334c60e00c8493f95aa96430b79a2a0"
     },
     {
-      "bytes": 66749,
+      "bytes": 69779,
       "origin": "launcher/menu/first_wake.py",
       "path": "apps/menu/first_wake.py",
-      "sha256": "889aaa92b6083be445178ae34087da83fe1a4ad2871ef18259b4e4b200e19043"
+      "sha256": "43d2d9be6f0f4804a21bc2d143e56f4ae2048e4c58a135180f3859897b2e18f6"
     },
     {
-      "bytes": 16389,
+      "bytes": 16369,
       "origin": "launcher/menu/idle.py",
       "path": "apps/menu/idle.py",
-      "sha256": "6813adc13426d04bab7897540b03a220b5ec4b36ce6d9045bb39fc232ca58492"
+      "sha256": "20d64ac3454963ae43e6e5f8eceda2f7592c1389c0470a2662c6abd9d7f08f57"
     },
     {
-      "bytes": 21016,
+      "bytes": 21108,
       "origin": "launcher/menu/loading.py",
       "path": "apps/menu/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
+      "sha256": "3f148d48d03f1edf191739c8a1a95f8d8e9adc2e78c81676ef0b673631a1657e"
     },
     {
       "bytes": 13207,
@@ -946,17 +717,17 @@
       "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
     },
     {
-      "bytes": 58,
+      "bytes": 45,
       "generated": true,
       "note": "the grid order, from the production lineup",
       "path": "apps/menu/order.txt",
-      "sha256": "58b5cd8844ee2ff081286f658ebd4f7919d869e8402a7faceca6c5623d43ad43"
+      "sha256": "d155651c09ed9be9df2fc45cfc0cd0e265ec637c4c8225fad6108bbc872c4f48"
     },
     {
-      "bytes": 103411,
+      "bytes": 103531,
       "origin": "launcher/menu/ui.py",
       "path": "apps/menu/ui.py",
-      "sha256": "73721e59d35ccc967e61f2aa90931dd323ede0ec2291a65a515ff9bc1f99238d"
+      "sha256": "1ee9f53ed1d4c40f40556a6cb0805b93d189cd90e28a2b2470a1324e9cde5ade"
     },
     {
       "bytes": 23508,
@@ -965,250 +736,172 @@
       "sha256": "988d44bc0ed4e33c2dbcef30330a6906a8a6baced91e88caab36e2bfdb1b897d"
     },
     {
-      "bytes": 1916,
+      "bytes": 1189,
       "generated": true,
       "note": "export-only",
-      "path": "apps/pet/README.md",
-      "sha256": "c0a83943e8376fc2837833578dd4e39f99610539cdd9e153b8c5ff55bb332e60"
+      "path": "apps/nametag/README.md",
+      "sha256": "a4d65194bd95a2e31583b3657b4a2fe9dd4eb4d4c4dc19e5e5cc635c6b8a6960"
     },
     {
-      "bytes": 7957,
-      "origin": "pet/badge/pet/__init__.py",
-      "path": "apps/pet/__init__.py",
-      "sha256": "0ebe8500a1e18b3760193b39d18a307636b650b83f4ee9023137d24bd36da530"
+      "bytes": 24548,
+      "origin": "nametag/badge/nametag/__init__.py",
+      "path": "apps/nametag/__init__.py",
+      "sha256": "2d3a19049399c7fa53d50dd4115acb386cf39e3269da680ec19231ca2a96a39d"
     },
     {
-      "bytes": 4826,
-      "origin": "pet/badge/pet/assets/pet-body-p8.png",
-      "path": "apps/pet/assets/pet-body-p8.png",
-      "sha256": "2532afa8a13e52cb2d6212fcf73596ae107b4b1ec1fe76ac866f3f61943f34e6"
+      "bytes": 188172,
+      "origin": "nametag/badge/nametag/assets/glyphshows.gpk",
+      "path": "apps/nametag/assets/glyphshows.gpk",
+      "sha256": "b3d356fca0dcff1366e1afe0935a2ae6be6e728f7e6ad4d7b94e741350fa3861"
     },
     {
-      "bytes": 1209,
-      "origin": "pet/badge/pet/assets/pet-face-p8.png",
-      "path": "apps/pet/assets/pet-face-p8.png",
-      "sha256": "3b057a124d921266451cc84a4d5b18e3ac31aa491176ba258993639d3806598e"
+      "bytes": 290332,
+      "origin": "nametag/badge/nametag/assets/glyphskins.gpk",
+      "path": "apps/nametag/assets/glyphskins.gpk",
+      "sha256": "4c301f70602b215bf45417243dfc820224a82a0f69eade09b9925cfbdffcc931"
     },
     {
-      "bytes": 2665,
-      "origin": "pet/badge/pet/assets/pet-prop-p8.png",
-      "path": "apps/pet/assets/pet-prop-p8.png",
-      "sha256": "5a57f980191454fc7e09c789ccd6df4fe85b486d0f66de482346fafa0d7ffd48"
+      "bytes": 51746,
+      "origin": "nametag/badge/nametag/assets/stickers-36-p8.png",
+      "path": "apps/nametag/assets/stickers-36-p8.png",
+      "sha256": "9dda3d5675ccfe7a9f8978b5febb727b451808ee86992f04238331653c3a5224"
     },
     {
-      "bytes": 9950,
-      "origin": "pet/badge/pet/backlight.py",
-      "path": "apps/pet/backlight.py",
-      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
+      "bytes": 27936,
+      "origin": "nametag/badge/nametag/backdrop.py",
+      "path": "apps/nametag/backdrop.py",
+      "sha256": "aab27fa146704090161f3b6abcb72360ffa54ad11f45f05db7e0182c54c2f66e"
     },
     {
-      "bytes": 284,
-      "origin": "pet/badge/pet/icon.png",
-      "path": "apps/pet/icon.png",
-      "sha256": "2b1b135de0c5612a909fd00cfe1de8762ece6390a710e7589c226baafd622c44"
+      "bytes": 9947,
+      "origin": "nametag/badge/nametag/backlight.py",
+      "path": "apps/nametag/backlight.py",
+      "sha256": "6f9ac25b592bfdba341b789d34618a49b334c60e00c8493f95aa96430b79a2a0"
     },
     {
-      "bytes": 21016,
-      "origin": "pet/badge/pet/loading.py",
-      "path": "apps/pet/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
+      "bytes": 14572,
+      "origin": "nametag/badge/nametag/badge_state.py",
+      "path": "apps/nametag/badge_state.py",
+      "sha256": "c46b57cde67aa195fa2fa66cf84e9c0ae6007e5fadfcd4ee9dbb21f60454ba68"
     },
     {
-      "bytes": 13207,
-      "origin": "pet/badge/pet/loading_sql.py",
-      "path": "apps/pet/loading_sql.py",
-      "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
+      "bytes": 2023,
+      "origin": "nametag/badge/nametag/card_name_positions.py",
+      "path": "apps/nametag/card_name_positions.py",
+      "sha256": "a5d1b0caf641878608808000bce5765928a9b14461977bf1e96ced29980a99b2"
     },
     {
-      "bytes": 29050,
-      "origin": "pet/badge/pet/pet_app.py",
-      "path": "apps/pet/pet_app.py",
-      "sha256": "ada38900805fe1c0baa1c9078634f25d7b84b374ade6ef128fe532953570180e"
+      "bytes": 14410,
+      "origin": "nametag/badge/nametag/effects.py",
+      "path": "apps/nametag/effects.py",
+      "sha256": "43e24ec7a79f8b6647ab64d82df14d44b1b443627f6ffbb3763cca7b4e75319e"
     },
     {
-      "bytes": 2644,
-      "origin": "pet/badge/pet/pet_atlas.py",
-      "path": "apps/pet/pet_atlas.py",
-      "sha256": "50537800c2a9fefa06d7e310e2b99b2d67aa10334839cbcb9800bfad77bc441f"
+      "bytes": 13750,
+      "origin": "nametag/badge/nametag/glyph_show.py",
+      "path": "apps/nametag/glyph_show.py",
+      "sha256": "8783a438ab8e7608320adeb18492c5192a41a8c450c7d111ba8b54878b987a24"
     },
     {
-      "bytes": 7877,
-      "origin": "pet/badge/pet/pet_clock.py",
-      "path": "apps/pet/pet_clock.py",
-      "sha256": "58508304287693d5878c289779a1c91282980316af818def2df1325c707c5ed8"
+      "bytes": 42556,
+      "origin": "nametag/badge/nametag/glyphskin.py",
+      "path": "apps/nametag/glyphskin.py",
+      "sha256": "de9683643abecc9d47393297de609a7dc8ad014e9ffcf9c6176fa058cd379e0c"
     },
     {
-      "bytes": 2880,
-      "origin": "pet/badge/pet/pet_game.py",
-      "path": "apps/pet/pet_game.py",
-      "sha256": "73a5f4044cb51d6ae148fca4e8d96555c0185c4f734f070a9c33de2601a6e930"
+      "bytes": 134,
+      "origin": "nametag/badge/nametag/icon.png",
+      "path": "apps/nametag/icon.png",
+      "sha256": "2c9868b362daf54b41a897712e7c6649c386421828310cbc3f60c366a4df394b"
     },
     {
-      "bytes": 47570,
-      "origin": "pet/badge/pet/pet_model.py",
-      "path": "apps/pet/pet_model.py",
-      "sha256": "a19485b84cd6606c02a306c1b1159e67a60b214f128a4482bd33a1f3c30b225e"
-    },
-    {
-      "bytes": 6536,
-      "origin": "pet/badge/pet/pet_store.py",
-      "path": "apps/pet/pet_store.py",
-      "sha256": "b6e660f99a45c57aa81c5b28cd53e2a24595e51efca4adcd30594e59abf15f95"
-    },
-    {
-      "bytes": 13818,
-      "origin": "pet/badge/pet/pet_tuning.py",
-      "path": "apps/pet/pet_tuning.py",
-      "sha256": "1ced9dc88f1529cb341aaafb49268298bb703c8d535a42134a0fd5653935b0b7"
-    },
-    {
-      "bytes": 29981,
-      "origin": "pet/badge/pet/pet_view.py",
-      "path": "apps/pet/pet_view.py",
-      "sha256": "54467b51029d3392d2ef0c502efbf7d0378740b2361ce2ed25b81c2ead1c43f4"
-    },
-    {
-      "bytes": 33327,
-      "origin": "pet/badge/pet/ui.py",
-      "path": "apps/pet/ui.py",
-      "sha256": "3e74801e22379df4ca5338ce3304bdc9a5d62a9fa8787e6f7a3151910571f435"
-    },
-    {
-      "bytes": 1188,
-      "generated": true,
-      "note": "export-only",
-      "path": "apps/poster/README.md",
-      "sha256": "39fd5be977876cf6eee0bfb92ae7d438b4e88304d60061833918aae5ca9ba000"
-    },
-    {
-      "bytes": 22753,
-      "origin": "poster/badge/poster/__init__.py",
-      "path": "apps/poster/__init__.py",
-      "sha256": "0c4ad58cd11ac93df775cd57ba156fb9f131572e0ee119c5305c897a0bc729eb"
-    },
-    {
-      "bytes": 398264,
-      "origin": "poster/badge/poster/assets/glyphskins.gpk",
-      "path": "apps/poster/assets/glyphskins.gpk",
-      "sha256": "c918393fb5bb9d9d0268bfe5b325f5a196bc1e05620d6354750614a7878d1c68"
-    },
-    {
-      "bytes": 43062,
-      "origin": "poster/badge/poster/assets/stickers-36-p8.png",
-      "path": "apps/poster/assets/stickers-36-p8.png",
-      "sha256": "fed7dcf6428635bd74f72ebca014d237f8326a003e098532982651bd944e1bd3"
-    },
-    {
-      "bytes": 27931,
-      "origin": "poster/badge/poster/backdrop.py",
-      "path": "apps/poster/backdrop.py",
-      "sha256": "be2598cb18a1d291d0544261f2068de736c3d4723edec5b4b0f7c7538ec62fea"
-    },
-    {
-      "bytes": 9950,
-      "origin": "poster/badge/poster/backlight.py",
-      "path": "apps/poster/backlight.py",
-      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
-    },
-    {
-      "bytes": 13967,
-      "origin": "poster/badge/poster/badge_state.py",
-      "path": "apps/poster/badge_state.py",
-      "sha256": "4d25614f65d78d1c8c221bed600cf7c18b19ddd7a858ce857ad24b71cc71d64e"
-    },
-    {
-      "bytes": 14415,
-      "origin": "poster/badge/poster/effects.py",
-      "path": "apps/poster/effects.py",
-      "sha256": "bb721b56c6fbf0c55949a4040dcf6a2d05773b9526dc1f01d9b5c1e635a147c9"
-    },
-    {
-      "bytes": 42075,
-      "origin": "poster/badge/poster/glyphskin.py",
-      "path": "apps/poster/glyphskin.py",
-      "sha256": "e7537723e467cd9783c599fd29294adf1f73082f899363fcad70243336ca55c5"
-    },
-    {
-      "bytes": 14322,
-      "origin": "poster/badge/poster/identity_catalogue.py",
-      "path": "apps/poster/identity_catalogue.py",
-      "sha256": "7b838def004482665d4bc9e7d1e683a4029707527207f970e9af49f0e169b02b"
+      "bytes": 12537,
+      "origin": "nametag/badge/nametag/identity_catalogue.py",
+      "path": "apps/nametag/identity_catalogue.py",
+      "sha256": "8ad2e8920b95c3826f37122f835e291198266b40841c47ee13a84fee9ef8a226"
     },
     {
       "bytes": 5152,
-      "origin": "poster/badge/poster/identity_faces.py",
-      "path": "apps/poster/identity_faces.py",
+      "origin": "nametag/badge/nametag/identity_faces.py",
+      "path": "apps/nametag/identity_faces.py",
       "sha256": "2173f46bac274343fb06f30a1912e86a71b8d507da88927ecf5c8c927452db82"
     },
     {
-      "bytes": 6116,
-      "origin": "poster/badge/poster/identity_marks.py",
-      "path": "apps/poster/identity_marks.py",
-      "sha256": "c2d131bd2b40a27fa90040db59ad3f3fe8863106d3adec2796f0dd4a83f5ebf5"
+      "bytes": 6621,
+      "origin": "nametag/badge/nametag/identity_marks.py",
+      "path": "apps/nametag/identity_marks.py",
+      "sha256": "0ccce7655df225231d779e44ce60e8f1b2888a52e16060b945728368c6bd8d22"
     },
     {
-      "bytes": 81216,
-      "origin": "poster/badge/poster/poster.py",
-      "path": "apps/poster/poster.py",
-      "sha256": "a79fb23f79d65391621fd5e4cf87eb36a96a3ecc114823002b4cb217216faa33"
+      "bytes": 79958,
+      "origin": "nametag/badge/nametag/nametag.py",
+      "path": "apps/nametag/nametag.py",
+      "sha256": "e1ac290206e3e6bec210d162ad14a70d395340f8085e43909767ec0e4e4ff682"
     },
     {
-      "bytes": 667219,
-      "origin": "poster/badge/poster/skins.py",
-      "path": "apps/poster/skins.py",
-      "sha256": "488be04cee54027fdb8751e98c12de462112858d17d6aa3e3dab988a775b0d2e"
+      "bytes": 326156,
+      "origin": "nametag/badge/nametag/skins.py",
+      "path": "apps/nametag/skins.py",
+      "sha256": "2158075bac07aee016f1b84626cfcb235c24c253d1aa48f82580f9dac59e9b38"
     },
     {
-      "bytes": 4610,
+      "bytes": 4615,
       "note": "export-only: host test, not installed on the badge",
-      "origin": "poster/tests/poster_harness.py",
-      "path": "apps/poster/tests/poster_harness.py",
-      "sha256": "c195b4bd14893c537692767a1936fcf5daf7c1aa8e6fc10576b60d5ecb99b2ec"
+      "origin": "nametag/tests/nametag_harness.py",
+      "path": "apps/nametag/tests/nametag_harness.py",
+      "sha256": "ae683a747693b7951b5bafb40c29d237801ac7f1d1cafab354e5b72bfdc82f28"
     },
     {
-      "bytes": 24613,
+      "bytes": 27033,
       "note": "export-only: host test, not installed on the badge",
-      "origin": "poster/tests/test_badge_state.py",
-      "path": "apps/poster/tests/test_badge_state.py",
-      "sha256": "81b7f4209ffa2225b77990fd25cbae78a0b2b58b3a3b35ac78c5ca2f071b3054"
+      "origin": "nametag/tests/test_badge_state.py",
+      "path": "apps/nametag/tests/test_badge_state.py",
+      "sha256": "cdaded3a87111e599871be5e59c6efb7c4c6ac4dc427c92eff5cd61ef9f6d260"
     },
     {
-      "bytes": 39040,
+      "bytes": 23525,
       "note": "export-only: host test, not installed on the badge",
-      "origin": "poster/tests/test_poster_app.py",
-      "path": "apps/poster/tests/test_poster_app.py",
-      "sha256": "73d8a73752d389be10aa21be3e5ef0ae89b68cae13889777f0eb0af39c305a38"
+      "origin": "nametag/tests/test_glyph_show.py",
+      "path": "apps/nametag/tests/test_glyph_show.py",
+      "sha256": "5ec453968198fd9e53bc1bed01f977773c60fe75a0adff452ee4569301b56dfe"
     },
     {
-      "bytes": 33327,
-      "origin": "poster/badge/poster/ui.py",
-      "path": "apps/poster/ui.py",
-      "sha256": "3e74801e22379df4ca5338ce3304bdc9a5d62a9fa8787e6f7a3151910571f435"
+      "bytes": 40937,
+      "note": "export-only: host test, not installed on the badge",
+      "origin": "nametag/tests/test_nametag_app.py",
+      "path": "apps/nametag/tests/test_nametag_app.py",
+      "sha256": "affcf87bd08720f42c476bafe18f1f8f6db9f96611be45e396c7b4514b378ea5"
     },
     {
-      "bytes": 1583,
+      "bytes": 33323,
+      "origin": "nametag/badge/nametag/ui.py",
+      "path": "apps/nametag/ui.py",
+      "sha256": "a902a34862fbaf4d5917865416e1fdaefc90274092a9da65eda5315eeb2f90b7"
+    },
+    {
+      "bytes": 2274,
       "generated": true,
       "note": "export-only",
       "path": "apps/schedule/README.md",
-      "sha256": "acd0f4e794d0c1050bdd8400d3e32d38e6dbd9f073e75c96d6ba2462db3d57e4"
+      "sha256": "1d433785523704ebbd81ece31a8fac38935a4167f38a2753e8ed30aab6f1b4f8"
     },
     {
-      "bytes": 26344,
+      "bytes": 30678,
       "origin": "schedule/badge/schedule/__init__.py",
       "path": "apps/schedule/__init__.py",
-      "sha256": "ab9a4215b688cd2970699fa0a67f333d97aa61dc4398e9352a379c51d929a51d"
+      "sha256": "e1dddcc1f0aaa19c5db4dc4b60b776d9dd56ec5e43c8846d5f4f70401acecf43"
     },
     {
-      "bytes": 9950,
+      "bytes": 9947,
       "origin": "schedule/badge/schedule/backlight.py",
       "path": "apps/schedule/backlight.py",
-      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
+      "sha256": "6f9ac25b592bfdba341b789d34618a49b334c60e00c8493f95aa96430b79a2a0"
     },
     {
-      "bytes": 1396,
+      "bytes": 1659,
       "origin": "schedule/badge/schedule/config.py",
       "path": "apps/schedule/config.py",
-      "sha256": "70a519f122660f6870bb865e2cf673689e34d4e834f33764cc9762b5a5ccb3c6"
+      "sha256": "5a09f4a96d4c8d66c384454426bb1e678fe47538354d545963d510dc54054284"
     },
     {
       "bytes": 925,
@@ -1217,10 +910,10 @@
       "sha256": "18c3011d49fd0d9ee9b86ebd39aa1a807b9e420c7c3118371b607cdba283d204"
     },
     {
-      "bytes": 21016,
+      "bytes": 21108,
       "origin": "schedule/badge/schedule/loading.py",
       "path": "apps/schedule/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
+      "sha256": "3f148d48d03f1edf191739c8a1a95f8d8e9adc2e78c81676ef0b673631a1657e"
     },
     {
       "bytes": 13207,
@@ -1229,22 +922,28 @@
       "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
     },
     {
-      "bytes": 3478,
+      "bytes": 6867,
       "origin": "schedule/badge/schedule/schedule.json",
       "path": "apps/schedule/schedule.json",
-      "sha256": "a2a6724fe2b5f301144dc4e5a72a6740d78d961b772cb2df0e73b09db8c3ec2c"
+      "sha256": "8058fa9fdde6d8852543364f015598a86273345baedbfb98272fd400d888f2d1"
     },
     {
-      "bytes": 66687,
+      "bytes": 74283,
       "origin": "schedule/badge/schedule/schedule_model.py",
       "path": "apps/schedule/schedule_model.py",
-      "sha256": "f89a1e72df23a0b397e54bf632cf7168c4d896cd212bfa65223ba37454787715"
+      "sha256": "e689f1445b15d233bfc316fbccd30d93f307cd8fdb4d8db56fa76b3d7a3feb99"
     },
     {
-      "bytes": 58493,
+      "bytes": 9904,
+      "origin": "schedule/badge/schedule/schedule_refresh.py",
+      "path": "apps/schedule/schedule_refresh.py",
+      "sha256": "c92c3400981f7b35169929f9bce3909da2162547512cf6a2a55784d8e7ab7510"
+    },
+    {
+      "bytes": 67931,
       "origin": "schedule/badge/schedule/schedule_view.py",
       "path": "apps/schedule/schedule_view.py",
-      "sha256": "2e8c89e97226820b250e25690b33e0c61502066d7b7f89224afe2861b580e143"
+      "sha256": "170584251dd1a4e05b725ad76567c5d9e9fed4e75a23ec340562117b390c57ea"
     },
     {
       "bytes": 2308,
@@ -1254,22 +953,22 @@
       "sha256": "5f5dd03f2af9961db3b06e526472519b3f959ebeacd9d161def82e6e14ce76f4"
     },
     {
-      "bytes": 18768,
+      "bytes": 25937,
       "origin": "settings/badge/settings/__init__.py",
       "path": "apps/settings/__init__.py",
-      "sha256": "897f886512f687db0d79802a104df2711dfdfbb2f3a42eaeced71139e0b71785"
+      "sha256": "279aef7ced857b2f43ae53696484bd9dddd740952176cd4a0ed153b09d24be6f"
     },
     {
-      "bytes": 9950,
+      "bytes": 9947,
       "origin": "settings/badge/settings/backlight.py",
       "path": "apps/settings/backlight.py",
-      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
+      "sha256": "6f9ac25b592bfdba341b789d34618a49b334c60e00c8493f95aa96430b79a2a0"
     },
     {
-      "bytes": 6767,
+      "bytes": 6729,
       "origin": "settings/badge/settings/brightness_store.py",
       "path": "apps/settings/brightness_store.py",
-      "sha256": "4560d11805543366791a0b4eb93f05cfc0e851d02249640da57761938ffa96e6"
+      "sha256": "9c0a12351a8555d0357e9be6250f6ce61f16e6c3424be07953605324f7e6dd38"
     },
     {
       "bytes": 182,
@@ -1278,34 +977,221 @@
       "sha256": "7a4af70ec8182b5a96e026e985150e12955a88c18749dc98ef4ded17e75ee848"
     },
     {
-      "bytes": 4358,
+      "bytes": 4354,
       "origin": "settings/badge/settings/score_wipe.py",
       "path": "apps/settings/score_wipe.py",
-      "sha256": "19aa7396f36ec4007db0bdba569eabeb7e0b1c1fdee0c9ccbda3011da20904ee"
+      "sha256": "428f1dd11091dab1fb72c63417ea8d81d753d28469563c3b4e0b2929c68dfe85"
     },
     {
-      "bytes": 38720,
+      "bytes": 53063,
       "origin": "settings/badge/settings/settings_copy.py",
       "path": "apps/settings/settings_copy.py",
-      "sha256": "baf1a997801b95156c8d096c213c2785ad813970f7d93e510c0f7196a0e929eb"
+      "sha256": "8c0124884ad4d49437e2de4f8fb856ce0f2b05f514b677c222b4e7d98cb53b79"
     },
     {
-      "bytes": 62236,
+      "bytes": 85176,
       "origin": "settings/badge/settings/settings_model.py",
       "path": "apps/settings/settings_model.py",
-      "sha256": "7787685510b334d81e7706d6b378ab797ef50f2ba57786b9a2ced4b93cb5c25a"
+      "sha256": "69019d58b64ec072126746b43446f0ec89a3b5fbf78c1005f179313f33007e40"
     },
     {
-      "bytes": 32373,
+      "bytes": 46337,
       "origin": "settings/badge/settings/settings_view.py",
       "path": "apps/settings/settings_view.py",
-      "sha256": "b03b86df26d4f2223f4146b5348cd2fa5190891044b55f5e3fa53a7d474f7dc3"
+      "sha256": "ae4b43ace9ed50cd14e108383efb3e85e042aad6de015810498296f9295bafb0"
     },
     {
-      "bytes": 33327,
+      "bytes": 33323,
       "origin": "settings/badge/settings/ui.py",
       "path": "apps/settings/ui.py",
-      "sha256": "3e74801e22379df4ca5338ce3304bdc9a5d62a9fa8787e6f7a3151910571f435"
+      "sha256": "a902a34862fbaf4d5917865416e1fdaefc90274092a9da65eda5315eeb2f90b7"
+    },
+    {
+      "bytes": 2959,
+      "generated": true,
+      "note": "export-only",
+      "path": "apps/setup/README.md",
+      "sha256": "ed4f546ac97f25eb77484fdc0c61e13883592d329581e6c5ac1dbc63956b70ae"
+    },
+    {
+      "bytes": 19291,
+      "origin": "setup/badge/setup/__init__.py",
+      "path": "apps/setup/__init__.py",
+      "sha256": "8b2203313028a06fcc4e1cab54cd39064bffe75053ffd77e53c4d3a900840ff0"
+    },
+    {
+      "bytes": 290332,
+      "origin": "setup/badge/setup/assets/glyphskins.gpk",
+      "path": "apps/setup/assets/glyphskins.gpk",
+      "sha256": "4c301f70602b215bf45417243dfc820224a82a0f69eade09b9925cfbdffcc931"
+    },
+    {
+      "bytes": 51746,
+      "origin": "setup/badge/setup/assets/stickers-36-p8.png",
+      "path": "apps/setup/assets/stickers-36-p8.png",
+      "sha256": "9dda3d5675ccfe7a9f8978b5febb727b451808ee86992f04238331653c3a5224"
+    },
+    {
+      "bytes": 27936,
+      "origin": "setup/badge/setup/backdrop.py",
+      "path": "apps/setup/backdrop.py",
+      "sha256": "aab27fa146704090161f3b6abcb72360ffa54ad11f45f05db7e0182c54c2f66e"
+    },
+    {
+      "bytes": 9947,
+      "origin": "setup/badge/setup/backlight.py",
+      "path": "apps/setup/backlight.py",
+      "sha256": "6f9ac25b592bfdba341b789d34618a49b334c60e00c8493f95aa96430b79a2a0"
+    },
+    {
+      "bytes": 44783,
+      "origin": "setup/badge/setup/card_app.py",
+      "path": "apps/setup/card_app.py",
+      "sha256": "e6ed1eb61289bc52738780c8ce349f2ebd04d4c0ce4fb0e6b7bef32abc5523a2"
+    },
+    {
+      "bytes": 51519,
+      "origin": "setup/badge/setup/card_bake.py",
+      "path": "apps/setup/card_bake.py",
+      "sha256": "af0a64d1c7de182212e1a5f0dae408c132737f7844dd77964260a3008e413b6e"
+    },
+    {
+      "bytes": 6772,
+      "origin": "setup/badge/setup/card_board.py",
+      "path": "apps/setup/card_board.py",
+      "sha256": "2e21d7bbf8d69aee6e0332c05678d22c60ec15b323a4b8d1cedd6ec30dc40fa3"
+    },
+    {
+      "bytes": 8218,
+      "origin": "setup/badge/setup/card_cache.py",
+      "path": "apps/setup/card_cache.py",
+      "sha256": "06a27a7f33c86d3fff896afa214b475cfabfb57a648267841ec4bdecf021ce82"
+    },
+    {
+      "bytes": 5550,
+      "origin": "setup/badge/setup/card_faces.py",
+      "path": "apps/setup/card_faces.py",
+      "sha256": "8004f830edd721e2d246ed6304323a97df65dee802eeb69728caa08379430124"
+    },
+    {
+      "bytes": 46726,
+      "origin": "setup/badge/setup/card_model.py",
+      "path": "apps/setup/card_model.py",
+      "sha256": "16c3b7b0312eb8e79554304e4df01e920d156803e159d1f6eed4d0f0b8c81ebd"
+    },
+    {
+      "bytes": 2023,
+      "origin": "setup/badge/setup/card_name_positions.py",
+      "path": "apps/setup/card_name_positions.py",
+      "sha256": "a5d1b0caf641878608808000bce5765928a9b14461977bf1e96ced29980a99b2"
+    },
+    {
+      "bytes": 7474,
+      "origin": "setup/badge/setup/card_store.py",
+      "path": "apps/setup/card_store.py",
+      "sha256": "38e9f768b88da2e096b2daf2f9fccafba4554c29069412b01b8948bfb73039a5"
+    },
+    {
+      "bytes": 46574,
+      "origin": "setup/badge/setup/card_view.py",
+      "path": "apps/setup/card_view.py",
+      "sha256": "72d04be0b87e2eb7c03cae7db36db5204ff9916f71d7a51c07da4bfa7eb64c63"
+    },
+    {
+      "bytes": 14410,
+      "origin": "setup/badge/setup/effects.py",
+      "path": "apps/setup/effects.py",
+      "sha256": "43e24ec7a79f8b6647ab64d82df14d44b1b443627f6ffbb3763cca7b4e75319e"
+    },
+    {
+      "bytes": 42556,
+      "origin": "setup/badge/setup/glyphskin.py",
+      "path": "apps/setup/glyphskin.py",
+      "sha256": "de9683643abecc9d47393297de609a7dc8ad014e9ffcf9c6176fa058cd379e0c"
+    },
+    {
+      "bytes": 146,
+      "origin": "setup/badge/setup/icon.png",
+      "path": "apps/setup/icon.png",
+      "sha256": "1e8d181166ff7173cee411537e95cd69cf13e700e669f19aeb4550fdfac40923"
+    },
+    {
+      "bytes": 12537,
+      "origin": "setup/badge/setup/identity_catalogue.py",
+      "path": "apps/setup/identity_catalogue.py",
+      "sha256": "8ad2e8920b95c3826f37122f835e291198266b40841c47ee13a84fee9ef8a226"
+    },
+    {
+      "bytes": 5152,
+      "origin": "setup/badge/setup/identity_faces.py",
+      "path": "apps/setup/identity_faces.py",
+      "sha256": "2173f46bac274343fb06f30a1912e86a71b8d507da88927ecf5c8c927452db82"
+    },
+    {
+      "bytes": 13743,
+      "origin": "setup/badge/setup/identity_keyboard.py",
+      "path": "apps/setup/identity_keyboard.py",
+      "sha256": "019607a830790d05af07da6ffc86305c7887cc89cb30c6b5e117b063a67fa626"
+    },
+    {
+      "bytes": 6621,
+      "origin": "setup/badge/setup/identity_marks.py",
+      "path": "apps/setup/identity_marks.py",
+      "sha256": "0ccce7655df225231d779e44ce60e8f1b2888a52e16060b945728368c6bd8d22"
+    },
+    {
+      "bytes": 16369,
+      "origin": "setup/badge/setup/idle.py",
+      "path": "apps/setup/idle.py",
+      "sha256": "20d64ac3454963ae43e6e5f8eceda2f7592c1389c0470a2662c6abd9d7f08f57"
+    },
+    {
+      "bytes": 16382,
+      "origin": "setup/badge/setup/kb_shell.py",
+      "path": "apps/setup/kb_shell.py",
+      "sha256": "2f5ef5e0dd7f3883f4a8a5141f593b4ac757e13f54fc47d54b589a49ef2aeef1"
+    },
+    {
+      "bytes": 37609,
+      "origin": "setup/badge/setup/kbqwerty_board.py",
+      "path": "apps/setup/kbqwerty_board.py",
+      "sha256": "296d1ff98f982e44910ef37c09de84a4bf83d04fb0aa38914beb9cf99f40b32c"
+    },
+    {
+      "bytes": 21108,
+      "origin": "setup/badge/setup/loading.py",
+      "path": "apps/setup/loading.py",
+      "sha256": "3f148d48d03f1edf191739c8a1a95f8d8e9adc2e78c81676ef0b673631a1657e"
+    },
+    {
+      "bytes": 13207,
+      "origin": "setup/badge/setup/loading_sql.py",
+      "path": "apps/setup/loading_sql.py",
+      "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
+    },
+    {
+      "bytes": 79958,
+      "origin": "setup/badge/setup/nametag.py",
+      "path": "apps/setup/nametag.py",
+      "sha256": "e1ac290206e3e6bec210d162ad14a70d395340f8085e43909767ec0e4e4ff682"
+    },
+    {
+      "bytes": 326156,
+      "origin": "setup/badge/setup/skins.py",
+      "path": "apps/setup/skins.py",
+      "sha256": "2158075bac07aee016f1b84626cfcb235c24c253d1aa48f82580f9dac59e9b38"
+    },
+    {
+      "bytes": 33323,
+      "origin": "setup/badge/setup/ui.py",
+      "path": "apps/setup/ui.py",
+      "sha256": "a902a34862fbaf4d5917865416e1fdaefc90274092a9da65eda5315eeb2f90b7"
+    },
+    {
+      "bytes": 23508,
+      "origin": "setup/badge/setup/wallpaper.py",
+      "path": "apps/setup/wallpaper.py",
+      "sha256": "988d44bc0ed4e33c2dbcef30330a6906a8a6baced91e88caab36e2bfdb1b897d"
     },
     {
       "bytes": 2555,
@@ -1334,10 +1220,10 @@
       "sha256": "5177c0338e9c65f90f146d4f33c8e41d8462ca7a137262e0c5013e7923f3ec5c"
     },
     {
-      "bytes": 9950,
+      "bytes": 9947,
       "origin": "snake/badge/snake/backlight.py",
       "path": "apps/snake/backlight.py",
-      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
+      "sha256": "6f9ac25b592bfdba341b789d34618a49b334c60e00c8493f95aa96430b79a2a0"
     },
     {
       "bytes": 8514,
@@ -1352,10 +1238,10 @@
       "sha256": "4e6f46e7a9fd50ac1669b0abd70ea0b8edbf435dc0bc9282e119490c91e0cd72"
     },
     {
-      "bytes": 21016,
+      "bytes": 21108,
       "origin": "snake/badge/snake/loading.py",
       "path": "apps/snake/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
+      "sha256": "3f148d48d03f1edf191739c8a1a95f8d8e9adc2e78c81676ef0b673631a1657e"
     },
     {
       "bytes": 13207,
@@ -1413,40 +1299,292 @@
       "sha256": "630fb7f0bad2419ebe4cdc434be7a62802ccecc3fbc8328b68b01a1574255a1f"
     },
     {
-      "bytes": 1720,
+      "bytes": 1046,
+      "generated": true,
+      "note": "export-only",
+      "path": "lib/README.md",
+      "sha256": "940a1a388bb2bb5d5861c8cee78454403bfc91e114f7a1928b39cc571812051c"
+    },
+    {
+      "bytes": 391,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "network/vendor/aiohttp/__init__.py",
+      "path": "lib/aiohttp/__init__.py",
+      "sha256": "f3e359974d64557ac9461f5003b036f321e835b1fe3426f4523f1ee83304a342"
+    },
+    {
+      "bytes": 38230,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "network/vendor/aiohttp/aiohttp_ws.py",
+      "path": "lib/aiohttp/aiohttp_ws.py",
+      "sha256": "1b56524ba1a98a5999ae31ce388e1bfbac1852aac6a92a4801c9758e8ba61dec"
+    },
+    {
+      "bytes": 35816,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/bounded_dns.py",
+      "path": "lib/bounded_dns.py",
+      "sha256": "284a95f4a0dee9784885188a0936a2e95d0dc05fa741f9fe8177beb89c11c381"
+    },
+    {
+      "bytes": 1371,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/ca/gts-root-r1.der",
+      "path": "lib/ca/gts-root-r1.der",
+      "sha256": "d947432abde7b7fa90fc2e6b59101b1280e0e1c7e4e40fa3c6887fff57a7f4cf"
+    },
+    {
+      "bytes": 525,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/ca/gts-root-r4.der",
+      "path": "lib/ca/gts-root-r4.der",
+      "sha256": "349dfa4058c5e263123b398ae795573c4e1313c83fe68f93556cd5e8031b3c7d"
+    },
+    {
+      "bytes": 675,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/ca/gts-we1.der",
+      "path": "lib/ca/gts-we1.der",
+      "sha256": "1dfc1605fbad358d8bc844f76d15203fac9ca5c1a79fd4857ffaf2864fbebf96"
+    },
+    {
+      "bytes": 9953,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/caselight_program.py",
+      "path": "lib/caselight_program.py",
+      "sha256": "b775c709a126ec18d632fb13d74c501423e206a939752510fa66bc8facf092af"
+    },
+    {
+      "bytes": 14516,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/clock_boot.py",
+      "path": "lib/clock_boot.py",
+      "sha256": "603855a627c7a9476926aeeb89b17a220b98a5cf1d204d50b7010345aa24b42b"
+    },
+    {
+      "bytes": 3893,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/command_ledger.py",
+      "path": "lib/command_ledger.py",
+      "sha256": "d146cf41e96009272d55b29cc82cefba30ac7e3f1ce65933fc2df5eff05f9daf"
+    },
+    {
+      "bytes": 14409,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/command_schedule.py",
+      "path": "lib/command_schedule.py",
+      "sha256": "dc4fb369a3b90fe131ab0d1cae025cc80f617d065a454f022c3cbdc0ea69f18b"
+    },
+    {
+      "bytes": 8826,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/credentials.py",
+      "path": "lib/credentials.py",
+      "sha256": "cfaa974548ac10d1395551c68f16b67b6f369658f4d3c3357643accc99bd21b4"
+    },
+    {
+      "bytes": 53481,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/device_link.py",
+      "path": "lib/device_link.py",
+      "sha256": "8fd3d38a88cfc70438e7761552caa6429850f37f7bb58a8127b4d341d7676499"
+    },
+    {
+      "bytes": 9673,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/devicetoken.py",
+      "path": "lib/devicetoken.py",
+      "sha256": "19465cc5a640bd24d275c8c73bb28e6663dcc326b407be49b45ce5d4b66d9182"
+    },
+    {
+      "bytes": 36284,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/effect_library.py",
+      "path": "lib/effect_library.py",
+      "sha256": "0e3eea8723922c4d3803f202ab411ad7e8bff07b2dc0d6ca741f93fce747fe92"
+    },
+    {
+      "bytes": 16861,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/enabled_apps.py",
+      "path": "lib/enabled_apps.py",
+      "sha256": "2aded07c06226ae3ad07eec740c6c8f015347ab0270b9846068d8e5933908fb0"
+    },
+    {
+      "bytes": 5897,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/network_preference.py",
+      "path": "lib/network_preference.py",
+      "sha256": "d89c4b6edca8de6981cc014a34df19fbce8fc96887aa984ca660a815b6bd40c3"
+    },
+    {
+      "bytes": 344875,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/network_runtime.py",
+      "path": "lib/network_runtime.py",
+      "sha256": "065c61cb8d2defb5b067ca875e43cdde0074fcb095b776d209e9f7ac57fcd037"
+    },
+    {
+      "bytes": 9976,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/openapp_note.py",
+      "path": "lib/openapp_note.py",
+      "sha256": "6597231c26d240e31a84be7abd0211f6a31b3ff812edbe6e57996df8304d8e95"
+    },
+    {
+      "bytes": 10329,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/pairstate.py",
+      "path": "lib/pairstate.py",
+      "sha256": "1802094cc024c63950c7912eca57d27a8ce88e307487d4be1f48ef4318e2c667"
+    },
+    {
+      "bytes": 9665,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/pairview.py",
+      "path": "lib/pairview.py",
+      "sha256": "ce20a3757760394b7ecd1e4947c2a784d513a4d006f11c9f3617d3c12eb066a2"
+    },
+    {
+      "bytes": 119545,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/polltransport.py",
+      "path": "lib/polltransport.py",
+      "sha256": "44760bd08277c3b1ca9858bae11c9f6585a94286a57f96a89370d5d4eec135f8"
+    },
+    {
+      "bytes": 21201,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/postgrest.py",
+      "path": "lib/postgrest.py",
+      "sha256": "baef876d9758d8cf074e8a0310abcbf63fb03c814bd7966ba22ddbf496216e69"
+    },
+    {
+      "bytes": 155299,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/pushlink.py",
+      "path": "lib/pushlink.py",
+      "sha256": "537f2468bd0291e8140f6ce704aca4129187dbc4d1bab8ca8bdf378d516a596d"
+    },
+    {
+      "bytes": 1060,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/radio_policy.py",
+      "path": "lib/radio_policy.py",
+      "sha256": "d779156be18f612ad1be8d1c27a711a9ff68f3f6457c3c07a972c569706009d9"
+    },
+    {
+      "bytes": 1193,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/realtime/__init__.py",
+      "path": "lib/realtime/__init__.py",
+      "sha256": "0e9cc29d02e200368588d61be8cc3847ac223bd9650f18734ca5e73f0d975f1c"
+    },
+    {
+      "bytes": 37510,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/realtime/client.py",
+      "path": "lib/realtime/client.py",
+      "sha256": "020365317c790f1a3852f9c1c710db45b4a7254375bc59567640af30d951e9d0"
+    },
+    {
+      "bytes": 13630,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/realtime/phoenix.py",
+      "path": "lib/realtime/phoenix.py",
+      "sha256": "1b3f33ec61b5c29c7693f8d2bd2d6f8ca1c0970489f7fe82f7058699c3cb3413"
+    },
+    {
+      "bytes": 15482,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "network/badge/resilient_wifi.py",
+      "path": "lib/resilient_wifi.py",
+      "sha256": "87792b2360cd418ff3c05ad05df186dad332a4fb2f543737da0ae9c10657dc38"
+    },
+    {
+      "bytes": 24309,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/rpc_contract.py",
+      "path": "lib/rpc_contract.py",
+      "sha256": "4d01b57f555691f2a452536ebc7a89903116fe2291d7626c37e22a6d6ae8a419"
+    },
+    {
+      "bytes": 40989,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/schedule_store.py",
+      "path": "lib/schedule_store.py",
+      "sha256": "f8c7f9467d77b02f4a2e9a6e984cf0242a4e4badb390fbc9ac3f1cc73057e9a0"
+    },
+    {
+      "bytes": 34253,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/scorebox.py",
+      "path": "lib/scorebox.py",
+      "sha256": "069be43053310218b1ba73af1ab3c5f8c827e61b32d9c120aca4edfcef756bde"
+    },
+    {
+      "bytes": 21023,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/setup_state.py",
+      "path": "lib/setup_state.py",
+      "sha256": "20eb9fb53db101af571ebdee2733ce1c4d04022c00430e0853d9cee49529bb4e"
+    },
+    {
+      "bytes": 3395,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/store.py",
+      "path": "lib/store.py",
+      "sha256": "a6cf79af944ec505915ba70744b7cec12628cbac8bcbb605e441d78841de94ab"
+    },
+    {
+      "bytes": 7018,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "badgelink/badge/badgelink/verified_tls.py",
+      "path": "lib/verified_tls.py",
+      "sha256": "7b2f012d04caa23c59619b4a25759a925c5de625c664066feb91fb1689dc984f"
+    },
+    {
+      "bytes": 3141,
+      "note": "the network runtime; tools/build.py compiles it to /system/lib",
+      "origin": "network/badge/ws_backoff.py",
+      "path": "lib/ws_backoff.py",
+      "sha256": "bcbbd604c210c9a145566dd93f1a2212cf714a3f35a68584a47a4b471bde5074"
+    },
+    {
+      "bytes": 1722,
       "generated": true,
       "note": "stock main + Poster handoff + /system/lib block",
       "origin": "supervisor/system/stock-v3.0.1-main.py",
       "path": "main.py",
-      "sha256": "473af0ba8c39d54cab592b74c260fed6e56028e9faf5bd7343b77fe32dfdd9d6"
+      "sha256": "991845b464ada892a43ef586b2cb11c6c3ca95a4a6fc8f596f0288897ab12918"
     },
     {
-      "bytes": 4630,
+      "bytes": 4747,
       "generated": true,
       "note": "export-only",
       "path": "shared/README.md",
-      "sha256": "189c970d7d8f2c5bcc95e6211e66d78b47c4714da5fe3407bef532cd0d4f98ee"
+      "sha256": "df38ef1ad1fcb60082316ab9e5d2987d3d6f8ab276be758ff758abc780f20490"
     },
     {
-      "bytes": 27931,
+      "bytes": 27936,
       "note": "export-only: the canonical copy, not installed on the badge",
       "origin": "shared/backdrop.py",
       "path": "shared/backdrop.py",
-      "sha256": "be2598cb18a1d291d0544261f2068de736c3d4723edec5b4b0f7c7538ec62fea"
+      "sha256": "aab27fa146704090161f3b6abcb72360ffa54ad11f45f05db7e0182c54c2f66e"
     },
     {
-      "bytes": 9950,
+      "bytes": 9947,
       "note": "export-only: the canonical copy, not installed on the badge",
       "origin": "shared/backlight.py",
       "path": "shared/backlight.py",
-      "sha256": "170d7d82a61c18a738e9fe137041bc57231997e63c8f85e47363f255e3d548af"
+      "sha256": "6f9ac25b592bfdba341b789d34618a49b334c60e00c8493f95aa96430b79a2a0"
     },
     {
-      "bytes": 14415,
+      "bytes": 14410,
       "note": "export-only: the canonical copy, not installed on the badge",
       "origin": "shared/effects.py",
       "path": "shared/effects.py",
-      "sha256": "bb721b56c6fbf0c55949a4040dcf6a2d05773b9526dc1f01d9b5c1e635a147c9"
+      "sha256": "43e24ec7a79f8b6647ab64d82df14d44b1b443627f6ffbb3763cca7b4e75319e"
     },
     {
       "bytes": 8514,
@@ -1456,25 +1594,25 @@
       "sha256": "1f0f19b61cceb16634ae9ffd596b6bcea8fcf88b7d87cdda391d81c003d549d8"
     },
     {
-      "bytes": 16389,
+      "bytes": 16369,
       "note": "export-only: the canonical copy, not installed on the badge",
       "origin": "shared/idle.py",
       "path": "shared/idle.py",
-      "sha256": "6813adc13426d04bab7897540b03a220b5ec4b36ce6d9045bb39fc232ca58492"
+      "sha256": "20d64ac3454963ae43e6e5f8eceda2f7592c1389c0470a2662c6abd9d7f08f57"
     },
     {
-      "bytes": 16337,
+      "bytes": 16382,
       "note": "export-only: the canonical copy, not installed on the badge",
       "origin": "shared/kb_shell.py",
       "path": "shared/kb_shell.py",
-      "sha256": "31f116f02961d08196836dd6325c1e27fc1bdb1a52c4795278250a4e052c1769"
+      "sha256": "2f5ef5e0dd7f3883f4a8a5141f593b4ac757e13f54fc47d54b589a49ef2aeef1"
     },
     {
-      "bytes": 21016,
+      "bytes": 21108,
       "note": "export-only: the canonical copy, not installed on the badge",
       "origin": "shared/loading.py",
       "path": "shared/loading.py",
-      "sha256": "d5339050b70cd1fcbe5fa36991ec0f8af7a52a084547dac872603d11468dc1b6"
+      "sha256": "3f148d48d03f1edf191739c8a1a95f8d8e9adc2e78c81676ef0b673631a1657e"
     },
     {
       "bytes": 13207,
@@ -1484,11 +1622,11 @@
       "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
     },
     {
-      "bytes": 81216,
+      "bytes": 79958,
       "note": "export-only: the canonical copy, not installed on the badge",
-      "origin": "shared/poster.py",
-      "path": "shared/poster.py",
-      "sha256": "a79fb23f79d65391621fd5e4cf87eb36a96a3ecc114823002b4cb217216faa33"
+      "origin": "shared/nametag.py",
+      "path": "shared/nametag.py",
+      "sha256": "e1ac290206e3e6bec210d162ad14a70d395340f8085e43909767ec0e4e4ff682"
     },
     {
       "bytes": 17668,
@@ -1498,11 +1636,11 @@
       "sha256": "1a381db3d5ef9bc0c7acdeaec93ffcde70a1e2065c31cf008816728920fe4a37"
     },
     {
-      "bytes": 33327,
+      "bytes": 33323,
       "note": "export-only: the canonical copy, not installed on the badge",
       "origin": "shared/ui.py",
       "path": "shared/ui.py",
-      "sha256": "3e74801e22379df4ca5338ce3304bdc9a5d62a9fa8787e6f7a3151910571f435"
+      "sha256": "a902a34862fbaf4d5917865416e1fdaefc90274092a9da65eda5315eeb2f90b7"
     },
     {
       "bytes": 23508,
@@ -1512,16 +1650,16 @@
       "sha256": "988d44bc0ed4e33c2dbcef30330a6906a8a6baced91e88caab36e2bfdb1b897d"
     },
     {
-      "bytes": 58656,
+      "bytes": 96105,
       "note": "export-only: the builder, not installed on the badge",
       "origin": "scripts/export-source-build.py",
       "path": "tools/build.py",
-      "sha256": "1b2df402bb3c6c9ea0bfb01d0ece491385f7a55ae6b9d9cfeb0ceba11c4149cd"
+      "sha256": "3d7e363467e11e0c3c530759569566897aaed2f0efb681db776e9ef1054ea1c8"
     }
   ],
   "gates": [
     {
-      "detail": "210 files scanned; no populated credential, private address or /state content",
+      "detail": "187 files scanned; no populated credential, private address or /state content",
       "gate": "secrets",
       "offenders": [],
       "ok": true
@@ -1557,58 +1695,56 @@
       "ok": true
     },
     {
-      "detail": "57 shipped copies match their canonical source",
+      "detail": "51 shipped copies match their canonical source",
       "gate": "vendored-copies-identical",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "106 modules scanned; every import is local, firmware or guarded",
+      "detail": "90 modules scanned; every import is local, firmware or guarded",
       "gate": "imports-resolve",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "123 .py files compile",
+      "detail": "140 .py files compile",
       "gate": "python-compiles",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "9 app directories: the roster's 8 shipping apps plus the launcher",
+      "detail": "8 app directories: the roster's 7 shipping apps plus the launcher",
       "export": [
-        "badgecard",
         "flappy",
         "glyph",
         "menu",
-        "pet",
-        "poster",
+        "nametag",
         "schedule",
         "settings",
+        "setup",
         "snake"
       ],
       "gate": "lineup-matches-roster",
       "ok": true,
       "roster": [
-        "badgecard",
         "flappy",
         "glyph",
         "menu",
-        "pet",
-        "poster",
+        "nametag",
         "schedule",
         "settings",
+        "setup",
         "snake"
       ]
     },
     {
-      "detail": "apps-roster.json ships and names the 9 exported directories",
+      "detail": "apps-roster.json ships and names the 7 exported directories",
       "gate": "roster-ships-and-matches",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "50 excluded-app notes carry rationale and no exhaust",
+      "detail": "52 excluded-app notes carry rationale and no exhaust",
       "gate": "manifest-narrative-clean",
       "offenders": [],
       "ok": true
@@ -1620,7 +1756,7 @@
       "ok": true
     },
     {
-      "detail": "glyph/full: 42 deck assets",
+      "detail": "no app is asset-profiled",
       "gate": "deck-assets-present",
       "offenders": [],
       "ok": true
@@ -1638,32 +1774,53 @@
       "ok": true
     },
     {
-      "detail": "the README's 209 payload files / 9,979,825 bytes and 210 manifest rows all match the manifest",
+      "detail": "the README's 186 payload files / 5,541,440 bytes and 187 manifest rows all match the manifest",
       "gate": "readme-matches-manifest",
       "offenders": [],
       "ok": true
     },
     {
-      "detail": "146 text files scanned; every hold duration agrees with HOLD_MS = 1500 ms in apps/menu/ui.py",
+      "detail": "130 text files scanned; every hold duration agrees with HOLD_MS = 1500 ms in apps/menu/ui.py",
       "gate": "hold-contract-consistent",
       "hold_ms": 1500,
       "offenders": [],
       "ok": true
     },
     {
+      "agendas": 1,
+      "detail": "1 baked agenda(s) cover the declared conference day 2026-10-02",
+      "event_date": "2026-10-02",
+      "gate": "schedule-covers-event-date",
+      "offenders": [],
+      "ok": true,
+      "placeholder_titles": []
+    },
+    {
+      "agendas": 1,
+      "detail": "1 baked agenda(s) declare PDT / UTC-07:00 for 2026-10-02 in America/Los_Angeles",
+      "event_date": "2026-10-02",
+      "expected_timezone": "PDT",
+      "expected_utc_offset_min": -420,
+      "gate": "schedule-timezone-matches-event-date",
+      "offenders": [],
+      "ok": true,
+      "venue": "San Francisco, California",
+      "venue_timezone": "America/Los_Angeles"
+    },
+    {
       "bytecode_verified": true,
-      "detail": "36 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 43 guarded import sites across 21 files, 3 launcher `badge.mode` call site(s), pet debounced, one install procedure, a 6,672,697 B staged /system, 813,615 B of bytecode measured from 106 modules, within 128 B of the pin",
+      "detail": "36 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 59 guarded import sites across 24 files, 3 launcher `badge.mode` call site(s), nothing debounced, one install procedure, a 1,459,579 B staged /system, no automation-enforcement claim, 479,617 B of bytecode measured from 84 modules, within 128 B of the pin",
       "gate": "doc-claims-verified",
       "offenders": [],
       "ok": true
     },
     {
       "counts": {
-        "passed": 62,
-        "ran": 73,
-        "skipped": 11
+        "passed": 78,
+        "ran": 92,
+        "skipped": 14
       },
-      "detail": "apps/poster/tests: 73 tests ran from the export, 62 passed, 11 skipped as repository-only",
+      "detail": "apps/nametag/tests: 92 tests ran from the export, 78 passed, 14 skipped as repository-only",
       "gate": "included-tests-run",
       "offenders": [],
       "ok": true
@@ -1680,54 +1837,54 @@
         {
           "class": "val-identifiers",
           "fatal": false,
-          "files": 11,
-          "occurrences": 14,
+          "files": 14,
+          "occurrences": 20,
           "what": "`VAL-*` rows in a validation table the reader does not have"
         },
         {
           "class": "owner-quotations",
           "fatal": false,
-          "files": 50,
-          "occurrences": 219,
+          "files": 66,
+          "occurrences": 327,
           "what": "a quoted block with an owner attribution beside it"
         },
         {
           "class": "verbatim-ruling-blocks",
           "fatal": false,
-          "files": 31,
-          "occurrences": 58,
+          "files": 32,
+          "occurrences": 73,
           "what": "the `*\"...\"*` verbatim-ruling form, a subset of the line above"
         },
         {
           "class": "benchmark-report-paths",
           "fatal": false,
-          "files": 16,
-          "occurrences": 23,
+          "files": 18,
+          "occurrences": 28,
           "what": "a path into `benchmark/results/`"
         },
         {
           "class": "repository-doc-paths",
           "fatal": false,
-          "files": 71,
-          "occurrences": 172,
+          "files": 73,
+          "occurrences": 186,
           "what": "a path into `docs/` other than this export's own prose"
         },
         {
           "class": "other-internal-paths",
           "fatal": false,
-          "files": 72,
-          "occurrences": 201,
+          "files": 83,
+          "occurrences": 257,
           "what": "a path into another tree this export omits (`*/host/`, `research/`, ...)"
         }
       ],
-      "detail": "census over 147 text subjects (report-only except device-identifiers): device-identifiers 0/0f!, val-identifiers 14/11f, owner-quotations 219/50f, verbatim-ruling-blocks 58/31f, benchmark-report-paths 23/16f, repository-doc-paths 172/71f, other-internal-paths 201/72f -- per-file counts kept in a maintainer report outside this package",
+      "detail": "census over 164 text subjects (report-only except device-identifiers): device-identifiers 0/0f!, val-identifiers 20/14f, owner-quotations 327/66f, verbatim-ruling-blocks 73/32f, benchmark-report-paths 28/18f, repository-doc-paths 186/73f, other-internal-paths 257/83f -- per-file counts kept in a maintainer report outside this package",
       "gate": "internal-exhaust-census",
       "offenders": [],
       "ok": true
     }
   ],
   "provenance": {
-    "commit": "153a63bdf07832177f3013523d513354ff6b22a7",
+    "commit": "599cea74de2a093849adee485a4d3ad66dda13ab",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1738,13 +1895,11 @@
   ],
   "roster": {
     "apps": [
-      "badgecard",
-      "poster",
+      "setup",
+      "nametag",
       "schedule",
       "snake",
       "flappy",
-      "pet",
-      "glyph",
       "settings"
     ],
     "launcher": "menu",
@@ -1760,7 +1915,7 @@
     "kb_shell.py",
     "loading.py",
     "loading_sql.py",
-    "poster.py",
+    "nametag.py",
     "score_sink.py",
     "ui.py",
     "wallpaper.py"
@@ -1770,7 +1925,7 @@
     "IndieFlower-Regular.af": "a917728b392046f7bcd90575652613884af7bd3e9c435b7ca8b93cb07fae935c"
   },
   "tests_included": [
-    "poster"
+    "nametag"
   ],
   "toolchain": {
     "determinism_caveat": "The v3.0.2 UF2 is pinned to the PUBLIC RELEASE asset, not to the image the fleet is flashed with. Pimoroni's CI builds picovector from a floating `main`, so two images tagged v3.0.2 need not be byte-identical. Naming the exact production UF2 is an OPEN ASK to Pimoroni; until it is answered, a first-article check against a production-flashed unit is the only thing that closes the gap.",
@@ -1788,37 +1943,33 @@
     "version": "v3.0.2"
   },
   "totals": {
-    "bytes": 10007199,
-    "files": 210,
+    "bytes": 5570112,
+    "files": 187,
     "payload": {
-      "bytes": 9979825,
+      "bytes": 5541440,
       "excludes": [
         "README.md",
         "MANIFEST.json"
       ],
-      "files": 209
+      "files": 186
     }
   },
-  "tree_hash": "e0df2a5075110cb034c0a583dbb0f8f962dc77e4a824a64b9321fdce2edf6933",
+  "tree_hash": "ad44f59a5f670fa96b629023ece556b34f2cc3d921cdf3595eb1dfd0c877a27d",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/ui.py"
-        },
-        {
-          "app": "pet",
-          "path": "apps/pet/ui.py"
-        },
-        {
-          "app": "poster",
-          "path": "apps/poster/ui.py"
+          "app": "nametag",
+          "path": "apps/nametag/ui.py"
         },
         {
           "app": "settings",
           "path": "apps/settings/ui.py"
+        },
+        {
+          "app": "setup",
+          "path": "apps/setup/ui.py"
         }
       ],
       "in_export": "shared/ui.py",
@@ -1828,28 +1979,16 @@
       "canonical": "shared/backlight.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/backlight.py"
-        },
-        {
           "app": "flappy",
           "path": "apps/flappy/backlight.py"
-        },
-        {
-          "app": "glyph",
-          "path": "apps/glyph/backlight.py"
         },
         {
           "app": "menu",
           "path": "apps/menu/backlight.py"
         },
         {
-          "app": "pet",
-          "path": "apps/pet/backlight.py"
-        },
-        {
-          "app": "poster",
-          "path": "apps/poster/backlight.py"
+          "app": "nametag",
+          "path": "apps/nametag/backlight.py"
         },
         {
           "app": "schedule",
@@ -1858,6 +1997,10 @@
         {
           "app": "settings",
           "path": "apps/settings/backlight.py"
+        },
+        {
+          "app": "setup",
+          "path": "apps/setup/backlight.py"
         },
         {
           "app": "snake",
@@ -1871,12 +2014,12 @@
       "canonical": "shared/idle.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/idle.py"
-        },
-        {
           "app": "menu",
           "path": "apps/menu/idle.py"
+        },
+        {
+          "app": "setup",
+          "path": "apps/setup/idle.py"
         }
       ],
       "in_export": "shared/idle.py",
@@ -1886,28 +2029,20 @@
       "canonical": "shared/loading.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/loading.py"
-        },
-        {
           "app": "flappy",
           "path": "apps/flappy/loading.py"
-        },
-        {
-          "app": "glyph",
-          "path": "apps/glyph/loading.py"
         },
         {
           "app": "menu",
           "path": "apps/menu/loading.py"
         },
         {
-          "app": "pet",
-          "path": "apps/pet/loading.py"
-        },
-        {
           "app": "schedule",
           "path": "apps/schedule/loading.py"
+        },
+        {
+          "app": "setup",
+          "path": "apps/setup/loading.py"
         },
         {
           "app": "snake",
@@ -1921,28 +2056,20 @@
       "canonical": "shared/loading_sql.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/loading_sql.py"
-        },
-        {
           "app": "flappy",
           "path": "apps/flappy/loading_sql.py"
-        },
-        {
-          "app": "glyph",
-          "path": "apps/glyph/loading_sql.py"
         },
         {
           "app": "menu",
           "path": "apps/menu/loading_sql.py"
         },
         {
-          "app": "pet",
-          "path": "apps/pet/loading_sql.py"
-        },
-        {
           "app": "schedule",
           "path": "apps/schedule/loading_sql.py"
+        },
+        {
+          "app": "setup",
+          "path": "apps/setup/loading_sql.py"
         },
         {
           "app": "snake",
@@ -1986,8 +2113,8 @@
       "canonical": "shared/kb_shell.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/kb_shell.py"
+          "app": "setup",
+          "path": "apps/setup/kb_shell.py"
         }
       ],
       "in_export": "shared/kb_shell.py",
@@ -1997,8 +2124,8 @@
       "canonical": "identity/badge/identity/identity_keyboard.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/identity_keyboard.py"
+          "app": "setup",
+          "path": "apps/setup/identity_keyboard.py"
         }
       ],
       "in_export": null,
@@ -2008,64 +2135,75 @@
       "canonical": "kbqwerty/badge/kbqwerty/kbqwerty_board.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/kbqwerty_board.py"
+          "app": "setup",
+          "path": "apps/setup/kbqwerty_board.py"
         }
       ],
       "in_export": null,
       "module": "kbqwerty_board.py"
     },
     {
-      "canonical": "shared/poster.py",
+      "canonical": "shared/nametag.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/poster.py"
+          "app": "nametag",
+          "path": "apps/nametag/nametag.py"
         },
         {
-          "app": "poster",
-          "path": "apps/poster/poster.py"
+          "app": "setup",
+          "path": "apps/setup/nametag.py"
         }
       ],
-      "in_export": "shared/poster.py",
-      "module": "poster.py"
+      "in_export": "shared/nametag.py",
+      "module": "nametag.py"
+    },
+    {
+      "canonical": "setup/badge/setup/card_name_positions.py",
+      "copies": [
+        {
+          "app": "nametag",
+          "path": "apps/nametag/card_name_positions.py"
+        }
+      ],
+      "in_export": "apps/setup/card_name_positions.py",
+      "module": "card_name_positions.py"
     },
     {
       "canonical": "shared/effects.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/effects.py"
+          "app": "nametag",
+          "path": "apps/nametag/effects.py"
         },
         {
-          "app": "poster",
-          "path": "apps/poster/effects.py"
+          "app": "setup",
+          "path": "apps/setup/effects.py"
         }
       ],
       "in_export": "shared/effects.py",
       "module": "effects.py"
     },
     {
-      "canonical": "badgecard/badge/badgecard/identity_catalogue.py",
+      "canonical": "setup/badge/setup/identity_catalogue.py",
       "copies": [
         {
-          "app": "poster",
-          "path": "apps/poster/identity_catalogue.py"
+          "app": "nametag",
+          "path": "apps/nametag/identity_catalogue.py"
         }
       ],
-      "in_export": "apps/badgecard/identity_catalogue.py",
+      "in_export": "apps/setup/identity_catalogue.py",
       "module": "identity_catalogue.py"
     },
     {
       "canonical": "identity/badge/identity/identity_faces.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/identity_faces.py"
+          "app": "nametag",
+          "path": "apps/nametag/identity_faces.py"
         },
         {
-          "app": "poster",
-          "path": "apps/poster/identity_faces.py"
+          "app": "setup",
+          "path": "apps/setup/identity_faces.py"
         }
       ],
       "in_export": null,
@@ -2075,12 +2213,12 @@
       "canonical": "identity/badge/identity/identity_marks.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/identity_marks.py"
+          "app": "nametag",
+          "path": "apps/nametag/identity_marks.py"
         },
         {
-          "app": "poster",
-          "path": "apps/poster/identity_marks.py"
+          "app": "setup",
+          "path": "apps/setup/identity_marks.py"
         }
       ],
       "in_export": null,
@@ -2090,12 +2228,12 @@
       "canonical": "identity/badge/identity/glyphskin.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/glyphskin.py"
+          "app": "nametag",
+          "path": "apps/nametag/glyphskin.py"
         },
         {
-          "app": "poster",
-          "path": "apps/poster/glyphskin.py"
+          "app": "setup",
+          "path": "apps/setup/glyphskin.py"
         }
       ],
       "in_export": null,
@@ -2105,12 +2243,12 @@
       "canonical": "identity/badge/identity/assets/glyphskins.gpk",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/assets/glyphskins.gpk"
+          "app": "nametag",
+          "path": "apps/nametag/assets/glyphskins.gpk"
         },
         {
-          "app": "poster",
-          "path": "apps/poster/assets/glyphskins.gpk"
+          "app": "setup",
+          "path": "apps/setup/assets/glyphskins.gpk"
         }
       ],
       "in_export": null,
@@ -2120,12 +2258,12 @@
       "canonical": "shared/wallpaper.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/wallpaper.py"
-        },
-        {
           "app": "menu",
           "path": "apps/menu/wallpaper.py"
+        },
+        {
+          "app": "setup",
+          "path": "apps/setup/wallpaper.py"
         }
       ],
       "in_export": "shared/wallpaper.py",
@@ -2135,12 +2273,12 @@
       "canonical": "shared/backdrop.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/backdrop.py"
+          "app": "nametag",
+          "path": "apps/nametag/backdrop.py"
         },
         {
-          "app": "poster",
-          "path": "apps/poster/backdrop.py"
+          "app": "setup",
+          "path": "apps/setup/backdrop.py"
         }
       ],
       "in_export": "shared/backdrop.py",
@@ -2150,12 +2288,12 @@
       "canonical": "namebadge/badge/namebadge/skins.py",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/skins.py"
+          "app": "nametag",
+          "path": "apps/nametag/skins.py"
         },
         {
-          "app": "poster",
-          "path": "apps/poster/skins.py"
+          "app": "setup",
+          "path": "apps/setup/skins.py"
         }
       ],
       "in_export": null,
@@ -2165,12 +2303,12 @@
       "canonical": "namebadge/badge/namebadge/assets/stickers-36-p8.png",
       "copies": [
         {
-          "app": "badgecard",
-          "path": "apps/badgecard/assets/stickers-36-p8.png"
+          "app": "nametag",
+          "path": "apps/nametag/assets/stickers-36-p8.png"
         },
         {
-          "app": "poster",
-          "path": "apps/poster/assets/stickers-36-p8.png"
+          "app": "setup",
+          "path": "apps/setup/assets/stickers-36-p8.png"
         }
       ],
       "in_export": null,

@@ -49,14 +49,15 @@ import backlight  # noqa: E402
 from schedule_model import (  # noqa: E402
     CLOCK_TRUSTED,
     CLOCK_UNSET,
+    CACHE_PATH,
     OVERRIDE_PATH,
     clock_minutes,
     clock_state,
     current_indices,
+    display_freshness_mark,
     freshness,
-    freshness_mark,
     initial_index,
-    load_with_override,
+    load_with_cache,
     next_index,
     read_link_state,
     session_phases,
@@ -65,7 +66,8 @@ from schedule_model import (  # noqa: E402
 )
 _load.tick("-- schedule_model")
 from schedule_view import ScheduleView  # noqa: E402
-_load.step("-- 4 modules imported")
+from schedule_refresh import ScheduleRefresh  # noqa: E402
+_load.step("-- 5 modules imported")
 
 display.backlight(backlight.fraction(backlight.NORMAL))
 badge.caselights(0)
@@ -183,14 +185,22 @@ def _unavailable(detail, notice=None):
 # start time on the morning of the event, where the alternative is a USB cable
 # and a Disk Mode pass per badge.  Both paths go through the same guarded loader,
 # so neither can raise here; a corrupt override degrades to the baked copy with a
-# band on the panel rather than to the error screen.  See `load_with_override`.
-schedule, _schedule_source, _schedule_notice, _schedule_error = load_with_override()
+# band on the panel rather than to the error screen.  `load_with_cache` inserts
+# the last-good downloaded snapshot between that override and the baked floor.
+(schedule, _schedule_source, _schedule_notice, _schedule_error,
+ _cached_schedule, _cache_error) = load_with_cache()
 if schedule is None:
     gc.collect()
     _unavailable(_schedule_error, _schedule_notice)
 if _schedule_notice:
     print("SCHEDULE_OVERRIDE {}".format(_schedule_notice))
+if _cache_error:
+    print("SCHEDULE_CACHE rejected={}".format(_cache_error))
 _from_override = _schedule_source == OVERRIDE_PATH
+# A cache UUID proves where the file came from, not when it was last checked.
+# This bit is RAM-only and becomes true only after this open's conditional GET
+# succeeds; persisting it would let a reboot claim a verification it did not do.
+_display_verified = False
 # READ ONCE, AT OPEN, AND READ ONLY.  `badgelink`'s `/state/schedule.json` is
 # THEIR file and THEIR schema; this app takes TWO fields out of it -- the version
 # string and, since their Lane F landed it on 2026-08-24, the optional
@@ -205,7 +215,7 @@ _from_override = _schedule_source == OVERRIDE_PATH
 # and what their record does and does not contain, is in
 # `schedule_model.read_link_state` and `schedule/README.md`.
 _link_version, _link_synced_at = read_link_state()
-_load.step("-- 14 rows from schedule.json")
+_load.step("-- {} sessions loaded".format(len(schedule["sessions"])))
 _load.tick("NOTICE:  MonaSans 74 KB")
 # The caselights carry the one pause nothing on the panel can carry.
 badge.caselights(0.35)
@@ -216,7 +226,30 @@ view = ScheduleView(
 badge.caselights(0)
 _load.step("-- face resolved, 18 pt")
 view.build_layout_cache(on_session=_load.tick)
-_load.step("-- 14 blocks measured")
+_load.step("-- {} blocks measured".format(len(schedule["sessions"])))
+
+
+def _new_view(value):
+    """Build an offscreen view with the exact shipping renderer configuration."""
+
+    # An invalid manual override stays authoritative until the file is fixed or
+    # removed.  A network swap changes the fallback underneath it, not the
+    # reason the warning band is on screen, so the replacement inherits notice.
+    return ScheduleView(
+        screen, color, font, image, rect, value, config.UI_SCALE,
+        _schedule_notice,
+        config.SOFTKEYS,
+        # `font.load` returns a distinct retained ~73,792 B object and costs
+        # ~111 ms (VAL-020-CH). A live refresh uses the same panel and scale, so
+        # the old immutable face is the correct state to share with its
+        # offscreen replacement while both views coexist.
+        (view.face, view.vector, view.font_size),
+    )
+
+
+_refresh = ScheduleRefresh(
+    schedule, view, _schedule_source, _cached_schedule, _new_view,
+)
 last_clock_refresh = time.ticks_add(time.ticks_ms(), -CLOCK_REFRESH_MS)
 last_clock_report = None
 # Each tab is positioned on the clock once, the first time it is shown with a
@@ -286,9 +319,9 @@ def _refresh_clock(force=False):
     # of the agenda file is a wall-clock question, so a badge reading a real date
     # three days before the event can still judge how old its copy is.  The AGE
     # no longer reaches the panel -- the 2026-08-24 ruling replaced every
-    # freshness sentence with a glyph -- but it is still what decides FRESH_STALE
-    # against the 12-hour threshold, so it is still computed here and it is still
-    # in the serial marker's change key.
+    # freshness sentence with a glyph. It still decides the legacy FRESH_STALE
+    # value in the serial marker's change key, but the schema-2 panel mark below
+    # is source plus this-open verification and does not consume this verdict.
     # A BELIEVABLE CLOCK IS ENOUGH, AND `CLOCK_OFF_DAY` COUNTS AS ONE. The event
     # window gates NOW claims; dating a file and dating a sync are wall-clock
     # questions, so a badge reading a real date three days before the event can
@@ -299,7 +332,10 @@ def _refresh_clock(force=False):
         schedule["event"], _link_version, None if state == CLOCK_UNSET else local,
         _link_synced_at,
     )
-    view.set_freshness(freshness_mark(verdict, _from_override))
+    # Legacy schema-1 version metadata remains useful on serial, but the v2 UI
+    # is source-only after reboot: manual/day-of, cache/unverified, baked/offline.
+    view.set_freshness(display_freshness_mark(
+        _schedule_source, _display_verified))
     if trusted and view.stage not in positioned:
         positioned.add(view.stage)
         view.select(initial_index(sessions, minutes))
@@ -387,14 +423,12 @@ def _switch_stage(delta):
 # FINAL_PROMPT_badge.md` §7.1 -- settings and home already covered, poster and
 # schedule the two to add. Kept apart so nobody reads a roster into #22.
 #
-# THIS APP IS THE ONE THAT MOST NEEDS THE NETWORK, and until 2026-08-26 it was
-# the one that could never get it. `_pump_schedule_sync` short-circuits unless
-# the backend reaches CONNECTED, and `network_runtime.
-# _placement_allows_establishment` is `at_launcher or active` -- so an app that
-# never calls `set_active(True)` withholds every establishment moment, and the
-# agenda a wearer opened the app to read could not refresh while they were
-# looking at it. The GET itself was already non-blocking (it rides the errand
-# channel, not a blocking fetch), so the opt-in was the only missing piece.
+# THIS APP IS THE ONE THAT MOST NEEDS THE NETWORK. Its v2 request is earned once
+# at app open and parks until the existing backend reaches CONNECTED, while
+# `network_runtime._placement_allows_establishment` is `at_launcher or active`.
+# Without `set_active(True)` the very app waiting for that GET would withhold
+# every establishment moment. The GET itself is non-blocking and rides the
+# existing errand channel; this opt-in lets that one open request make progress.
 #
 # THE ROSTER IS ALSO A CAPACITY CONTROL AND NOBODY PRICED THAT HALF. See the long
 # note beside `poster`'s opt-in for the argument; the short form is that the
@@ -448,12 +482,76 @@ def on_exit():
     _network_active(False)
 
 
+def _advance_schedule_refresh():
+    """Advance one bounded phase and apply a ready view before this frame draws."""
+
+    global schedule, view, _schedule_source, _from_override
+    global _display_verified, positioned, last_clock_report
+    result = _refresh.advance()
+    if result is None:
+        return
+    kind = result.get("kind")
+    if kind == "failed":
+        print("SCHEDULE_REFRESH failed={}".format(result.get("error")))
+        return
+    if kind == "cached":
+        # The wearer still sees `/schedule.json`; this marker is the only claim
+        # made until removing that override reveals the downloaded file.
+        print("SCHEDULE_REFRESH cached={} override=1".format(
+            result.get("artifact_id")))
+        return
+    if kind == "verified":
+        if not _from_override and _schedule_source == CACHE_PATH:
+            _display_verified = True
+            _refresh_clock(True)
+        print("SCHEDULE_REFRESH current={} displayed={}".format(
+            result.get("artifact_id"), int(_display_verified)))
+        return
+    if kind != "swap":
+        return
+
+    previous = view
+    old_positioned_ids = set()
+    for stage_index in positioned:
+        if 0 <= stage_index < len(previous.stages):
+            old_positioned_ids.add(previous.stages[stage_index]["id"])
+    schedule = result["schedule"]
+    view = result["view"]
+    _schedule_source = result["source"]
+    _from_override = False
+    _display_verified = True
+    positioned = set(
+        index for index, stage in enumerate(view.stages)
+        if stage["id"] in old_positioned_ids
+    )
+    # Navigation was adopted by semantic IDs. Marking the visible stage as
+    # positioned keeps the immediately following trusted clock refresh from
+    # undoing that preservation with its first-open auto-land.
+    positioned.add(view.stage)
+    last_clock_report = None
+    _refresh_clock(True)
+    print("SCHEDULE_REFRESH swapped={} sessions={} stage={}".format(
+        result.get("artifact_id"), len(schedule["sessions"]),
+        schedule["stages"][view.stage]["id"],
+    ))
+
+
 def update():
     # IDEMPOTENT AND PER FRAME. `set_active` raises MOMENT_VIEW_TRANSITION on
     # the False->True edge only, so after the first frame this is an attribute
     # lookup and a bool compare -- and doing it per frame is what survives a
     # `set_active(False)` raised from anywhere else while the agenda is still up.
     _network_active(True)
+    # ADVANCE BEFORE REQUEST. A real transport answers on a later frame, but a
+    # compatibility service or future warm in-memory service may invoke its
+    # callback synchronously. Advancing first guarantees that callback only
+    # stages bytes in this frame; validation cannot begin until the next one.
+    _advance_schedule_refresh()
+    # The controller is constructed once per app import/open. Calling its latch
+    # here survives a socket that is not ready on frame one without turning the
+    # frame callback into a cadence: only the first call reaches the service.
+    if _network is not None:
+        _refresh.request_once(_network)
     # FOUR LIVE KEYS, DOWN FROM FIVE, AND B IS DELIBERATELY UNBOUND.  UP/DOWN
     # move the focused thing up and down the screen; A and C are the leftward and
     # rightward direction, and what sits left and right here is the stage tabs

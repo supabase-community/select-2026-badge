@@ -270,10 +270,11 @@ class _Loader:
         THE LOADING SCREEN BORROWS THE SURFACE, IT DOES NOT OWN IT, and this is
         not hygiene -- it is a bug that shipped for an hour and a pixel oracle
         caught.  `tick()` is called from INSIDE the app's own work: `schedule`
-        passes it to `build_layout_cache`, which measures fourteen blocks with
-        `screen.measure_text` against `screen.font`.  Setting the loader's face
-        between two of those measurements silently measured the rest of the
-        agenda in the wrong font, and the text ran off the panel.
+        passes it to `build_layout_cache`, which measures every published block
+        with `screen.measure_text` against `screen.font`. Setting the loader's
+        face between two of those measurements silently measured the rest of
+        the agenda in the wrong font, and the text ran off the panel. The count
+        is deliberately data-driven: day-of schedules may replace every row.
         """
         try:
             return screen.pen, screen.font

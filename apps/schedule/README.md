@@ -1,6 +1,8 @@
-# schedule -- the offline conference agenda: two stage tabs, fourteen sessions, no network
+# schedule -- the offline conference agenda: two stage tabs, 26 rendered rows, no network
 
-One screen: a scrollable session list for the selected stage, typeset in an 18 pt vector face. It reads a baked `schedule.json`, preferring a hand-dropped `/schedule.json` override on the writable root so a wrong room can be fixed on the morning without a reflash. There is no network code and no time dial: if the clock is not trustworthy the badge shows the plain agenda and says nothing about time at all.
+One screen: a scrollable session list for the selected stage, with 18 pt titles and 15 pt speaker/company/description metadata. It reads a baked `schedule.json`, preferring a hand-dropped `/schedule.json` override on the writable root so a wrong room can be fixed on the morning without a reflash. There is no network code and no time dial: if the clock is not trustworthy the badge shows the plain agenda and says nothing about time at all.
+
+The baked SELECT 2026 transcription covers 2 October 2026 in PDT (`-420`) through 20:00. Its 26 Main/Build rows represent 23 physical events: doors, lunch and party are the only identities repeated across tabs, and seven labels retain `Atrium` as the physical location rather than making it a third tab. The Main-only break is not copied to Build, both Not Scheduled windows remain quiet hyphens, and all ten currently transcribed Build sessions ship. Stable semantic IDs let a future ten-to-eight Build snapshot remove sessions without renaming every survivor. This is an offline artifact claim; hosted refresh and physical-device behavior remain separate.
 
 **Controls.** UP/DOWN move to the previous or next session on this stage, wrapping at both ends, with no auto-repeat. A/C move between stage tabs. B is deliberately unbound -- it opened an offline time dial until that was ruled out, and it was not repurposed. HOME returns to the launcher. The softkey bar ships off; A/C are named by a hint in the tab row and UP/DOWN by chevrons drawn at the height of the physical buttons.
 

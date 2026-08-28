@@ -85,7 +85,7 @@ So the caches are now BOUNDED and DROPPABLE, and both halves matter:
   above) and only then clears wholesale, so the entry on screen keeps its
   tiles in the common case. Checked once per COLD tile build, never in the
   draw path. The pattern and the wholesale-clear-over-LRU reasoning are
-  ``badgecard/badge/badgecard/glyphskin.py``'s ``MAX_TILE_BYTES``.
+  ``setup/badge/setup/glyphskin.py``'s ``MAX_TILE_BYTES``.
 * ``drop_geometries_except()`` / ``drop_other_geometries()`` /
   ``drop_all_tiles()`` are the levers the app pulls when an allocation has
   already failed or is about to. Tiles are pure cache: giving them back is

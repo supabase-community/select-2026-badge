@@ -1,13 +1,11 @@
 {
-  "_doc": "THE APP LINEUP FOR THE ~800-UNIT SELECT BUILD, and the file `tools/build.py` reads. `apps` is the launcher's grid order and `launcher` is the one directory under `apps/` that is not on the grid: the boot host, which hides itself, making 9 directories in all. The build refuses any directory this file does not name. Extracted by `scripts/export-source.py` from the repository's own `apps-roster.json`, which is the single source both exporters read -- the decision narrative behind each entry stays in the repository, and `excluded` here carries one compacted sentence per entry instead.",
+  "_doc": "THE APP LINEUP FOR THE ~800-UNIT SELECT BUILD, and the file `tools/build.py` reads. `apps` is the launcher's grid order, `launcher` is the boot host, which hides itself, and `payload_only` names directories that are INSTALLED WITHOUT BEING TILES: they are compiled and copied, but they carry no `__init__` for the launcher's grid scan to find, because what another app reads out of them is the only reason they are there. 8 directories in all under `apps/`. The build refuses any directory this file does not name. Extracted by `scripts/export-source.py` from the repository's own `apps-roster.json`, which is the single source both exporters read -- the decision narrative behind each entry stays in the repository, and `excluded` here carries one compacted sentence per entry instead.",
   "apps": [
-    "badgecard",
-    "poster",
+    "setup",
+    "nametag",
     "schedule",
     "snake",
     "flappy",
-    "pet",
-    "glyph",
     "settings"
   ],
   "asset_profiles": {
@@ -20,24 +18,21 @@
         "classic-only"
       ]
     },
-    "selected": {
-      "glyph": "full"
-    }
+    "selected": {}
   },
   "descriptions": {
-    "badgecard": "The wearable name badge and its editor: name, handle, marks and theme, edited on the badge with the QWERTY keyboard and saved to /state.",
     "flappy": "POOLER.SQL, a tap-to-fly game about getting a query through the connection pool.",
-    "glyph": "An animated glyph viewer: 18 recorded techniques at two grid densities, A and C to step, B for the rear case lights.",
-    "menu": "The launcher. Boots the badge, draws the app grid, dims and opens the poster when idle, and plays the first-wake ceremony on a cold start.",
-    "pet": "A database pet that lives in a save file: it gets hungry, it gets bored, and it remembers how you treated it across reboots.",
-    "poster": "The badge, worn. Full-screen artwork, marks and name, and the resting state the launcher returns to after 30 seconds of nothing.",
+    "glyph": "Not a tile. The first-wake ceremony's decks, mask banks and player modules, installed at /system/apps/glyph because that is where the launcher reads them from; it has no __init__, so the grid never lists it.",
+    "menu": "The launcher. Boots the badge, draws the app grid, dims and opens the nametag when idle, and plays the first-wake ceremony on a cold start.",
+    "nametag": "The badge, worn. Full-screen artwork, marks and name, and the resting state the launcher returns to after 30 seconds of nothing.",
     "schedule": "The conference agenda, fully offline. Day tabs, session detail, and an honest clock: it says when it cannot trust the time instead of guessing.",
     "settings": "The utility tile: backlight, sleep, and the pairing and network status screens. With BadgeLink off it shows Not ready and everything else still works.",
+    "setup": "The wearable name badge and its editor: name, handle, marks and theme, edited on the badge with the QWERTY keyboard and saved to /state.",
     "snake": "Snake, drawn at 160x120 and pixel-doubled, which is the look the games all landed on. A and C steer relative to travel, UP and DOWN are absolute, and the walls wrap."
   },
   "excluded": {
     "badge_dial": "Name Badge experiment board, archived 2026-08-18.",
-    "badge_grid": "Name Badge experiment board, archived 2026-08-18. The badge_* family were experiments FOR badgecard.",
+    "badge_grid": "Name Badge experiment board, archived 2026-08-18. The badge_* family were experiments FOR setup.",
     "badge_hires": "Name Badge experiment board, archived 2026-08-18.",
     "badge_line": "Name Badge experiment board, archived 2026-08-18.",
     "badgelink": "Not a tile. BadgeLink's badge modules ship as bytecode in /system/lib (OWNER-DECISIONS #1) and are consumed by the settings tile; the badgelink app directory is its dev surface.",
@@ -53,24 +48,41 @@
     "glyph_lab": "Dev lab: perceptual tunables, option-surfing surface.",
     "glyph_review": "Dev lab: a review harness for the glyph decks, not a product tile.",
     "home_latency": "Playground-only measurement app; has no build_mpy tree.",
-    "identity": "ARCHIVED 2026-08-18 (AGENTS.md). badgecard vendors the same renderer.",
+    "identity": "ARCHIVED 2026-08-18 (AGENTS.md). setup vendors the same renderer.",
     "kbgrid": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING, having already been RULED OUT of `production` before that. [quotation removed].",
     "kbqwerty": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING \u2014 and this is the entry that CLOSES the keyboard question rather than deferring it. [quotation removed].",
     "pacman": "OFF THE PRODUCTION LIST, owner ruling 2026-08-24: minimal distribution for now. Same ruling, same shape and same reversibility as `breakout` above: move the name back to `apps` and restore its description line ([quotation removed]).",
+    "pet": "OFF THE PRODUCTION LIST, owner ruling 2026-08-28, together with the `glyph` TILE. The tree is untouched and stays in `PRODUCTION_TREES`, so the app is still compiled and reproducibility-checked; move the name back into `production.apps` and restore its description line to ship it again.",
     "pong": "OFF THE PRODUCTION LIST, owner ruling 2026-08-24: minimal distribution for now. Same ruling, same shape and same reversibility as `breakout` above: move the name back to `apps` and restore its description line ([quotation removed]).",
-    "profile": "ARCHIVED: superseded by badgecard. Its runtimePath is /system/apps/badge, which would collide with nothing today but is the old curated-launcher `badge` tile.",
+    "profile": "ARCHIVED: superseded by setup. Its runtimePath is /system/apps/badge, which would collide with nothing today but is the old curated-launcher `badge` tile.",
     "profile_stress": "Playground-only stress harness; has no build_mpy tree.",
     "snake2x": "RETIRED AS A TILE, 2026-08-23, BY OWNER RULING -- the one entry here that was decided by a person playing the badge rather than by consolidation or a technique verdict. [quotation removed].",
     "supervisor": "NOT the shipping boot architecture. [repository record] \u00a7Product-state boundary: the product keeps the factory reset-per-app control flow, with no background network supervisor active."
   },
-  "icon_default_ok": [
-    "poster"
-  ],
+  "icon_default_ok": [],
   "launcher": "menu",
   "panel": "Pimoroni Tufty 2350",
+  "payload_only": {
+    "glyph": {
+      "keep": [
+        "glyph_render.*",
+        "glyph_vocab.*",
+        "glyph_stream.*",
+        "glyph_rich_lights.*",
+        "light_calibration_2x.*",
+        "wave_lights.*",
+        "assets/glyph-lut.bin",
+        "assets/glyph-masks.pfb",
+        "assets2x/glyph-masks-2x.pfb",
+        "assets2x/signal-ripple.gpa",
+        "assets2x/logo-sizzle.gpa"
+      ],
+      "reason": "TILE RETIRED BY OWNER RULING 2026-08-28; the PAYLOAD STAYS because the launcher's first-wake ceremony reads its decks out of `/system/apps/glyph` and vendors none of its own (`launcher/host/build_menu.py` section IT VENDORS NO ASSET, and `launcher/menu/first_wake.py` GLYPH_ROOT). The dependency is SOFT -- `first_wake.play()` is total and a missing deck degrades to `reason=noasset` -- so dropping the directory outright would not have crashed anything, it would have silently turned the intro animation off. This keeps the ceremony and drops ~3.4 MB of decks no longer reachable now that the viewer is gone."
+    }
+  },
   "system_lib": {
     "note": "Whether `/system/lib` ships at all. It does not: the network runtime is dark in this build. `main.py` keeps its guarded import either way, so the badge boots offline and prints `BADGELINK_NETWORK boot=offline error=ImportError`; `settings` is the only app that guards a `/system/lib` import and it degrades to its \"Not ready\" view.",
-    "ship": false
+    "ship": true
   },
   "target_firmware": "v3.0.2"
 }

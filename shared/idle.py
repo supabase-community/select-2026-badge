@@ -8,12 +8,12 @@ THIS FILE IS THE CANONICAL COPY.  EDIT IT HERE AND NOWHERE ELSE.
 THE OWNER'S DESIGN (`docs/design/idle-and-off.md` §1), and this module is the
 whole of its clock.  **THE TWO NUMBERS WERE RETUNED ON 2026-08-24, owner
 verbatim: *"should dim after 20 seconds of being inactive on the home screen and
-then switch to the poster after another 10 seconds"*.**  They were 30 s and 45 s
+then switch to the nametag after another 10 seconds"*.**  They were 30 s and 45 s
 for one day.
 
     20 s of no input   the screen DIMS.  The dim IS the idle signal; nothing
                        else announces it.
-    30 s of no input   the badge opens the POSTER.  The default resting state
+    30 s of no input   the badge opens the NAMETAG.  The default resting state
                        of this product is being a badge.
     ever               NOTHING.  There is no third rung.  The automatic path
                        always returns to the badge, never to a dark panel.
@@ -21,7 +21,7 @@ for one day.
 THE RUNGS BELOW ARE THE HOME SCREEN'S, and that is a scope the ruling states in
 its own first clause -- "on the home screen".  They are this module's DEFAULTS
 because the launcher is the surface the ruling is about and it takes them without
-an argument.  `badgecard` deliberately does not: see `CARD_DIM_MS`.
+an argument.  `setup` deliberately does not: see `CARD_DIM_MS`.
 
 WHY THERE IS NO SLEEP RUNG, stated here because this is the file somebody would
 add one to.  Sleeping is a thing a person chooses (the Settings row), and the
@@ -55,19 +55,19 @@ timer on one skin and a 30-second timer on another.
 
 WHAT COUNTS AS INPUT is the CALLER'S question and this module refuses to guess
 it.  `touch(now)` is the only way the clock is reset, and every caller passes
-its own definition -- the launcher's is any of five keys down, `badgecard`'s is
+its own definition -- the launcher's is any of five keys down, `setup`'s is
 `badge.held()`.  A module that read `badge.held()` itself could not be
 stepped off the device at all, which is the same argument
 `identity_keyboard` and `card_app` both record for taking their input as an
 argument.
 
 WHO WIRES THIS, AND THE ONE APP THAT DELIBERATELY DOES NOT.  The launcher and
-`badgecard`, and that is the whole list.  **`poster` wired this module between
-2026-08-23 and 2026-08-24 and no longer does** -- owner ruling: *"The poster app
-currently dims after a timeout.  Poster should never dim"*.  It is the resting
+`setup`, and that is the whole list.  **`nametag` wired this module between
+2026-08-23 and 2026-08-24 and no longer does** -- owner ruling: *"The nametag app
+currently dims after a timeout.  Nametag should never dim"*.  It is the resting
 state this ladder exists to REACH, so a dim there is the ladder undoing its own
 destination; it holds the wearer's chosen brightness for as long as it is open.
-`poster/badge/poster/idle.py` was deleted with the seam, so this file is
+`nametag/badge/nametag/idle.py` was deleted with the seam, so this file is
 vendored into two apps rather than three.
 
 `busy` IS PART OF THE DESIGN AND NOT AN AFTERTHOUGHT (§4.3).  A running game is
@@ -92,14 +92,14 @@ import time
 DIM_MS = 20000
 POSTER_MS = 30000
 
-# `badgecard`'S DIM IS DELIBERATELY STILL 30 s, AND THE ASYMMETRY IS UNRULED.
+# `setup`'S DIM IS DELIBERATELY STILL 30 s, AND THE ASYMMETRY IS UNRULED.
 # The 2026-08-24 ruling scoped itself to the home screen and said nothing about
 # the editor, so the editor keeps the number it shipped with rather than
 # inheriting a retune it was not part of.  There is a case for either answer -- a
 # wearer part-way through typing a name is doing something slower than browsing a
 # grid, which argues for the longer wait; one panel behaving two ways is a thing
 # a wearer could notice, which argues against -- and it is the owner's call, not
-# a builder's.  It is a named constant rather than a literal in `badgecard` so
+# a builder's.  It is a named constant rather than a literal in `setup` so
 # the divergence is visible from the file that owns the numbers.
 # `docs/design/idle-and-off.md` §5.1 carries it as an open question.
 CARD_DIM_MS = 30000
@@ -112,22 +112,22 @@ NOTHING = ""
 DIM = "dim"
 #: Input arrived while dimmed: the caller restores the wearer's brightness.
 WAKE = "wake"
-#: Cross the poster line: the caller opens the badge.  ONCE per idle spell.
-POSTER = "poster"
+#: Cross the nametag line: the caller opens the badge.  ONCE per idle spell.
+NAMETAG = "nametag"
 
 
 class Idle:
     """One badge's idle clock.  Pure: no `badge`, no `display`, no globals.
 
-    `poster_ms=None` disables the second rung, which is what `badgecard` passes:
+    `poster_ms=None` disables the second rung, which is what `setup` passes:
     only the LAUNCHER can open an app, so a second rung inside the editor could
     only mean exiting it and discarding whatever the wearer was part-way
     through.  It is expressed as an absent rung rather than as a special case in
     a caller.
 
-    `poster` passed this too until 2026-08-24, for a different reason that no
+    `nametag` passed this too until 2026-08-24, for a different reason that no
     longer applies -- it does not build a clock at all now (see the module
-    docstring), so `badgecard` is the only caller of this argument.
+    docstring), so `setup` is the only caller of this argument.
     """
 
     def __init__(self, now=0, dim_ms=DIM_MS, poster_ms=POSTER_MS):
@@ -135,7 +135,7 @@ class Idle:
         self.poster_ms = poster_ms
         self.since = now
         self.dimmed = False
-        #: True once the poster rung has fired for this idle spell, so the
+        #: True once the nametag rung has fired for this idle spell, so the
         #: caller cannot be handed the same transition twice while it waits for
         #: an app chain-load that takes several frames.
         self.opened = False
@@ -171,13 +171,13 @@ class Idle:
         return span if span > 0 else 0
 
     def poll(self, now, busy=False):
-        """Call once a frame.  Returns `NOTHING`, `DIM`, `WAKE` or `POSTER`.
+        """Call once a frame.  Returns `NOTHING`, `DIM`, `WAKE` or `NAMETAG`.
 
         `busy` holds the clock without being an input: see the module docstring.
 
         AT MOST ONE SIGNAL PER FRAME, and `DIM` is never skipped on the way to
-        `POSTER`.  A frame long enough to cross both lines at once reports the
-        dim first and the poster on the frame after, because the dim is the
+        `NAMETAG`.  A frame long enough to cross both lines at once reports the
+        dim first and the nametag on the frame after, because the dim is the
         thing the WEARER is owed -- if a stalled frame swallowed it, a badge
         would jump from full brightness straight to a different app with no
         signal in between, which is precisely the announcement the owner's
@@ -195,7 +195,7 @@ class Idle:
             return NOTHING
         if span >= self.poster_ms:
             self.opened = True
-            return POSTER
+            return NAMETAG
         return NOTHING
 
 
@@ -203,17 +203,17 @@ class Panel:
     """The clock above, plus the brightness it dims and restores.
 
     THE WHOLE APP-SIDE SEAM, in one object, because the alternative measured
-    badly: `poster/badge/poster/__init__.py` and
-    `badgecard/badge/badgecard/__init__.py` are both held under an entry-file cap
-    (`test_poster_app.EntryFootprintTests`, `test_card_purity.EntryFootprintTests`)
+    badly: `nametag/badge/nametag/__init__.py` and
+    `setup/badge/setup/__init__.py` are both held under an entry-file cap
+    (`test_nametag_app.EntryFootprintTests`, `test_card_purity.EntryFootprintTests`)
     and were at 15,319 and 16,290 bytes against 16,384 when this was written --
     1,065 and 94 bytes of headroom. A per-app copy of "write the panel only when
     the level moves, dim on DIM, restore on WAKE" would not have fitten in
     either. So it lives here once and each seam spends four lines.
 
-    THAT ARITHMETIC IS NOW HISTORY FOR ONE OF THE TWO: `poster` has no seam at
+    THAT ARITHMETIC IS NOW HISTORY FOR ONE OF THE TWO: `nametag` has no seam at
     all since the 2026-08-24 never-dims ruling, and both caps are 18 KB. The
-    argument still holds for the launcher and `badgecard`, and it is kept
+    argument still holds for the launcher and `setup`, and it is kept
     because it is why this class exists rather than three copies of eight lines.
 
     BOTH IMPURE THINGS ARE INJECTED, and that is what keeps this file free of
@@ -246,7 +246,7 @@ class Panel:
         self.clock = Idle(clock(), dim_ms, poster_ms)
         #: What was last written, so an idle app makes no device call at all --
         #: `display.backlight` is hardware for a value that moves once a minute
-        #: at most, which is why `poster` applies its own outside any frame loop
+        #: at most, which is why `nametag` applies its own outside any frame loop
         #: at all. None means "nothing has been written yet", which is NOT the
         #: same as 0 and is why this is not initialised to a level.
         self._lit = None
@@ -281,7 +281,7 @@ class Panel:
         path.  It is here because it is the only thing that stops this method
         WEDGING the pair if anyone ever calls it mid-session: writing the full
         level while `clock.dimmed` stayed True left an object that could never
-        dim again (`poll` goes straight to the poster rung) and whose
+        dim again (`poll` goes straight to the nametag rung) and whose
         `set_brightness` was silently swallowed by its own guard.
 
         The clock is NOT reset, because nobody touched the badge.  So a
@@ -309,7 +309,7 @@ class Panel:
     # -- the frame -----------------------------------------------------------
 
     def frame(self, touched, busy=False):
-        """One frame. Returns `NOTHING`, `DIM`, `WAKE` or `POSTER`.
+        """One frame. Returns `NOTHING`, `DIM`, `WAKE` or `NAMETAG`.
 
         The panel is ALREADY WRITTEN by the time this returns, for both `DIM`
         and `WAKE`. A caller acts on two of the four answers:
@@ -317,7 +317,7 @@ class Panel:
             WAKE     the press did nothing but restore the brightness, so
                      CONSUME it (D1: "the first press wakes ... and does
                      nothing else").
-            POSTER   open the badge. Only the launcher can; `badgecard`, the one
+            NAMETAG   open the badge. Only the launcher can; `setup`, the one
                      other caller, passes `poster_ms=None` and never sees this.
         """
         now = self._clock()

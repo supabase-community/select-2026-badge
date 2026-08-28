@@ -31,6 +31,7 @@ python3 tools/build.py --verify-manifest               # are these the published
 python3 tools/build.py --list                          # what would compile
 python3 tools/build.py --mpy-cross <path> ...          # compile; pins in BUILDING.md
 python3 tools/build.py --check --mpy-cross <path> ...  # prove it reproducible
+python3 tools/build.py --install <MOUNT>               # clear, copy, verify
 python3 tools/build.py --verify-mount <MOUNT>          # prove an install
 ```
 
@@ -39,7 +40,7 @@ python3 tools/build.py --verify-mount <MOUNT>          # prove an install
 Run the included test suite from this tree:
 
 ```sh
-python3 -m unittest discover -s apps/poster/tests -v
+python3 -m unittest discover -s apps/nametag/tests -v
 ```
 
 It passes from this layout; a few cases skip with a printed reason because they pin against trees this export deliberately omits. The suite is the worked example of how everything else is verified; the full suites live in the canonical repository.
@@ -48,52 +49,68 @@ It passes from this layout; a few cases skip with a printed reason because they 
 
 ## The guarded imports, in full
 
-**43 import sites across 21 files** are wrapped in a `try` that catches `ImportError`, and this list is generated from an AST walk of the tree you are holding rather than maintained by hand. `ARCHITECTURE.md` section 2 quotes these two numbers and the exporter's `doc-claims-verified` gate refuses a build where they disagree.
+**59 import sites across 24 files** are wrapped in a `try` that catches `ImportError`, and this list is generated from an AST walk of the tree you are holding rather than maintained by hand. `ARCHITECTURE.md` section 2 quotes these two numbers and the exporter's `doc-claims-verified` gate refuses a build where they disagree.
 
 A guarded import is how this tree survives its own omissions: the badge puts exactly one directory on `sys.path`, `/system/lib` is not in this export, and the launcher is the app whose failure needs a USB cable. An import moved OUT of one of these guards is a reset at launch, not a tidy-up.
 
 | file | line | imports |
 |---|---:|---|
-| `apps/badgecard/loading.py` | 147 | `os` |
-| `apps/badgecard/loading.py` | 306 | `loading_sql` |
-| `apps/badgecard/poster.py` | 89 | `backdrop` |
 | `apps/flappy/loading.py` | 147 | `os` |
-| `apps/flappy/loading.py` | 306 | `loading_sql` |
+| `apps/flappy/loading.py` | 307 | `loading_sql` |
 | `apps/flappy/score_sink.py` | 73 | `scorebox` |
-| `apps/glyph/__init__.py` | 82 | `glyph_variant` |
-| `apps/glyph/__init__.py` | 386 | `os` |
-| `apps/glyph/__init__.py` | 651 | `os` |
-| `apps/glyph/loading.py` | 147 | `os` |
-| `apps/glyph/loading.py` | 306 | `loading_sql` |
-| `apps/menu/first_wake.py` | 867 | `glyph_render` |
-| `apps/menu/first_wake.py` | 868 | `glyph_stream` |
-| `apps/menu/first_wake.py` | 885 | `glyph_rich_lights` |
-| `apps/menu/first_wake.py` | 886 | `light_calibration_2x` |
-| `apps/menu/first_wake.py` | 887 | `wave_lights` |
-| `apps/menu/first_wake.py` | 1199 | `os` |
+| `apps/menu/first_wake.py` | 920 | `glyph_render` |
+| `apps/menu/first_wake.py` | 921 | `glyph_stream` |
+| `apps/menu/first_wake.py` | 938 | `glyph_rich_lights` |
+| `apps/menu/first_wake.py` | 939 | `light_calibration_2x` |
+| `apps/menu/first_wake.py` | 940 | `wave_lights` |
+| `apps/menu/first_wake.py` | 1252 | `os` |
 | `apps/menu/loading.py` | 147 | `os` |
-| `apps/menu/loading.py` | 306 | `loading_sql` |
-| `apps/menu/ui.py` | 81 | `first_wake` |
-| `apps/menu/ui.py` | 171 | `loading` |
-| `apps/menu/ui.py` | 514 | `json` |
-| `apps/menu/ui.py` | 765 | `json` |
-| `apps/pet/loading.py` | 147 | `os` |
-| `apps/pet/loading.py` | 306 | `loading_sql` |
-| `apps/poster/poster.py` | 89 | `backdrop` |
+| `apps/menu/loading.py` | 307 | `loading_sql` |
+| `apps/menu/ui.py` | 82 | `first_wake` |
+| `apps/menu/ui.py` | 172 | `loading` |
+| `apps/menu/ui.py` | 515 | `json` |
+| `apps/menu/ui.py` | 766 | `json` |
+| `apps/nametag/glyph_show.py` | 98 | `effect_library` |
+| `apps/nametag/glyph_show.py` | 161 | `glyphskin` |
+| `apps/nametag/nametag.py` | 90 | `backdrop` |
 | `apps/schedule/loading.py` | 147 | `os` |
-| `apps/schedule/loading.py` | 306 | `loading_sql` |
+| `apps/schedule/loading.py` | 307 | `loading_sql` |
 | `apps/settings/__init__.py` | 93 | `pairstate` |
 | `apps/settings/__init__.py` | 94 | `pairview` |
 | `apps/settings/__init__.py` | 95 | `store` |
 | `apps/settings/__init__.py` | 117 | `scorebox` |
-| `apps/settings/settings_view.py` | 95 | `qrcode` |
+| `apps/settings/settings_view.py` | 108 | `qrcode` |
+| `apps/setup/loading.py` | 147 | `os` |
+| `apps/setup/loading.py` | 307 | `loading_sql` |
+| `apps/setup/nametag.py` | 90 | `backdrop` |
 | `apps/snake/loading.py` | 147 | `os` |
-| `apps/snake/loading.py` | 306 | `loading_sql` |
+| `apps/snake/loading.py` | 307 | `loading_sql` |
 | `apps/snake/score_sink.py` | 73 | `scorebox` |
 | `apps/snake/snake_profile.py` | 27 | `__import__(<dynamic>)` |
+| `lib/aiohttp/aiohttp_ws.py` | 19 | `from time import ticks_add` |
+| `lib/aiohttp/aiohttp_ws.py` | 20 | `from time import ticks_diff` |
+| `lib/aiohttp/aiohttp_ws.py` | 21 | `from time import ticks_ms` |
+| `lib/aiohttp/aiohttp_ws.py` | 173 | `ssl` |
+| `lib/network_runtime.py` | 754 | `machine` |
+| `lib/network_runtime.py` | 761 | `binascii` |
+| `lib/network_runtime.py` | 1512 | `pushlink` |
+| `lib/network_runtime.py` | 3103 | `command_schedule` |
+| `lib/network_runtime.py` | 3212 | `clock_boot` |
+| `lib/network_runtime.py` | 3814 | `os` |
+| `lib/network_runtime.py` | 3874 | `os` |
+| `lib/network_runtime.py` | 3986 | `scorebox` |
+| `lib/network_runtime.py` | 4154 | `hashlib` |
+| `lib/network_runtime.py` | 4523 | `schedule_store` |
+| `lib/pushlink.py` | 61 | `from time import ticks_add` |
+| `lib/pushlink.py` | 62 | `from time import ticks_diff` |
+| `lib/pushlink.py` | 63 | `from time import ticks_ms` |
+| `lib/realtime/client.py` | 74 | `from time import ticks_add` |
+| `lib/realtime/client.py` | 75 | `from time import ticks_diff` |
+| `lib/realtime/client.py` | 76 | `from time import ticks_ms` |
+| `lib/resilient_wifi.py` | 10 | `network` |
 | `main.py` | 5 | `network_runtime` |
 | `main.py` | 11 | `from realtime.client import BACKOFF_RESET_ON_FIRST_JOIN, RealtimeClient` |
 | `shared/loading.py` | 147 | `os` |
-| `shared/loading.py` | 306 | `loading_sql` |
-| `shared/poster.py` | 89 | `backdrop` |
+| `shared/loading.py` | 307 | `loading_sql` |
+| `shared/nametag.py` | 90 | `backdrop` |
 | `shared/score_sink.py` | 73 | `scorebox` |

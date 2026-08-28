@@ -3,13 +3,13 @@
   "event": {
     "id": "select-2026",
     "name": "SELECT 2026",
-    "start_date": "2026-08-14",
-    "end_date": "2026-08-14",
+    "start_date": "2026-10-02",
+    "end_date": "2026-10-02",
     "day_start": "09:00",
-    "day_end": "18:00",
-    "timezone": "PST",
-    "utc_offset_min": -480,
-    "generated_at": "2026-08-23 20:15"
+    "day_end": "20:00",
+    "timezone": "PDT",
+    "utc_offset_min": -420,
+    "generated_at": "2026-08-27 21:13"
   },
   "stages": [
     {
@@ -35,136 +35,283 @@
   ],
   "sessions": [
     {
-      "id": "session-001",
+      "id": "main-doors",
       "start": "09:00",
       "end": "10:00",
       "stage_id": "main",
       "kind": "logistics",
-      "title": "Doors Open & Breakfast",
-      "speakers": []
+      "title": "Doors Open / Coffee and Pastries",
+      "speakers": [],
+      "description": "Atrium"
     },
     {
-      "id": "session-002",
-      "start": "10:00",
-      "end": "11:00",
+      "id": "main-keynote-ant-copple",
+      "start": "10:25",
+      "end": "11:20",
       "stage_id": "main",
       "kind": "talk",
-      "title": "Keynote",
+      "title": "Keynote: Ant + Copple",
       "speakers": [
-        "Paul Copplestone, CEO, Supabase",
-        "Ant Wilson, CTO, Supabase"
+        "Ant Wilson, Supabase",
+        "Paul Copplestone, Supabase"
       ]
     },
     {
-      "id": "session-003",
-      "start": "11:00",
-      "end": "12:00",
+      "id": "main-general-sugu-deepthi",
+      "start": "11:20",
+      "end": "11:55",
       "stage_id": "main",
       "kind": "talk",
-      "title": "General Session",
+      "title": "General Session: Sugu + Deepthi",
       "speakers": [
-        "Sugu Sougoumarane, Multigres Lead, Supabase",
-        "Deepthi Sigireddi, Head of Databases, Supabase"
+        "Sugu Sougoumarane, Supabase",
+        "Deepthi Sigireddi, Supabase"
       ]
     },
     {
-      "id": "session-004",
+      "id": "main-lunch",
       "start": "12:00",
-      "end": "13:00",
+      "end": "13:25",
       "stage_id": "main",
       "kind": "break",
       "title": "Lunch",
-      "speakers": []
+      "speakers": [],
+      "description": "Atrium"
     },
     {
-      "id": "session-005",
-      "start": "13:00",
+      "id": "main-michael-seibel-dalton-caldwell",
+      "start": "13:30",
       "end": "14:00",
       "stage_id": "main",
       "kind": "talk",
-      "title": "General Session",
-      "speakers": []
+      "title": "Michael Seibel + Dalton Caldwell",
+      "speakers": [
+        "Michael Seibel, Y Combinator",
+        "Dalton Caldwell, Y Combinator"
+      ]
     },
     {
-      "id": "session-006",
-      "start": "14:00",
-      "end": "15:00",
+      "id": "main-thomas-dohmke",
+      "start": "14:10",
+      "end": "14:40",
+      "stage_id": "main",
+      "kind": "talk",
+      "title": "Thomas Dohmke",
+      "speakers": [
+        "Thomas Dohmke, Former GitHub"
+      ]
+    },
+    {
+      "id": "main-parag-agrawal",
+      "start": "14:45",
+      "end": "15:15",
+      "stage_id": "main",
+      "kind": "talk",
+      "title": "Parag Agrawal",
+      "speakers": [
+        "Parag Agrawal, Parallel"
+      ]
+    },
+    {
+      "id": "main-break",
+      "start": "15:15",
+      "end": "15:45",
       "stage_id": "main",
       "kind": "break",
       "title": "Break",
-      "speakers": []
+      "speakers": [],
+      "description": "Atrium"
     },
     {
-      "id": "session-007",
-      "start": "15:00",
-      "end": "16:00",
+      "id": "main-garry-tan",
+      "start": "15:45",
+      "end": "16:15",
       "stage_id": "main",
       "kind": "talk",
-      "title": "General Session",
+      "title": "Garry Tan",
+      "speakers": [
+        "Garry Tan, Y Combinator"
+      ]
+    },
+    {
+      "id": "main-open-slot-1",
+      "start": "16:20",
+      "end": "16:50",
+      "stage_id": "main",
+      "kind": "logistics",
+      "title": "-",
       "speakers": []
     },
     {
-      "id": "session-008",
-      "start": "16:00",
-      "end": "17:00",
+      "id": "main-katelyn-lesse-angela-jiang",
+      "start": "17:00",
+      "end": "17:30",
       "stage_id": "main",
       "kind": "talk",
-      "title": "Closing Keynote",
+      "title": "Katelyn Lesse and Angela Jiang",
+      "speakers": [
+        "Katelyn Lesse, Anthropic",
+        "Angela Jiang, Anthropic"
+      ]
+    },
+    {
+      "id": "main-open-slot-2",
+      "start": "17:35",
+      "end": "18:05",
+      "stage_id": "main",
+      "kind": "logistics",
+      "title": "-",
       "speakers": []
     },
     {
-      "id": "session-009",
-      "start": "13:00",
-      "end": "13:30",
+      "id": "main-party",
+      "start": "18:15",
+      "end": "20:00",
+      "stage_id": "main",
+      "kind": "logistics",
+      "title": "Closing Remarks + Party",
+      "speakers": [],
+      "description": "Atrium · Supabase"
+    },
+    {
+      "id": "build-doors",
+      "start": "09:00",
+      "end": "10:00",
       "stage_id": "build",
-      "kind": "talk",
-      "title": "Technical Session",
-      "speakers": []
+      "kind": "logistics",
+      "title": "Doors Open / Coffee and Pastries",
+      "speakers": [],
+      "description": "Atrium"
     },
     {
-      "id": "session-010",
+      "id": "build-lunch",
+      "start": "12:00",
+      "end": "13:25",
+      "stage_id": "build",
+      "kind": "break",
+      "title": "Lunch",
+      "speakers": [],
+      "description": "Atrium"
+    },
+    {
+      "id": "build-deep-dive-devx",
       "start": "13:30",
-      "end": "14:00",
+      "end": "13:45",
       "stage_id": "build",
       "kind": "talk",
-      "title": "Technical Session",
-      "speakers": []
+      "title": "Supabase Deep Dive (DevX)",
+      "speakers": [
+        "Supabase Employee"
+      ]
     },
     {
-      "id": "session-011",
-      "start": "14:00",
-      "end": "14:30",
+      "id": "build-deep-dive-ai",
+      "start": "13:50",
+      "end": "14:05",
       "stage_id": "build",
       "kind": "talk",
-      "title": "Technical Session",
-      "speakers": []
+      "title": "Supabase Deep Dive (AI)",
+      "speakers": [
+        "Supabase Employee"
+      ]
     },
     {
-      "id": "session-012",
+      "id": "build-vercel",
+      "start": "14:10",
+      "end": "14:25",
+      "stage_id": "build",
+      "kind": "talk",
+      "title": "Vercel Session",
+      "speakers": [
+        "Sponsor, Vercel"
+      ]
+    },
+    {
+      "id": "build-stripe",
       "start": "14:30",
-      "end": "15:00",
+      "end": "14:45",
       "stage_id": "build",
       "kind": "talk",
-      "title": "Technical Session",
-      "speakers": []
+      "title": "Stripe Session",
+      "speakers": [
+        "Sponsor, Stripe"
+      ]
     },
     {
-      "id": "session-013",
-      "start": "15:00",
-      "end": "15:30",
+      "id": "build-liderhub",
+      "start": "14:50",
+      "end": "15:05",
       "stage_id": "build",
       "kind": "talk",
-      "title": "Technical Session",
-      "speakers": []
+      "title": "Liderhub Session",
+      "speakers": [
+        "Pedro Elias Santana Silva, Liderhub"
+      ]
     },
     {
-      "id": "session-014",
+      "id": "build-svix",
+      "start": "15:10",
+      "end": "15:25",
+      "stage_id": "build",
+      "kind": "talk",
+      "title": "Svix Session",
+      "speakers": [
+        "Tom Hacohen, Svix"
+      ]
+    },
+    {
+      "id": "build-deep-dive-multigres",
       "start": "15:30",
-      "end": "16:00",
+      "end": "15:45",
       "stage_id": "build",
       "kind": "talk",
-      "title": "Technical Session",
-      "speakers": []
+      "title": "Supabase Deep Dive (Multigres)",
+      "speakers": [
+        "Supabase Employee"
+      ]
+    },
+    {
+      "id": "build-perplexity",
+      "start": "15:50",
+      "end": "16:05",
+      "stage_id": "build",
+      "kind": "talk",
+      "title": "Perplexity Session",
+      "speakers": [
+        "Nate Kupp, Perplexity"
+      ]
+    },
+    {
+      "id": "build-deep-dive-pipelines",
+      "start": "16:10",
+      "end": "16:25",
+      "stage_id": "build",
+      "kind": "talk",
+      "title": "Supabase Deep Dive (Pipelines)",
+      "speakers": [
+        "Supabase Employee"
+      ]
+    },
+    {
+      "id": "build-desygner",
+      "start": "16:30",
+      "end": "16:45",
+      "stage_id": "build",
+      "kind": "talk",
+      "title": "Desygner Session",
+      "speakers": [
+        "Alex Rich, Desygner"
+      ]
+    },
+    {
+      "id": "build-party",
+      "start": "18:15",
+      "end": "20:00",
+      "stage_id": "build",
+      "kind": "logistics",
+      "title": "Closing Remarks + Party",
+      "speakers": [],
+      "description": "Atrium"
     }
   ]
 }

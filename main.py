@@ -32,10 +32,10 @@ app_to_launch = launch("/system/apps/menu")
 # Stopping in Thonny can cause launch("/system/apps/menu") to return None
 if app_to_launch is not None:
 
-    # Poster is selected by a held-level threshold. Its update consumes only
+    # Nametag is selected by a held-level threshold. Its update consumes only
     # press edges, so an already-held key cannot leak into it. Every ordinary
     # app keeps the factory drain unchanged.
-    if app_to_launch != "/system/apps/poster":
+    if app_to_launch != "/system/apps/nametag":
         while badge.pressed() or badge.held() or badge.released():
             badge.poll()
 

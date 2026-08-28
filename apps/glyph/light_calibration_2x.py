@@ -18,7 +18,7 @@ TECHNIQUE_CALIBRATION_2X = {
     # one-frame delta p95 with it.
     #
     # ⚠ NOT the lights an unconfigured badge shows, though it is that badge's
-    # DEFAULT_BACKGROUND since 2026-08-26: `badgecard` and `poster` both call
+    # DEFAULT_BACKGROUND since 2026-08-26: `setup` and `nametag` both call
     # `badge.caselights(0)` at their entry seam, so a worn badge is DARK behind
     # whatever it wears. These scales reach a panel from the `glyph` viewer tile
     # alone -- not the boot ripple, whose decks are `RIPPLE_SEQUENCE`.

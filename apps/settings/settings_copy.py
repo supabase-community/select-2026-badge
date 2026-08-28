@@ -222,9 +222,9 @@ ROW_NETWORK_LABEL = "Network"
 #: only exists on a badge whose boot pump actually has a doorbell to control.
 ROW_PUSH_LABEL = "Updates"
 #: The panel's own row (owner ruling, 2026-08-24: *"Take brightness out of
-#: badgecard. That should only exist in settings."*). "Brightness" and not
+#: setup. That should only exist in settings."*). "Brightness" and not
 #: "Screen" or "Backlight": it is the word the wearer would use, the word the
-#: ladder's own names describe, and the word `badgecard`'s row carried for the
+#: ladder's own names describe, and the word `setup`'s row carried for the
 #: day it lived there -- a wearer who learned it there meets it again.
 ROW_BRIGHT_LABEL = "Brightness"
 #: The only route to OFF (owner design, 2026-08-23; see
@@ -268,14 +268,14 @@ SLEEP_LINE_RESTART = "The badge restarts when it wakes"
 #
 # THE ONLY DESTRUCTIVE ACTION IN THIS TILE, so it is the only place here that
 # follows B7's confirmation shape: KEEP on A, B EMPTY AND INERT, the verb on C.
-# The precedent is `badgecard`'s RESET BADGE, and this copy owes it two rules.
+# The precedent is `setup`'s RESET BADGE, and this copy owes it two rules.
 #
-# THE MODAL NAMES WHAT IT TAKES *AND* WHAT IT KEEPS. `badgecard`'s confirmation
+# THE MODAL NAMES WHAT IT TAKES *AND* WHAT IT KEEPS. `setup`'s confirmation
 # ends on "SCORES AND WIFI ARE KEPT" because a wearer standing at a conference
 # deciding whether to press C is exactly the person who needs to know what
 # survives. This screen is the other side of that sentence -- the one press on
 # this badge that DOES take the scores -- so it has to be equally exact about the
-# boundary, and `badgecard`'s promise stays true: resetting a card still keeps
+# boundary, and `setup`'s promise stays true: resetting a card still keeps
 # the scores, and this row still keeps the card.
 #
 # AND IT MUST NOT OVERCLAIM. Erasing is local and nothing more. A score already
@@ -295,7 +295,7 @@ SCORES_LINE_CLEARS = "Erases every game's high score"
 SCORES_LINE_SPOOL = "and any score not sent yet"
 SCORES_LINE_SENT = "Scores already sent stay sent"
 SCORES_LINE_KEEPS = "Your badge and wifi are kept"
-#: A on the question, and the word is `badgecard`'s: a wearer who met this
+#: A on the question, and the word is `setup`'s: a wearer who met this
 #: decision there meets the same answer here.
 KEEP = "KEEP"
 #: C on the question. "ERASE" and not "WIPE": it is the verb the title uses, and
@@ -634,6 +634,209 @@ PUSH_WAS_LINES = {
 }
 
 
+# -- the diagnostics screen --------------------------------------------------
+#
+# THE ONE SCREEN IN THIS TILE WHOSE AUDIENCE IS NOT THE WEARER, and that is a
+# declared exception to this file's founding rule rather than a lapse from it.
+# Everywhere else the owner's 2026-08-21 ruling holds: protocol words are not
+# human words. Here the reader is whoever is holding the badge trying to explain
+# it -- at a bench, or at the event with 800 of them -- and the values they need
+# are the runtime's OWN, the ones `network_runtime` prints on serial and
+# `PushLink.snapshot()` publishes. Translating `policy_source = default` into a
+# friendly sentence would break the correlation that is the entire point, and
+# the wearer already has the Updates screen, which says the same facts in their
+# language. The one place this screen DOES translate is `policy_source` itself,
+# and the reason is below: the raw word is actively misleading.
+#
+# WHAT IT COST TO NOT HAVE THIS, three times on 2026-08-27, an hour each:
+#
+# 1. The Updates screen read `PUSH_LINE_BLOCKED` -- "The event turned this off
+#    for now" -- and nobody could tell a venue that had really said no from a
+#    badge that had not been told yet. The steering read is deliberately phased
+#    60-240 s after boot so 800 badges do not stampede, and every app exit is
+#    `machine.reset()`, so "not told yet" is the NORMAL state for the first
+#    minutes after every app switch. `DIAG_POLICY_LINES` is the fix and it is
+#    THE MOST VALUABLE LINE ON THIS SCREEN.
+# 2. The Updates screen read `PUSH_LINE_DEMOTED` -- "The fast connection kept
+#    failing" -- with `DEMOTE_AFTER_SESSIONS` at 3 and no way to see how far
+#    along that count the badge was. `DIAG_LINE_SESSIONS` draws 2/3 against 3/3,
+#    which the runtime's own comment names as the whole difference.
+# 3. Command latency measured bimodal: 0.40/0.44/0.55 s against 1.34-2.38 s over
+#    12 `set_caselights` inserts -- a doorbell ring against the 3 s
+#    `ACTIVE_CADENCE_MS` poll floor underneath it. `event:doorbell` is a SHARED
+#    topic and its filter is fail-safe by design (it rings only on a positive
+#    hardware-UID match), so a UID comparison that never matches is
+#    indistinguishable from a venue that never publishes. `DIAG_LINE_BELLS` and
+#    `DIAG_LINE_FLAGS` separate them, and note the counters are DISJOINT:
+#    `doorbells` counts only broadcasts that passed the filter, so the signature
+#    of a filter that never matches is `other` climbing while `Bells` stays 0.
+# 4. And on 2026-08-28 a live `0x04` UserBroadcast was captured ON THE WIRE by
+#    `realtime_join_probe.py --listen`, which runs the badge's own shipping
+#    `RealtimeClient` -- so the server-side fan-out is proven and the badge still
+#    read `Bells 0  other 0`. Neither counter can explain that: both count
+#    broadcasts that reached layer 3, and an opcode-2 frame the decoder refuses
+#    is counted and SKIPPED by `_handle_binary` without producing one.
+#    `DIAG_LINE_BELLS`'s third field is that counter, and it is the difference
+#    between a decoder bug and a vendored WebSocket that delivers no binary
+#    frames at all.
+#
+# EVERY VALUE IS STILL FOLDED AND BOUNDED BEFORE IT IS DRAWN. The words are the
+# runtime's; the GLYPHS are still this app's pre-baked 95, and the band is still
+# 308 px. `last_error` is `_error_text`'s 160-character "ClassName: message" and
+# a mode literal can come from a `/system/lib` newer than this app, so both go
+# through `ascii_fold` and `DIAG_TEXT_CHARS`; the counters go through
+# `DIAG_COUNT_MAX`. See those constants.
+
+#: HOW MUCH OF A RUNTIME-SUPPLIED STRING THIS SCREEN WILL DRAW.
+#:
+#: THE BOUND IS TYPOGRAPHY, WHICH IS WHY IT LIVES IN THE COPY MODULE AND NOT IN
+#: THE MODEL. `settings_model` applies it; this file owns the number, because it
+#: is the number `test_settings_fit.py` prices -- one constant, one worst case,
+#: one place to change if the band ever changes.
+#:
+#: FIFTEEN, AND IT IS DERIVED RATHER THAN CHOSEN. `W` is the widest glyph in
+#: `MonaSans-Medium` at 17 pt (14.742 px) and the content width is 308 px, so
+#: the two lines that carry a runtime string are priced at their worst: `Push
+#: mode: ` + 15 W is 306.9 px and `Last error: ` + 15 W is 295.4 px. Sixteen
+#: busts the first of those, and this screen has exactly eight bands for eight
+#: lines -- a line that wraps to two takes a band from a line below it.
+#:
+#: IT IS ENOUGH FOR THE THING IT IS FOR. The `session_failed` vocabulary fits
+#: whole: `join_unanswered` is 15, `connect_failed` and `token_unusable` 14,
+#: `join_refused` 12. A longer `OSError: [Errno ...]` loses its tail and keeps
+#: the class, which is the half that identifies it.
+DIAG_TEXT_CHARS = 15
+
+#: THE LARGEST COUNTER VALUE DRAWN AS ITSELF; past it the line reads `9999+`.
+#:
+#: A CAP AND NOT A CLIP. Clipping 12345 to `1234` is a WRONG NUMBER a reader
+#: would believe; `9999+` is a true statement about a value too wide for the
+#: band. It is reachable in the field rather than theoretical: an 800-badge
+#: fleet show is 799 suppressions on every badge, so `doorbells_filtered` passes
+#: four figures after about a dozen shows.
+DIAG_COUNT_MAX = 9999
+#: The same idea for the demotion pair, which is bounded by construction --
+#: `failed_sessions` cannot exceed `DEMOTE_AFTER_SESSIONS`, which is 3 -- so
+#: this is a backstop against a hand-edited or newer runtime rather than a
+#: budget. It is tighter because its line already carries two four-figure
+#: counters: `Joins 9999+  fails 9999+  demote 99+/99+` is 293.8 px of 308.
+DIAG_SMALL_MAX = 99
+#: The worst values the bounds above permit, for `every_string()`. Composed from
+#: the constants, never spelled out, so a change to a bound reprices itself
+#: instead of quietly leaving the corpus behind.
+_WIDEST = "W" * DIAG_TEXT_CHARS
+_WIDEST_COUNT = "{}+".format(DIAG_COUNT_MAX)
+_WIDEST_SMALL = "{}+".format(DIAG_SMALL_MAX)
+
+ROW_DIAG_LABEL = "Diagnostics"
+DIAG_TITLE = "Diagnostics"
+#: C on this screen: drop the latched worst frame and start again. The verb is
+#: the stutter meter's whole method -- hold a steady animation, trigger ONE
+#: suspect operation by hand, read what it cost -- which needs a floor you can
+#: zero between attempts. NOT "CLEAR": nothing is erased, a measurement is
+#: restarted. 48.1 px of the 68 px softkey box, against `CANCEL`'s 62.69 px.
+DIAG_RESET = "RESET"
+
+#: No doorbell object on this badge: no push factory in `/system/main.py`, or a
+#: `/system/lib` older than `push_control().diagnostics()`. NOT ZEROES -- a
+#: zeroed counter is a measurement, and this is the absence of one.
+DIAG_NO_PUSH = "No push details on this badge"
+#: One field this build did not publish, where a number or a yes/no would go.
+#: The line still draws, because the fields beside it are still true.
+DIAG_MISSING = "?"
+DIAG_YES = "yes"
+DIAG_NO = "no"
+
+#: `PushLink.mode()`. Its own line, and that is forced rather than chosen: the
+#: line below carries three yes/no fields, and a worst-case mode literal beside
+#: them measured 386.7 px against a 308 px band.
+DIAG_LINE_MODE = "Push mode: {}"
+#: `joined` (the channel is joined), `socket_open` (a socket exists) and
+#: `targeted` (the ring filter CAN answer yes at all). The first two disagree
+#: during a handshake, which is the window an operator is trying to see into;
+#: `uid no` beside a climbing `other` on the line below is a badge that will
+#: never ring, and `PushLink.snapshot`'s own comment names it the first thing to
+#: read when the fleet delivers zero rows.
+DIAG_LINE_LINK = "Join {}  sock {}  uid {}"
+#: `sessions_joined` / `sessions_failed`, then the DEMOTION progress:
+#: `failed_sessions` of `demote_after`. The last pair is the 2-of-3 against
+#: 3-of-3 distinction; the first pair is whether this badge has ever joined at
+#: all, which separates "it worked and stopped" from "it never worked".
+DIAG_LINE_SESSIONS = "Joins {}  fails {}  demote {}/{}"
+#: `doorbells` (broadcasts that PASSED the filter), `doorbells_filtered`
+#: (broadcasts suppressed as somebody else's) and `binary_frames_ignored` (the
+#: layer-2 counter, lifted by `network_runtime.PUSH_DIAGNOSTIC_CLIENT_KEYS`).
+#: The first two are disjoint, not subset -- see the block above. "other" rather
+#: than "filtered": the filter's question is whose bell it was.
+#:
+#: THE THIRD FIELD COSTS NO BAND AND ANSWERS THE 2026-08-28 QUESTION. A live
+#: `0x04` `UserBroadcast` was captured ON THE WIRE that night by
+#: `badgelink/host/realtime_join_probe.py --listen` -- 274 bytes, opcode 2,
+#: topic `realtime:event:doorbell`, no `replayed` key -- so the server-side
+#: fan-out is PROVEN and the host probe that saw it runs the badge's own
+#: shipping `RealtimeClient`. The badge still read `Bells 0  other 0`, which
+#: those two numbers alone cannot explain: they count broadcasts that reached
+#: layer 3, and `_handle_binary` counts-and-SKIPS a frame the decoder refuses
+#: without ever producing one. So `skip` climbing means opcode-2 frames DO
+#: arrive and `phoenix.decode_binary` refuses them; `skip 0` beside two zeroes
+#: means the vendored `aiohttp_ws` never handed a binary frame upward. That is
+#: the whole remaining split, and it is one number.
+#:
+#: "skip" IS `_handle_binary`'S OWN WORD ("counted and SKIPPED rather than
+#: dropped") and it is chosen over "raw" because a bare noun reads as a total: a
+#: reader glancing at `raw 0` beside two other counts would take it for
+#: "0 frames", which is the opposite of what a 0 here means. It is a THIRD field
+#: rather than a ninth line because the screen has exactly eight bands and
+#: `settings_view._draw_body` silently drops a line it has no whole band for --
+#: which on this screen is the worst-frame readout. At its worst value the line
+#: is 260.05 px of the 308 px band in the vector face (220.00 in the bitmap
+#: fallback), against 175.45 px for the two-field version it replaces; a FOURTH
+#: count would be 338.14 px and bust it. `test_settings_fit` prices it.
+DIAG_LINE_BELLS = "Bells {}  other {}  skip {}"
+#: `demoted` and `push_revoked`. Named `push_revoked` in the snapshot because
+#: `network_runtime`'s own record already carries a `revoked` for the POLL's
+#: terminal 403, and a transcript has to be able to hold both at once; on this
+#: screen there is only one subject, so it is drawn as `revoked`.
+DIAG_LINE_FLAGS = "Demoted {}  revoked {}"
+#: `PushLink.last_error`, bounded. It is `_error_text`'s "ClassName: message" on
+#: most paths and layer 2's own `event.reason` on a refused or dropped join,
+#: which is where `connect_failed` / `join_refused` / `join_unanswered` /
+#: `token_unusable` land. Drawn ONLY when there is one: an empty error line is a
+#: band spent saying nothing on a screen with exactly eight.
+DIAG_LINE_ERROR = "Last error: {}"
+
+#: `PushPolicy.policy_source` -> what it means, and THIS IS THE LINE THE SCREEN
+#: WAS BUILT FOR. It is also the ONE field here that is translated rather than
+#: passed through, because the raw word is actively misleading: `default` is not
+#: a setting and not a refusal, it means no well-formed `push_enabled` has been
+#: seen -- the state of every badge for the first 60-240 s of every boot.
+#:
+#: "Not sent yet" rather than "not checked yet", because the badge does not
+#: check: the policy rides the poll response (`PushService.apply_steering` is
+#: called only from `NetworkService._on_policy`), so "checked" would describe a
+#: request this badge never makes.
+DIAG_POLICY_LINES = {
+    "default": "Policy: not sent yet",
+    "server": "Policy: from the server",
+    # A `push_enabled` that is not a boolean. It fails OPEN by design
+    # (`PushPolicy.set_remote`: failing closed makes the kill switch itself
+    # load-bearing), so this is a note about the DATA, not an outage.
+    "malformed": "Policy: unreadable",
+}
+#: A source literal this build has never heard of. Raw, for the same reason
+#: `NET_LINE_STATE` is raw: "no invented states" cuts both ways.
+DIAG_POLICY_STATE = "Policy: {}"
+
+#: The latched worst ENTRY-TO-ENTRY frame, in milliseconds. LATCHED, because a
+#: stall the wearer blinked through has to still be on the screen when they look
+#: down; RESET is what drops it.
+DIAG_LINE_WORST = "Worst frame {} ms"
+#: Before two frames have been entered. THE FIRST SAMPLE IS NOT A FRAME: it
+#: would measure module construction to first entry, which is a different
+#: quantity and a large one.
+DIAG_LINE_WORST_NONE = "Worst frame not measured yet"
+
+
 # -- what the view draws that no view-model supplies -------------------------
 
 #: The no-encoder path: honest, legible and typeable, and never a fake QR — a
@@ -735,6 +938,39 @@ def every_string():
     for literal in ("push", "trying", "polling", "demoted", "blocked",
                     "network_off", "unavailable", "None"):
         out.add(PUSH_LINE_STATE.format(literal))
+    # THE DIAGNOSTICS SCREEN, AT ITS WORST VALUES AND NOT ITS EXAMPLE ONES.
+    # Every field on it is composed at runtime from a counter or a runtime
+    # literal, so an example row prices nothing: the strings that can actually
+    # reach a panel are the ones where every slot is as wide as this app will
+    # let it get. `_WIDEST` is a clipped worst case rather than an arbitrary
+    # long string, because `settings_model` is what does the clipping and the
+    # two numbers have to be the same number (`test_settings_fit` asserts it).
+    out.add(ROW_DIAG_LABEL)
+    out.add(DIAG_TITLE)
+    out.add(DIAG_RESET)
+    out.add(DIAG_NO_PUSH)
+    out.add(DIAG_LINE_WORST_NONE)
+    out.update(DIAG_POLICY_LINES.values())
+    for value in ("default", "server", "malformed", _WIDEST):
+        out.add(DIAG_POLICY_STATE.format(value))
+    for mode in ("push", "trying", "polling", "demoted", "blocked",
+                 "network_off", _WIDEST):
+        out.add(DIAG_LINE_MODE.format(mode))
+    for flag in (DIAG_YES, DIAG_NO, DIAG_MISSING):
+        out.add(DIAG_LINE_LINK.format(flag, flag, flag))
+        out.add(DIAG_LINE_FLAGS.format(flag, flag))
+    # THE TWO BOUNDS ARE DIFFERENT AND THE CORPUS HAS TO KEEP THEM APART. The
+    # first two slots of the sessions line are cumulative counters
+    # (`DIAG_COUNT_MAX`); the demotion pair after them is bounded by
+    # `DEMOTE_AFTER_SESSIONS` and gets the tighter `DIAG_SMALL_MAX`. Pricing all
+    # four at the wide bound would reject a layout the app cannot produce, and
+    # pricing all four at the tight one would leave the real worst case unpriced.
+    for count in ("0", "3", _WIDEST_COUNT, DIAG_MISSING):
+        for small in ("0", "3", _WIDEST_SMALL, DIAG_MISSING):
+            out.add(DIAG_LINE_SESSIONS.format(count, count, small, small))
+        out.add(DIAG_LINE_BELLS.format(count, count, count))
+        out.add(DIAG_LINE_WORST.format(count))
+    out.add(DIAG_LINE_ERROR.format(_WIDEST))
     # The claim URL, its typeable fragment and the countdown extremes.
     out.add("https://badge-badgelink.pages.dev/p#ABCD2345")
     out.add("ABCD2345")

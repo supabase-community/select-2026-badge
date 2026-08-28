@@ -1,36 +1,34 @@
-# Why this badge ships with networking off
+# How this badge uses the network
 
-The badge is OFFLINE-FIRST. Every shipping app works with no network, no account and no pairing, and the fleet launches that way on purpose. This page is the honest version of why: what keeps the radio off, what the offline product does about network-shaped features, and what turning networking on looks like when it is ready.
+The badge is OFFLINE-FIRST and this package ships the network runtime. Both are true at once, and the order matters: every shipping app works with no network, no account and no pairing, and the radio is OFF until somebody turns it on. Networking is additive here. Nothing in this tree waits for it, asks the wearer to fix it, or degrades without it.
 
-## Two independent layers keep it off
+## The radio fails closed
 
-**1. The network runtime is not installed.** Networking lives in a separate library that installs to `/system/lib`; it is not part of this package, and the roster in this package says so (`apps-roster.json`, `system_lib.ship: false`). `main.py` keeps its guarded import either way: it appends `/system/lib` to `sys.path` and imports the runtime inside a `try` whose handler catches the failure, prints `BADGELINK_NETWORK boot=offline error=ImportError`, and boots straight on into the launcher. You can read that guard in this tree's own `main.py`. It is verified mechanically, twice: this package's `imports-resolve` gate proves every import in every app is local, firmware or guarded (`settings` is the only app that touches `/system/lib` modules, and it guards all three), and the exporter that builds the flashable artifact reads the BUILT boot file and refuses the build if that guard is ever narrowed or hoisted.
+The runtime being installed is not the radio being on. It runs only if whoever is holding the badge turned it on from Settings. The preference is a small record on the badge's writable volume; a missing, corrupt, over-sized or wrong-schema record all read as OFF, and the write is atomic (temp file, flush, sync, rename) so a power cut cannot turn a half-written record into an enabled radio. The fleet default is OFF.
 
-**2. The radio preference fails closed.** Even on a badge that has the library installed, the radio runs only if whoever is holding the badge turned it on from Settings. The preference is a small record on the badge's writable volume; a missing, corrupt, over-sized or wrong-schema record all read as OFF, and the write is atomic (temp file, flush, sync, rename) so a power cut cannot turn a half-written record into an enabled radio. The fleet default is OFF.
+This was the second of two independent layers. The first was that the runtime simply was not in the package, and it is the layer that just went away, so this one is now load-bearing on its own. `main.py` still appends `/system/lib` to `sys.path` and imports the runtime inside a `try` whose handler prints `BADGELINK_NETWORK boot=offline` and boots straight on into the launcher, so the same source boots both ways and a badge whose library is missing or damaged is a working offline badge rather than a brick. `settings` is the only app that touches `/system/lib` modules and it takes all three or none, degrading to its "Not ready" view.
 
-## Why it is off for launch
+## What it cost, and what changed
 
-The connect path works, and it is not yet up to product standard: it blocks the UI. The badge is a single-threaded MicroPython machine that runs one cooperative network step inside each rendered frame, and building a connection is a sequence of blocking calls. Measured on hardware, three runs: connection establishment blocked one rendered frame for 2,252-2,436 ms. The breakdown is known exactly. The TLS handshake totals roughly 1.0-1.1 s, and 820-903 ms of that is ONE atomic CPU-bound call that does not yield, measured by two independent instruments. A control run with chain verification disabled attributes roughly 480 ms of that call to certificate-chain verification and roughly 343 ms to the rest of the crypto (that control is a bench instrument with no production path: the fleet runs `CERT_REQUIRED` against two pinned roots). The remaining ~1.4 s of the block is protocol work and waiting, which CAN be split into small budgeted steps that each fit inside an ordinary frame.
+This is the part worth reading before trusting the radio, because the product shipped offline for months on the strength of it.
 
-That split is the re-architecture in progress: a non-blocking connect that takes bounded steps across frames, behind a build-time flag in the runtime library (default off; only the build tooling can flip it, and no file, preference or command on the badge can reach it). Until that path passes its on-device soak gates and is accepted, the blocking path is the only connect path, and a product that visibly freezes for two seconds is not one we ship. So the product ships offline.
+The badge is a single-threaded MicroPython machine that runs one cooperative network step inside each rendered frame, so a blocking call is a stopped screen, not a slow one. Building a connection used to be a sequence of blocking calls: measured on hardware over three runs, connection establishment blocked ONE rendered frame for 2,252 to 2,436 ms. Out of range it was worse, because the badge spent its whole 5,000 ms open budget inside a single frame, measured at 5,163 ms and 5,166 ms by two independent instruments.
 
-## What the offline product does about network-shaped features
+The fix is a non-blocking connect that takes bounded steps across frames. The same out-of-range case measures 126 ms stepped. It is controlled by a build-time flag inside the runtime library, so only the build tooling can flip it: no file, preference or command on the badge can reach it. It is ON in this package.
 
-Nothing in this tree pretends to be online, and nothing asks the wearer to fix being offline.
+What has NOT been eliminated is one atomic CPU-bound call in the TLS handshake, roughly 820 to 903 ms, measured by two independent instruments. It does not yield, so it is one long frame at connect time. A bench control with chain verification disabled attributes roughly 480 ms of it to certificate-chain verification and roughly 343 ms to the rest of the crypto; that control has no production path, because the fleet runs `CERT_REQUIRED` against pinned roots and will keep doing so. Connecting is therefore still visible. Staying connected is not.
 
-- **The schedule** is a baked agenda that needs no connection. Its header carries a small provenance mark instead of a freshness claim: distinct shapes for no link state, content verified current, content known superseded, linked-but-never-verified, and a hand-loaded day-of copy. An offline badge is never told it is out of date, because offline is this product's normal state and an alarm that is always on is not read.
-- **The clock is trusted or it is silent.** The only thing that ever sets the badge's clock is the network runtime's server time sync. When nothing trustworthy has set it, the schedule shows the plain agenda and says nothing about time at all: no current-session marker, no countdown, no prompt to set anything. There is deliberately no manual time dial, because a hand-set clock is a claim, not a time.
-- **Settings** reports the network state honestly. With the runtime absent, its network view says it is not ready. It does not nag, and no app asks the wearer to configure networking.
+## What the network is for
 
-## What turning it on looks like
+Nothing in this list is required for the badge to be a badge.
 
-One roster key plus the holder's own switch, and no file in this tree changes:
+- **Schedule freshness.** The agenda is baked into the package and needs no connection. Its header carries a small provenance mark rather than a freshness claim: distinct shapes for no link state, content verified current, content known superseded, linked-but-never-verified, and a hand-loaded day-of copy. A connected badge can move that mark. An offline badge is never told it is out of date, because offline is a normal state here and an alarm that is always on is not read.
+- **The clock.** The only thing that ever sets the badge's clock is the runtime's server time sync. When nothing trustworthy has set it, the schedule shows the plain agenda and says nothing about time at all: no current-session marker, no countdown, no prompt to set anything. There is deliberately no manual time dial, because a hand-set clock is a claim, not a time.
+- **Pairing and fleet effects.** Settings carries the pairing and network status screens. They report state honestly and they do not nag.
 
-1. `system_lib.ship: true` in the roster puts the runtime library back into the flashable artifact. `main.py` already carries the guarded import and `settings` already guards its runtime imports, so the same source boots both ways.
-2. The holder turns the radio preference on from Settings (or fleet provisioning does): the fail-closed switch above.
+## Turning it off
 
-The non-blocking connect flag is a separate, third decision inside the runtime library itself, and it stays off until its soak gates pass.
+One roster key, and no file in this tree changes:
 
-## What we would ask you about all this
-
-One question, and it is item 7 of `ARCHITECTURE.md` section 8, where the rest of our asks live. The short version: everything runs on one thread, the UI and the network take strict turns, and three moments still hold the frame long enough to stop the animation. We have measured all of them and we are re-architecting around them, but the atomic call above is a floor we cannot get under. Rather than ask you to answer a list, we would rather show you the problem and the numbers and hear how you would approach it. Asked once, in one place, so nothing is asked twice with different figures.
+1. `system_lib.ship: false` in `apps-roster.json` leaves the runtime library out of the flashable artifact. `main.py` already carries the guarded import and `settings` already guards its runtime imports, so the same source boots both ways.
+2. Below that, the holder's own switch is still the thing that decides, and it still fails closed.

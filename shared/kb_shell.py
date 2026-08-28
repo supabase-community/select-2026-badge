@@ -11,7 +11,8 @@ the repeat curve, the softkey labels or the counters differ anywhere, he is
 comparing two applications and the exercise is wasted.  So the difference is
 confined to exactly one module per app -- `kbgrid_board.py` and
 `kbqwerty_board.py` -- and every other file in both trees is generated from a
-canonical source and hashed by `scripts/sync_ui.py --check` in CI.  There is no
+canonical source and hashed by `scripts/sync_ui.py --check` when a maintainer
+runs the production lane by hand.  There is no
 `if layout == ...` anywhere below, and there must never be one: a branch here
 would reintroduce by hand the difference the whole design is spending files to
 prevent.

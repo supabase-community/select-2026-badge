@@ -201,7 +201,7 @@ def _load_vector(name):
     side caches NOTHING: measured on the reference badge, four calls returned
     four distinct objects at 111.27 / 111.41 / 111.68 / 111.30 ms with 73,728 B
     retained every time. `ui.Chrome()` at HIRES is 112.1 ms of which 111.3 is
-    this one call, and `badgecard` builds `Chrome` TWICE -- once in its entry
+    this one call, and `setup` builds `Chrome` TWICE -- once in its entry
     seam and once in `kb_shell.KeyboardView` -- so opening the keyboard to edit
     a name paid a SECOND 111 ms stall and a second 73.7 KB (`VAL-020-CH`).
 

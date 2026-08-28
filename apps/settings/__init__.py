@@ -75,7 +75,7 @@ import badgeware  # noqa: F401,E402 - presence check; the API arrives as globals
 #
 # ONE APP, NOT TWO, and that is now true product-wide: the identity surfaces are
 # HIRES-only, so there is no `variant.py`, no `build_variants.py` and nothing to
-# branch on here or in `badgecard`.
+# branch on here or in `setup`.
 badge.mode(HIRES | VSYNC)
 badge.caselights(0)
 
@@ -188,7 +188,7 @@ chrome = settings_view.build(pairview.qr_layout if pairview is not None else Non
 # makes that a lie the wearer can see. A badge set to DIM would have jumped to
 # 85 % on opening Settings and then shown a screen reading "The screen is set to
 # DIM" -- and the first press of the ladder would have looked like a jump DOWN
-# rather than one rung. The launcher, `poster` and `badgecard` already open at
+# rather than one rung. The launcher, `nametag` and `setup` already open at
 # the stored level; this is the fourth reader agreeing with them.
 display.backlight(backlight.fraction(_brightness))
 
@@ -287,6 +287,55 @@ def _sleep():
         app.sleep_failed()
 
 
+def _note_panel_level(fraction):
+    """Tell BadgeLink the wearer just chose a panel level. Never raises.
+
+    THE CALLING HALF OF A CROSS-LANE SEAM, `docs/design/effect-library.md` §4,
+    against `NetworkService.note_panel_level`. Without this call a fleet `glyph`
+    effect overwrites the wearer's brightness presses on every changed frame --
+    up to ~24 a second, so the row looks broken -- and then restores whatever
+    level the runtime last believed. MEASURED BEFORE THIS CALL EXISTED, driving
+    the real service over the real player: a press of 0.2 during a show started
+    at fleet base 1.0 held for one frame, the next nine wrote 0.4375 through
+    0.83125, and the show's exit put the panel back to 1.0 and left it there.
+    `/state/badgecard.json` held the wearer's 20 throughout, which is what made
+    it a panel defect rather than a persistence one.
+
+    A FRACTION, NEVER THE PERCENT. `note_panel_level` feeds `display.backlight`
+    directly, and the pinned firmware reads that as a float and multiplies by
+    255 (`network_runtime.install`'s comment has the binding), while this app's
+    unit is a 20..100 int. Handing over 20 would ask the panel for 5100 and
+    poison every later restore, and nothing on either side of the seam would
+    have caught it -- the parameter is called "level" in both files.
+
+    IT INFORMS THE RUNTIME AND IS NEVER READ BACK AS THE LEVEL. The wearer's
+    choice lives in `/state/badgecard.json`, one file with four readers;
+    `_panel_base` is a RECORD OF WHAT WAS WRITTEN, and a fleet `set_backlight`
+    moves it too. Reading it back as authority would let a stale runtime belief
+    overwrite a real press, which is this defect inverted.
+
+    GUARDED, AND THE GUARD IS THE RESET RULE RATHER THAN DEFENSIVE STYLE. An
+    `AttributeError` inside `update()` reaches `fatal_error`, which draws a
+    modal and `machine.reset()`s, so an unguarded call would reset the badge on
+    a BRIGHTNESS PRESS -- every press, for ever -- on any badge whose
+    `/system/lib` predates this method. And the missing case is the COMMON one:
+    the badge that ships carries no `/system/lib` at all (`apps-roster.json`,
+    `production.system_lib.ship` is false), so `_network` is None there twice
+    over. Same four steps as `push_control` above and as `set_active` in
+    `nametag` and `schedule`.
+    """
+
+    if _network is None:
+        return
+    setter = getattr(_network, "note_panel_level", None)
+    if not callable(setter):
+        return
+    try:
+        setter(fraction)
+    except Exception as error:  # noqa: BLE001 - a reset is the alternative
+        print("SETTINGS_BRIGHT_FAIL stage=notify error={!r}".format(error))
+
+
 def _set_brightness(level):
     """One rung: the PANEL first, then the file. Never raises.
 
@@ -297,7 +346,7 @@ def _set_brightness(level):
 
     THE STORE IS `/state/badgecard.json` AND THERE MUST NEVER BE A SECOND ONE.
     Leaving an app is `machine.reset()`, so nothing about this level reaches the
-    launcher, `poster` or `badgecard` in RAM -- persistence is the only way a
+    launcher, `nametag` or `setup` in RAM -- persistence is the only way a
     level can hold, and all four apps read that one file.
     `brightness_store`'s docstring has the refusal rules that keep a brightness
     press from destroying five saved badges.
@@ -314,6 +363,20 @@ def _set_brightness(level):
         display.backlight(backlight.fraction(level))
     except Exception as error:  # noqa: BLE001
         print("SETTINGS_BRIGHT_FAIL stage=panel error={!r}".format(error))
+    # BADGELINK SECOND, so nothing stands between the press and the light. This
+    # call preempts a running fleet show, and a preempt writes the show's own
+    # restore frame to the panel before the wearer's level goes back -- three
+    # register writes instead of one, none of them a present. Both orders end
+    # with the wearer's level on the panel (`test_play_effect_applier`'s
+    # `test_it_wins_in_EITHER_call_order` pins that), so this is B6 feel rather
+    # than correctness: the wearer is looking at the exact thing the press
+    # changed, and a preempt plus an attribute lookup do not belong in front of
+    # it. Still ahead of the store, which stalls up to 185 ms.
+    #
+    # `fraction` TWICE RATHER THAN HOISTED: it is a clamp and a divide on a
+    # once-per-press path, and `display.backlight(backlight.fraction(level))` is
+    # matched as a literal substring by the networking lane's contract test.
+    _note_panel_level(backlight.fraction(level))
     stored = None
     try:
         stored = brightness_store.write(level)
@@ -360,17 +423,69 @@ def update():
                     _set_brightness(action.get("level"))
 
     if _network is not None:
+        # DIAGNOSTICS IS IN THIS TUPLE SINCE 2026-08-27, REVERSING `3e4a0460`,
+        # and the reversal is a priced trade rather than a tidy-up. That commit
+        # left DIAG out to keep the screen a NON-PERTURBING instrument: with no
+        # grant, nothing new is attempted while it is up, so the previous-cause
+        # latch and the counters hold whatever state the wearer walked in with.
+        # The cost was that the one screen built to watch a connection happen
+        # was also the one screen that forbade it -- the owner sat on
+        # Diagnostics under an NB_CONNECT=ON build and watched it never connect.
+        #
+        # THE ARGUMENT IS THE DEFECT, NOT A FRAME NUMBER, and that ordering is
+        # deliberate. An instrument that forbids the event it displays is broken
+        # whatever an establishment costs; the exclusion made "watch it connect"
+        # unperformable, and this screen has no other purpose.
+        #
+        # ⚠ THE FRAME NUMBER OFFERED FOR THIS IS NOT EVIDENCE FOR IT. Three
+        # same-night owner readings -- `Worst frame` 5163 ms (OFF, edge of
+        # Wi-Fi), 5166 ms (OFF, Faraday cage), 126 ms (NB_CONNECT=ON, same cage)
+        # -- are unfiled and CONFOUNDED for this purpose. In a cage the radio
+        # gate alone withholds every moment (`network_runtime._service_push`:
+        # `elif not online: moment = None`), so the ON reading is the price of
+        # attempting NOTHING, and the TLS handshake is device-measured at
+        # 735.362 ms inside ONE atomic `update()` that `open_step`'s soft budget
+        # cannot pre-empt (VAL-031-BLT, `device_link.py`) -- a 126 ms frame is
+        # below the floor for a frame that contained an establishment.
+        # `ATTRIBUTION-LEDGER.md` Q4 still reads `NO MEASUREMENT EXISTS`.
+        #
+        # THE LATCH IS NOT DELETED BY THIS, WHICH IS WHY IT IS AFFORDABLE. The
+        # transition that fills it is root -> a granting screen, and the ROOT is
+        # still withholding: stepping root -> Diagnostics now fills the latch
+        # exactly as root -> Updates already did. What is genuinely lost is that
+        # Diagnostics perturbs what it shows -- its counters and the latch move
+        # because you are looking. The counters are cumulative for the boot, so
+        # they still read; the latch a wearer walked in with can now be
+        # overwritten by the establishment this grant permits.
+        #
+        # REVERTING IS THIS ONE TUPLE ENTRY. `test_settings_seam.
+        # PlacementScopeTests` asserts the set STRUCTURALLY (it asserted exactly
+        # NETWORK/PAIR/PUSH before this change), so the set cannot widen again
+        # without a visible diff.
         _network.set_active(app.screen in (settings_model.NETWORK,
                                            settings_model.PAIR,
-                                           settings_model.PUSH))
+                                           settings_model.PUSH,
+                                           settings_model.DIAG))
 
     model = app.view()
     _frame.draw(model)
 
     # ON CHANGE, never per frame: a per-frame print distorts frame timing and
     # makes the browser's deterministic traces unreadable.
+    #
+    # THE DIAGNOSTICS SCREEN IS KEYED WITHOUT ITS LINES, AND THAT IS NOT A
+    # CONVENIENCE. Its body carries live counters, and `doorbells_filtered`
+    # moves once per broadcast on a SHARED topic -- an 800-badge fleet show is
+    # 799 suppressions on every badge, so "on change" there is a print per
+    # frame. With no host draining the USB CDC that is the measured 1,018 ms
+    # modal stalled frame, 192 of them in 485 s
+    # (`benchmark/results/raw/2026-08-27-usb-cdc-print-blocking/`) -- the
+    # instrument manufacturing the exact fault the screen was built to find.
+    # The transition INTO the screen still prints, because the key still carries
+    # the screen id and the bar.
     key = (model["screen"], model.get("status"), tuple(model["softkeys"]),
-           tuple(model.get("lines") or ()))
+           () if model["screen"] == settings_model.DIAG
+           else tuple(model.get("lines") or ()))
     if key != _last_screen:
         _last_screen = key
         print("SETTINGS_SCREEN screen={} status={} keys={}|{}|{} lines=[{}]".format(

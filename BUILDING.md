@@ -155,10 +155,25 @@ The build emits `build/system/secrets.py`: eight provisioning slots, **every val
 
 **Nothing in this build reads any of them.** The network runtime is not part of this package (`apps-roster.json` records the decision as `system_lib.ship: false`), so the slots exist for parity with the release artifact and for the day the radio is turned on. The eight are: the venue network name and its password, a two-letter Wi-Fi regulatory domain, an IANA timezone, a per-badge ES256 identity token, the project's publishable API key, the realtime host that drives SNI and TLS verification, and an optional pre-resolved IPv4.
 
-Two rules on it:
+Two rules on it, and both are now ENFORCED rather than promised:
 
 - **it is never populated by anything in this package, ever.** The per-unit file is provisioned separately and must be a SUPERSET of these keys. Nothing in this export or the repository it came from writes a credential value anywhere;
 - there is no `secrets.py` in the source export itself, deliberately, and the exporter's own secrets gate refuses one by name. A file of empty slots is a build product, not source.
+
+**A `secrets.py` at the export root is a refusal, populated or not, and this paragraph is here because the code did not always agree with the two rules above it.** Until 2026-08-26 the build COPIED a root `secrets.py` into the staged tree and wrote its own template only when none was there, so a credential an operator happened to leave beside `apps/` shipped as `/system/secrets.py` to every badge installed from that build, silently. Three things changed and each covers a different way in:
+
+- `tools/build.py` stops in preflight, before it compiles anything or replaces a good `build/system`, if that file exists. It is checked by existence and **never opened**, so the refusal cannot read or log what it is protecting. Move the file outside this tree (do not delete it if it holds anything real) and rebuild;
+- the empty template is written **unconditionally**, so nothing can win the race by being on disk first;
+- the staged template is re-parsed before it is hashed into `manifest.json` and any non-empty value stops the build. That refusal names the **keys**, never the values: a build log gets pasted around more than the file ever would.
+
+Real credentials never travel through a build. They go to `/secrets.py` on the badge's 1 MB writable root over ordinary MicroPython serial:
+
+```sh
+mpremote connect PORT fs cp <your-file> :/secrets.py.tmp
+mpremote connect PORT exec "import os; os.rename('/secrets.py.tmp', '/secrets.py')"
+```
+
+Temporary file plus rename, then read it back to confirm without printing it. `/secrets.py` wins over `/system/secrets.py`, so this overrides the empty template without touching the common image.
 
 ### 2.5 Developing by drag and drop, and why this package precompiles
 
@@ -168,13 +183,13 @@ Two rules on it:
 
 | | source form | bytecode form |
 |---|---:|---:|
-| the modules | 3,633,252 B | 813,603 B (22%) |
-| plus assets and the two files that stay source | +5,859,094 B | +5,859,094 B |
-| **staged `/system`** | **9,492,346 B** | **6,672,697 B** |
-| of the 12 MB FAT allocation | 75% | 53% |
+| the modules | 2,647,922 B | 479,693 B (18%) |
+| plus assets and the two files that stay source | +979,886 B | +979,886 B |
+| **staged `/system`** | **3,627,808 B** | **1,459,579 B** |
+| of the 12 MB FAT allocation | 29% | 12% |
 
-1. **Headroom.** Source form fits today. It fits with 2.9 MB in hand against 5.6 MB, and the assets are the part that grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
-2. **First-open latency, which is the one a wearer feels.** Every app exit is a full reset (`ARCHITECTURE.md` section 2), so *every* open is a cold open. The badge parses and compiles each `.py` it imports as one uninterruptible native call per module: nothing of ours can paint the panel while that runs, which is why a heavy app freezes its own loading animation. The largest module in this tree is `apps/badgecard/skins.py` at 667,219 B of source, which compiles to a 228,851 B `.mpy` that **still costs 630-765 ms to import cold on device** (a measured band across several runs, not a point estimate). Shipping the source would add the parse to that, on every open, forever.
+1. **Headroom.** Source form fits today. It fits with 8.5 MB in hand against 0.9 MB, and the assets are the part that grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
+2. **First-open latency, which is the one a wearer feels.** Every app exit is a full reset (`ARCHITECTURE.md` section 2), so *every* open is a cold open. The badge parses and compiles each `.py` it imports as one uninterruptible native call per module: nothing of ours can paint the panel while that runs, which is why a heavy app freezes its own loading animation. The largest module in this tree is `apps/badgecard/skins.py` at 326,156 B of source, which compiles to a 102,465 B `.mpy` that **still costs 630-765 ms to import cold on device** (a measured band across several runs, not a point estimate). Shipping the source would add the parse to that, on every open, forever.
 3. **A stray `.py` beside its own `.mpy` silently wins.** MicroPython stats the source first, so a badge holding both runs the source: no speed-up, possibly stale code, no error anywhere. That is the failure mode a mixed drag-and-drop-plus-build workflow produces, and it is exactly what `--verify-mount` reports as a stray.
 
 So: develop by drag and drop, ship the build. If you drop a source app onto a badge that carries this build, clear that app's directory first and run `--verify-mount` before you conclude anything about performance.
@@ -213,7 +228,7 @@ The wearer-facing path. It is a file copy onto a USB volume.
 
 **This is the same procedure the README's quick start runs, in the same order and with the same commands.** There is one install path for this package, and it is this one. What the README leaves out and this section adds is why each step is shaped the way it is.
 
-1. **Double-tap RESET** on the back of the badge, toward the right. A disk mounts. **Read its name off the mount before you paste anything**, because we have two sources and they disagree: your README's "Installing Apps" says the disk is named `Tufty2350`, and the pinned v3.0.2 board configuration sets `PIMORONI_FATFS_LABEL "TUFTY"` (`board/mpconfigboard.cmake`), which is also what our own device notes recorded. We have written `Tufty2350` live below and left `TUFTY` one comment away. **If one of those is stale, it is worth knowing which.** Every step below fails on its first command if `MOUNT` is wrong. (From a live REPL the equivalent is `import powman; powman.reset_into_msc()`. The BOOTSEL disk from BOOT+RESET is a different volume, `RP2350`, and it belongs to section 0.2.)
+1. **Double-tap RESET** on the back of the badge, toward the right. A disk mounts. **Read its name off the mount before you paste anything**, because we have two sources and they disagree: your README's "Installing Apps" says the disk is named `Tufty2350`, and the pinned v3.0.2 board configuration sets `PIMORONI_FATFS_LABEL "TUFTY"` (`board/mpconfigboard.cmake`), which is also what our own device notes recorded. We have written `Tufty2350` live below and left `TUFTY` one comment away. **If one of those is stale, it is worth knowing which.** A wrong `MOUNT` is refused by name: step 3 asks the kernel whether the path is a mount point before it deletes anything, so an unmounted badge, a leftover directory or a typo stops the install instead of costing you two directories. (From a live REPL the equivalent is `import powman; powman.reset_into_msc()`. The BOOTSEL disk from BOOT+RESET is a different volume, `RP2350`, and it belongs to section 0.2.)
 
    ```sh
    MOUNT=/media/$USER/Tufty2350   # Linux, or /run/media/$USER/Tufty2350
@@ -232,33 +247,37 @@ The wearer-facing path. It is a file copy onto a USB volume.
 
    Creating `$MOUNT/system/...` makes an unused duplicate tree, can fill the 12 MB volume, and leaves the running app unchanged.
 
-3. **Clear the install roots, then copy by root.**
+3. **Clear, copy and verify. One command, and it is the only destructive step in this package.**
 
    ```sh
-   rm -r "$MOUNT/apps" "$MOUNT/assets"
-   cp -R build/system/apps build/system/assets \
-         build/system/main.py build/system/secrets.py "$MOUNT/"
+   python3 tools/build.py --install "$MOUNT"
    ```
 
-   **Clear first, because this tree replaces `/system` wholesale rather than merging into it.** A badge arrives with a stock `/system`, and a copy over the top leaves the stock lineup in place: measured on a volume seeded from a release clone, 188 files the build did not emit, 54 stray `.py` shadowing their own bytecode, and 16 stale app directories, every one of them a live tile pointing at code that is not there. Clearing the two roots is also what makes a `.py` to `.mpy` switch safe when it is interrupted.
+   **Everything it can refuse, it refuses before it deletes anything.** In order: the build exists; the build matches its own manifest; the build was made from this source tree as it stands right now; the build is not a `--skip-menu`/`--no-stock-fonts` one; the build was made for the pinned firmware; `$MOUNT` is a real mounted volume the size of a badge and is not this source tree. A refusal costs you nothing, and the message says whether to fix the build or the mount.
 
-   **Copy the four roots by name; do not copy `build/system/.` wholesale.** The obvious one-liner also copies `build/system/manifest.json` onto the volume, where it is a file the build did not emit, and step 4 fails the whole install over that one file: 204 files on the volume against 203 in the manifest.
+   **This was four shell lines until it was one, and each of the four had a way to end badly.** The block began with a bare recursive delete of the badge's two root directories, with nothing in front of it. (Described rather than reproduced: written out it is still a line somebody can paste, and this package now refuses to print it.) A build that refuses leaves the previous `build/system` exactly where it was, by design, so a compile error was followed by the delete, by a copy of the **previous** build, and by a verification against that previous build's own manifest, which passes and proves only that the wrong bytes copied cleanly. On a fresh checkout with no build at all, the delete still ran, the copy failed, the verification failed, and the eject was attempted anyway. And nothing checked `$MOUNT`: any directory holding `apps/` and `assets/` was enough, which includes this export's own root.
 
-   **All four roots, not just `apps/`.** `main.py` is the boot file and the badge ships with Pimoroni's; leave it behind and the unit boots the stock launcher from stock source, which `--verify-mount` catches and nothing else does.
+   **Clearing first is still what it does, because this tree replaces `/system` wholesale rather than merging into it.** A badge arrives with a stock `/system`, and a copy over the top leaves the stock lineup in place: measured on a volume seeded from a release clone, 188 files the build did not emit, 54 stray `.py` shadowing their own bytecode, and 16 stale app directories, every one of them a live tile pointing at code that is not there. Clearing the roots is also what makes a `.py` to `.mpy` switch safe when it is interrupted.
 
-4. **Verify the mount against the build. One command, and it is the install's only proof.**
+   **It copies the four roots by name rather than `build/system/.` wholesale.** The obvious one-liner also copies `build/system/manifest.json` onto the volume, where it is a file the build did not emit, and the verification fails the whole install over that one file: 204 files on the volume against 203 in the manifest. All four roots, not just `apps/`: `main.py` is the boot file and the badge ships with Pimoroni's, so leaving it behind boots the stock launcher from stock source, which `--verify-mount` catches and nothing else does.
+
+   **It copies in Python rather than shelling out to `cp -R`, and that is the AppleDouble fix.** On macOS `cp -R` carries extended attributes, FAT cannot hold them, and the kernel writes them beside the file as a `._*` sidecar: one of those under `apps/` is a file the badge tries to IMPORT. `COPYFILE_DISABLE=1` is the documented suppression, this section documented it, and neither copy command in the old procedure set it. A data-only copy has no metadata to spill, so there is nothing left to disable. If you do copy by hand for any reason, `COPYFILE_DISABLE=1` and `dot_clean -m` on the volume still apply, and the sidecar check below is still there to catch you.
+
+   **It is not atomic on the volume and does not pretend to be.** FAT on a USB volume has no rename-into-place, so between the clear and the end of the copy the badge holds a partial `/system`. That is survivable: the badge is in Disk Mode and is not running the tree. Run the command again. What is not survivable is ejecting a partial install, which is why the verification is inside this command and the eject in step 4 is chained to its exit code.
+
+4. **The verification is the last thing it does, and it is the install's only proof.**
+
+   It compares every file on the volume against `build/system/manifest.json` by size and SHA-256 and reports seven findings: missing files, wrong bytes, files on the volume the build did not emit, stray `.py` that would shadow their own bytecode, AppleDouble/OS sidecars, stale app directories under `apps/`, and unexpected top-level directories. Any one of them fails the install non-zero. It never deletes: what to remove is printed, and removing a file the build does not own stays your call.
 
    ```sh
    python3 tools/build.py --verify-mount "$MOUNT"
    ```
 
-   It compares every file on the volume against `build/system/manifest.json` by size and SHA-256 and reports seven findings: missing files, wrong bytes, files on the volume the build did not emit, stray `.py` that would shadow their own bytecode, AppleDouble/OS sidecars, stale app directories under `apps/`, and unexpected top-level directories. It exits non-zero on any of them, and it is read-only: what to delete is printed, never done.
+   That is the same check on its own, read-only, for when you want to ask the question again without reinstalling. Either way it replaces a hand checklist of the same seven things, and at 800 units the checklist is the failure mode, not the check.
 
-   That replaces a hand checklist of the same seven things. At 800 units the checklist is the failure mode, not the check.
+   One finding is worth knowing about before you see it: a stale app directory is a live tile pointing at code that no longer exists, which in one real case was 3.82 MB of it.
 
-   Two of the findings are worth knowing about before you see them. On macOS, FAT copies create `._*` AppleDouble sidecars even with an rsync exclude, and one of those under `apps/` is a file the badge tries to IMPORT: use `COPYFILE_DISABLE=1` and `dot_clean -m` on the volume. And a stale app directory is a live tile pointing at code that no longer exists, which in one real case was 3.82 MB of it.
-
-5. **Eject cleanly.** Not doing so has corrupted the filesystem before. The badge reboots into the launcher; open one updated app and confirm it starts. An install is not a test: a deploy with no app opened is an install claim, not a behaviour claim.
+5. **Eject cleanly, and chain it.** The quick start writes `python3 tools/build.py --install "$MOUNT" && umount "$MOUNT"` for a reason: a `&&` makes the eject unreachable unless the install verified, and unlike `set -e` it is not a line an editor can quietly drop. Not ejecting cleanly has corrupted the filesystem before. The badge reboots into the launcher; open one updated app and confirm it starts. An install is not a test: a deploy with no app opened is an install claim, not a behaviour claim.
 
 ---
 

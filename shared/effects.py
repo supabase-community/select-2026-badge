@@ -3,7 +3,7 @@
 WHAT AN EFFECT IS, and what it deliberately is not.  It is ONE native
 whole-surface filter applied to the finished card -- artwork, marks, name and
 the empty badge's hint line, all of it -- at present time, on the worn view and
-on `poster`, which draws the same card.  It is NOT a skin (a skin is procedural
+on `nametag`, which draws the same card.  It is NOT a skin (a skin is procedural
 Python compiled into the build, ADR-002) and it is NOT part of the artwork: the
 backdrop cache stores the UNFILTERED artwork and this runs after it, which is
 why changing an effect invalidates nothing.
@@ -43,8 +43,8 @@ because full desaturation IS greyscale.  Shipping both would put two rows in the
 wearer's list that do the same thing, which is a defect and not a choice, so
 `monochrome` ships and `saturation` does not: it is **cheaper** (4.063 ms against
 8.707), it takes no argument, and it is the honest name for what the picture is.
-`badgecard/tests/test_card_effect.py` pins the exclusion WITH the reason, and
-`playground/e2e/badgecard-effect.spec.ts` asserts the shipped set produces N
+`setup/tests/test_card_effect.py` pins the exclusion WITH the reason, and
+`playground/e2e/setup-effect.spec.ts` asserts the shipped set produces N
 distinct framebuffers -- which is the assertion that found this in the first
 place, on its first run.
 
@@ -52,7 +52,7 @@ place, on its first run.
 the card still has to be composed in the same frame.  The badge screen's draw
 median at HIRES is 33.778 ms (20.09 FPS, device, 2026-08-23), so an effect is a
 few percent to a third of a frame on top -- which is why the row is ordered by
-cost and why the cheap end is where the default lives.  ON `poster` IT IS
+cost and why the cheap end is where the default lives.  ON `nametag` IT IS
 CHEAPER THAN THAT: a still badge paints ONCE and then returns, so the filter is
 applied exactly once per open.  A `motion` badge pays it per frame.
 
@@ -116,7 +116,7 @@ SHIPPED = (
     # byte-identical to `monochrome` above, which is cheaper and argument-free.
     ("noise",          "GRAIN",      "noise",          9.393),
     ("crt",            "CRT",        "crt",           10.297),
-    ("palette_dither", "POSTER",     "palette_dither",10.322),
+    ("palette_dither", "NAMETAG",     "palette_dither",10.322),
 )
 
 #: The quantum every cost above is judged against (v3.0.2 repin, both panels).
@@ -128,8 +128,8 @@ QUANTUM_MS = 11.43
 # THE DECIDING RULE, stated first because it is what makes this a decision rather
 # than a preference: the badge's one job is that a STRANGER READS THE NAME AT A
 # METRE, so the default must make the name MORE legible, not merely no worse.
-# Rendered 1:1 through the shipping `Poster.worn` over four skins spanning the
-# catalogue's luminance range (`badgecard/host/effect_sheet.mjs`, contact sheets
+# Rendered 1:1 through the shipping `Nametag.worn` over four skins spanning the
+# catalogue's luminance range (`setup/host/effect_sheet.mjs`, contact sheets
 # per skin), exactly one candidate does that.
 #
 #   CONTRAST  the name goes crisp solid white, the brand green gets vivid, and on
@@ -147,7 +147,7 @@ QUANTUM_MS = 11.43
 #   INVERT    rejected -- it turns a dark badge white and takes the brand with it.
 #   INK, ONE BIT, DITHER  rejected: on the palest skin the artwork collapses to a
 #             black blob and the name partly disappears into it.
-#   MONO, POSTER  rejected: they take the emerald out of a Supabase badge.
+#   MONO, NAMETAG  rejected: they take the emerald out of a Supabase badge.
 #
 # EVERY FILTER IN THE SET IS DETERMINISTIC, which was checked rather than assumed
 # because it decided the runner-up: `noise` re-applied to identical content is
@@ -257,14 +257,14 @@ def apply(surface, effect_id, color_api):
     APPLIED ONCE PER PAINT, NEVER TWICE.  Filters compound -- two `invert`s are
     an identity and two `contrast`s are a different picture -- so the only
     correct home for this call is the end of a composition, which is why
-    `Poster.worn` owns it and no frame loop does.
+    `Nametag.worn` owns it and no frame loop does.
 
     AND "ONCE PER PAINT" IS ALSO WHY THE COST IS AFFORDABLE, which is the part a
     reader tempted to move this into a draw loop needs.  Measured on device over
     180 samples per arm: the worn HIRES badge with `contrast` costs +8.246 ms of
     draw against the unfiltered control (the filter matrix predicted 7.672, so
     1.075x) for -2.25 FPS, and the frame p99 did not move at all (57.067 ->
-    57.064 ms).  On `poster` the same filter runs ONCE PER OPEN, 7.672 ms against
+    57.064 ms).  On `nametag` the same filter runs ONCE PER OPEN, 7.672 ms against
     a 1.1-2.0 s uncached arrival, which is the whole saving in one line.
     """
     if effect_id == NONE:
