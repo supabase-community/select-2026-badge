@@ -168,22 +168,14 @@ MPY_CROSS_SOURCES = ("--mpy-cross", "MPY_CROSS")
 # provisioning step REWRITES, and bytecode is not a thing an operator can edit.
 SOURCE_ROOTS = ("main.py", "secrets.py")
 
-# WHICH OF THEM IS COPIED FROM THE TREE, AND `secrets.py` IS NOT ONE OF THEM.
-# It was until 2026-08-26, and that was the whole defect: staging copied a root
-# `secrets.py` verbatim, the template writer below was guarded by `if not
-# os.path.isfile(...)`, so the copy won, and a credential an operator happened to
-# leave at the export root shipped as `/system/secrets.py` to every unit of a
-# gang-clone. `BUILDING.md` section 2.4 already promised the opposite in print
-# ("never populated by anything in this package, ever"), so this is the code
-# catching up with the contract, not a new policy.
-#
-# NOTHING NEEDS THE OTHER BEHAVIOUR. Real values are provisioned to `/secrets.py`
-# on the badge's writable root over `mpremote`, never through a build
-# (`docs/production-provisioning.md` section 5), and the assembler that merges a
-# minted credential refuses any path inside the repository
-# (`badgelink/host/assemble_card_e_secrets.py`). So a root `secrets.py` here is
-# an accident in every case, and `refuse_source_secrets` stops the build on it.
+# WHICH OF THEM IS COPIED FROM THE PUBLIC TREE. `secrets.py` is deliberately not
+# one of them: a root file by that name is easy to commit accidentally and used
+# to replace the safe template silently. Production instead uses the exact,
+# gitignored name below. The explicit rename is the boundary: private input
+# `secrets.prod.py` becomes installable `/system/secrets.py`, while the public
+# source tree and git history continue to contain no credential.
 COPIED_ROOTS = ("main.py",)
+PRIVATE_SECRETS_NAME = "secrets.prod.py"
 
 # THE SECRETS TEMPLATE, and it is emitted rather than shipped in this package.
 # Badgeware's frozen `secrets` helper reads `/secrets.py` first and falls back to
@@ -199,8 +191,9 @@ COPIED_ROOTS = ("main.py",)
 # template belongs in the BUILD OUTPUT, not in a source export whose whole
 # secrets gate is "there is no `secrets.py` in this tree".
 #
-# NEVER POPULATED HERE, BY ANYTHING, EVER. The per-unit file is provisioned
-# separately and must be a SUPERSET of these keys.
+# When `secrets.prod.py` is absent this remains the safe offline fallback. When
+# it is present, preflight validates the same key contract and stages it under
+# the runtime name `secrets.py`.
 SECRETS_KEYS = (
     ("WIFI_SSID", "venue network name; per-badge or per-batch"),
     ("WIFI_PASSWORD", "venue network password"),
@@ -556,6 +549,10 @@ def source_fingerprint():
     add(ROSTER_NAME, os.path.join(ROOT, ROSTER_NAME))
     for name in SOURCE_ROOTS:
         add(name, os.path.join(ROOT, name))
+    # The private file is ignored by Git and by package verification, but it is
+    # still a build input. Hashing it here makes `--install` refuse a build made
+    # before the operator added, removed, or changed the production credential.
+    add(PRIVATE_SECRETS_NAME, os.path.join(ROOT, PRIVATE_SECRETS_NAME))
     fonts = os.path.join(ROOT, "assets", "fonts")
     if os.path.isdir(fonts):
         for name in sorted(os.listdir(fonts)):
@@ -750,8 +747,8 @@ def secrets_template_text():
         "",
         "Badgeware's frozen `secrets` helper reads `/secrets.py` first and",
         "falls back to this file, so an unprovisioned badge gets empty",
-        "strings rather than an ImportError. Provision the per-unit",
-        "`/secrets.py` separately; it must be a SUPERSET of these keys.",
+        "strings rather than an ImportError. For a production build,",
+        "supply gitignored `secrets.prod.py`; it must match these keys.",
         "",
         "THE SHIPPED NETWORK RUNTIME READS THESE SLOTS. Every value is empty.",
         "With empty credentials it stays offline though radio and push start ON.",
@@ -778,6 +775,61 @@ def write_secrets_template(out):
         handle.write(secrets_template_text())
 
 
+def _secrets_assignments(path):
+    """Return string assignments without ever logging their values.
+
+    The credential file runs as Python on the badge, so accepting imports,
+    calls, computed values or duplicate names would turn a typo into code that
+    only fails after manufacturing. Error messages name keys and shapes only.
+    """
+    with open(path, "r") as handle:
+        tree = ast.parse(handle.read(), filename=os.path.basename(path))
+    keys = []
+    values = {}
+    invalid = []
+    for index, node in enumerate(tree.body):
+        if (index == 0 and isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)):
+            continue
+        if (not isinstance(node, ast.Assign) or len(node.targets) != 1
+                or not isinstance(node.targets[0], ast.Name)
+                or not isinstance(node.value, ast.Constant)
+                or not isinstance(node.value.value, str)):
+            invalid.append("line %s" % getattr(node, "lineno", "?"))
+            continue
+        key = node.targets[0].id
+        keys.append(key)
+        values[key] = node.value.value
+    if invalid:
+        raise BuildError(
+            "REFUSING: %s contains executable or non-string statements at %s.\n"
+            "Production secrets must be plain KEY = \"value\" assignments."
+            % (os.path.basename(path), ", ".join(invalid)))
+    return keys, values
+
+
+def validate_production_secrets(path):
+    """Prove the ignored production input is complete, naming no values."""
+    keys, values = _secrets_assignments(path)
+    expected = [key for key, _why in SECRETS_KEYS]
+    if keys != expected:
+        raise BuildError(
+            "REFUSING: %s keys do not match the production contract.\n"
+            "  found    %s\n  expected %s\n"
+            "The file was not copied and no credential value was printed."
+            % (PRIVATE_SECRETS_NAME, ", ".join(keys) or "none",
+               ", ".join(expected)))
+    required = [key for key in expected
+                if key != "BADGELINK_IP" and not values.get(key)]
+    if required:
+        raise BuildError(
+            "REFUSING: %s has %d empty required value(s):\n  %s\n"
+            "BADGELINK_IP alone may be empty. No credential value was printed."
+            % (PRIVATE_SECRETS_NAME, len(required), "\n  ".join(required)))
+    return path
+
+
 def assert_secrets_template_empty(out):
     """Re-read the staged template and prove every value empty. Never trust it.
 
@@ -798,25 +850,13 @@ def assert_secrets_template_empty(out):
             "REFUSING: the staged tree has no secrets.py. Badgeware's frozen\n"
             "`secrets` helper falls back to it, so a badge without one raises\n"
             "ImportError at boot instead of reading empty strings.")
-    with open(path, "r") as handle:
-        tree = ast.parse(handle.read(), filename="secrets.py")
-    keys = []
-    populated = []
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        for target in node.targets:
-            if not isinstance(target, ast.Name):
-                continue
-            keys.append(target.id)
-            value = node.value
-            if not (isinstance(value, ast.Constant) and value.value == ""):
-                populated.append(target.id)
+    keys, values = _secrets_assignments(path)
+    populated = [key for key in keys if values.get(key) != ""]
     if populated:
         raise BuildError(
             "REFUSING: %d value(s) in the staged secrets.py are not empty:\n  %s\n"
-            "This file installs to /system on every badge. Real credentials go\n"
-            "to /secrets.py on the writable root, per-unit, never through a build."
+            "This path is the offline-template arm. Production credentials are\n"
+            "accepted only through the exact gitignored secrets.prod.py input."
             % (len(populated), "\n  ".join(sorted(populated))))
     expected = [key for key, _why in SECRETS_KEYS]
     if keys != expected:
@@ -843,14 +883,10 @@ def refuse_source_secrets():
         return
     raise BuildError(
         "REFUSING: there is a secrets.py at the export root (%s).\n"
-        "This build does not copy it and will not ship it. It emits its own\n"
-        "template with every value empty, and a file here would have replaced\n"
-        "that template on every badge installed from this tree.\n"
-        "  move it OUTSIDE this tree -- do not delete it if it holds anything\n"
-        "  real -- then rebuild. Provision the badge separately:\n"
-        "    mpremote connect PORT fs cp <file> :/secrets.py.tmp\n"
-        "    mpremote connect PORT exec \"import os; "
-        "os.rename('/secrets.py.tmp', '/secrets.py')\"" % path)
+        "This build accepts a populated credential only through the exact\n"
+        "gitignored name secrets.prod.py, then stages it as secrets.py.\n"
+        "  rename or move this file safely; do not delete it if it holds\n"
+        "  anything real. No credential value was read or printed." % path)
 
 
 def preflight(mpy_cross, stock_menu=None, skip_menu=False, stock_fonts=None,
@@ -869,7 +905,8 @@ def preflight(mpy_cross, stock_menu=None, skip_menu=False, stock_fonts=None,
 
     So this function is the whole gate list, in cost order, with nothing written:
 
-      * there is no `secrets.py` at the export root (a stat, so it is first);
+      * there is no `secrets.py` at the export root, and an optional private
+        `secrets.prod.py` is a complete plain-assignment production file;
       * the compiler resolves and emits the pinned mpy MAJOR format version;
       * `apps-roster.json` parses and names `apps` and `launcher`;
       * every rostered app directory exists, and no unrostered one does;
@@ -889,6 +926,11 @@ def preflight(mpy_cross, stock_menu=None, skip_menu=False, stock_fonts=None,
     # refusal in this list whose failure mode is a credential on roughly 1,000 badges
     # rather than a build that did not happen.
     refuse_source_secrets()
+    private_secrets = os.path.join(ROOT, PRIVATE_SECRETS_NAME)
+    if os.path.isfile(private_secrets):
+        validate_production_secrets(private_secrets)
+    else:
+        private_secrets = None
 
     compiler = check_compiler(mpy_cross)
     roster = load_roster()
@@ -938,7 +980,8 @@ def preflight(mpy_cross, stock_menu=None, skip_menu=False, stock_fonts=None,
             "See assets/fonts/README.md." % ", ".join(sorted(STOCK_FONTS)))
 
     return {"compiler": compiler, "roster": roster, "apps": apps,
-            "menu_base": menu_base, "fonts": fonts_verified}
+            "menu_base": menu_base, "fonts": fonts_verified,
+            "private_secrets": private_secrets}
 
 
 def build(out, mpy_cross, stock_menu=None, skip_menu=False, stock_fonts=None,
@@ -1092,8 +1135,13 @@ def _stage(out, mpy_cross, checked, skip_menu=False, out_label=None, quiet=False
             shutil.copyfile(source, os.path.join(out, name))
             copied += 1
 
-    # THE EMPTY TEMPLATE, written rather than copied, and written every time.
-    write_secrets_template(out)
+    # The private operator input has one exact name and one exact destination.
+    # With no private input the safe offline template remains deterministic.
+    if checked.get("private_secrets"):
+        shutil.copyfile(checked["private_secrets"],
+                        os.path.join(out, "secrets.py"))
+    else:
+        write_secrets_template(out)
     copied += 1
 
     fonts = os.path.join(ROOT, "assets", "fonts")
@@ -1129,10 +1177,13 @@ def _stage(out, mpy_cross, checked, skip_menu=False, out_label=None, quiet=False
             "first, so these would shadow their own bytecode:\n  %s"
             % (len(strays), "\n  ".join(sorted(strays))))
 
-    # REFUSAL 2b. The stray walk above ALLOWS `secrets.py` by name, so it is the
-    # one root file nothing has looked inside. Read it back before it is hashed
-    # into the manifest, so a populated value stops the build whatever wrote it.
-    assert_secrets_template_empty(out)
+    # REFUSAL 2b. Re-read the staged file after copying. This proves the build
+    # contains the validated production input exactly when one was supplied,
+    # and otherwise proves the generated fallback stayed empty.
+    if checked.get("private_secrets"):
+        validate_production_secrets(os.path.join(out, "secrets.py"))
+    else:
+        assert_secrets_template_empty(out)
 
     manifest = {
         "schema": "badge-source-export-build/1",
@@ -1147,6 +1198,8 @@ def _stage(out, mpy_cross, checked, skip_menu=False, out_label=None, quiet=False
         "apps": rows,
         "menu": menu_staged or "skipped",
         "stock_fonts": fonts_staged or "not supplied",
+        "secrets": ("production (%s)" % PRIVATE_SECRETS_NAME
+                    if checked.get("private_secrets") else "empty template"),
         "counts": {"compiled": compiled, "copied": copied},
         "files": [],
     }
@@ -1214,6 +1267,9 @@ def _stage(out, mpy_cross, checked, skip_menu=False, out_label=None, quiet=False
         else:
             print("  fonts      ⚠ ONE FACE ONLY -- %s are not in this /system"
                   % ", ".join(sorted(STOCK_FONTS)))
+        print("  secrets    %s"
+              % ("production input -> /system/secrets.py"
+                 if checked.get("private_secrets") else "empty offline template"))
         print("  compiled   %d modules from %s bytes of source"
               % (compiled, "{:,}".format(source_bytes)))
         print("  copied     %d assets" % copied)
@@ -1705,8 +1761,9 @@ UNMANIFESTED_DIRS = ("build", "__pycache__", ".git")
 
 # These exact root files are operator inputs/outputs beside the public source,
 # not part of it. Keep this an explicit allowlist: a suffix/glob would let an
-# accidentally renamed credential evade the manifest check. Neither name is in
-# SOURCE_ROOTS/COPIED_ROOTS, so the builder cannot stage it into `/system`.
+# accidentally renamed credential evade the manifest check. `secrets.prod.py`
+# is intentionally a BUILD input even though it is not published source; the
+# builder validates it and renames it to `/system/secrets.py`.
 UNMANIFESTED_ROOT_FILES = ("build.zip", "secrets.prod.py")
 
 

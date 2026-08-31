@@ -151,31 +151,21 @@ In a **v3.0.2** release clone they are at:
 
 Without `--stock-fonts` the build **stops**. `--no-stock-fonts` overrides that and prints a warning: this tree replaces `/system` wholesale, so a missing stock face is a REMOVAL from a stock badge rather than an omission from a package, and 19,444 bytes of a 12 MB volume is not a budget argument.
 
-### 2.4 What the build writes that is not in this package: `secrets.py`
+### 2.4 Private production input: `secrets.prod.py` becomes `secrets.py`
 
-The build emits `build/system/secrets.py`: eight provisioning slots, **every value empty**. Badgeware's frozen `secrets` helper reads `/secrets.py` first and falls back to `/system/secrets.py`, so this is what an unprovisioned badge reads, and an empty string is a better answer than an `ImportError`.
+The public repository never contains credentials. For the production fleet, place the protected file at the exact gitignored root name `secrets.prod.py` before building. `tools/build.py` validates its eight plain string assignments without printing values, then copies it byte-for-byte to `build/system/secrets.py`. The private build and `build.zip` are therefore self-contained.
 
-**The shipped BadgeLink runtime reads these slots, but this build never populates them.** `apps-roster.json` records `system_lib.ship: true`, so `network_runtime` and its complete flat/package/CA payload are compiled into `/system/lib`; an unprovisioned unit still fails closed because every value in the generated template is empty. The eight are: the venue network name and its password, a two-letter Wi-Fi regulatory domain, an IANA timezone, a per-badge ES256 identity token, the project's publishable API key, the realtime host that drives SNI and TLS verification, and an optional pre-resolved IPv4.
+If `secrets.prod.py` is absent, the build emits the safe offline template instead: the same eight slots, every value empty. Badgeware's frozen `secrets` helper reads writable-root `/secrets.py` first and falls back to `/system/secrets.py`, so the desk badge may still keep a home-network override at the writable root while the production image carries venue credentials underneath it.
 
-Two rules on it, and both are now ENFORCED rather than promised:
+The eight assignments are: venue SSID and password, two-letter Wi-Fi regulatory domain, IANA timezone, ES256 badge token, publishable API key, Supabase host, and optional pre-resolved IPv4. `BADGELINK_IP` may be empty; every other production value must be non-empty.
 
-- **it is never populated by anything in this package, ever.** The per-unit file is provisioned separately and must be a SUPERSET of these keys. Nothing in this export or the repository it came from writes a credential value anywhere;
-- there is no `secrets.py` in the source export itself, deliberately, and the exporter's own secrets gate refuses one by name. A file of empty slots is a build product, not source.
+The guardrails are mechanical:
 
-**A `secrets.py` at the export root is a refusal, populated or not, and this paragraph is here because the code did not always agree with the two rules above it.** Until 2026-08-26 the build COPIED a root `secrets.py` into the staged tree and wrote its own template only when none was there, so a credential an operator happened to leave beside `apps/` shipped as `/system/secrets.py` to every badge installed from that build, silently. Three things changed and each covers a different way in:
-
-- `tools/build.py` stops in preflight, before it compiles anything or replaces a good `build/system`, if that file exists. It is checked by existence and **never opened**, so the refusal cannot read or log what it is protecting. Move the file outside this tree (do not delete it if it holds anything real) and rebuild;
-- the empty template is written **unconditionally**, so nothing can win the race by being on disk first;
-- the staged template is re-parsed before it is hashed into `manifest.json` and any non-empty value stops the build. That refusal names the **keys**, never the values: a build log gets pasted around more than the file ever would.
-
-Real credentials never travel through a build. They go to `/secrets.py` on the badge's 1 MB writable root over ordinary MicroPython serial:
-
-```sh
-mpremote connect PORT fs cp <your-file> :/secrets.py.tmp
-mpremote connect PORT exec "import os; os.rename('/secrets.py.tmp', '/secrets.py')"
-```
-
-Temporary file plus rename, then read it back to confirm without printing it. `/secrets.py` wins over `/system/secrets.py`, so this overrides the empty template without touching the common image.
+- `secrets.prod.py` and `build.zip` are exact gitignored names and are excluded from the public-source manifest;
+- a root `secrets.py` is still refused, because that ambiguous name was previously committed or staged accidentally;
+- the private file may contain only one ordered set of plain `KEY = "value"` assignments (plus an optional module docstring), with exactly the expected keys;
+- build output records whether it used `production (secrets.prod.py)` or `empty template`, but never prints a value;
+- the private file is included in the build's source fingerprint, so changing, adding, or removing it makes an existing `build/system` stale and `--install` refuses before touching a badge.
 
 ### 2.5 Developing by drag and drop, and why this package precompiles
 

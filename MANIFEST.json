@@ -458,18 +458,18 @@
   ],
   "files": [
     {
-      "bytes": 551,
+      "bytes": 570,
       "generated": true,
       "note": "export-only: repository furniture for the published mirror",
       "path": ".gitignore",
-      "sha256": "9c1b1727bcfa2082289cbfd2132ceeb970007ec6c3a19228ab5aaaf8eb517e6e"
+      "sha256": "d73e0f3ce429961ef072d8197820b0a9e115c67c826300f035eef5ec29c3ecbd"
     },
     {
-      "bytes": 8896,
+      "bytes": 8943,
       "generated": true,
       "note": "export-only: orientation for AI agents reading this package",
       "path": "AGENTS.md",
-      "sha256": "56a4f164369c0f9e316ae5acd438bedb8bfacf7331abc19687b92b44b043bd0a"
+      "sha256": "cb4037933302c1bd35207e28f787d7e67d7271f831e2d0905672ef4f2c022611"
     },
     {
       "bytes": 22735,
@@ -479,11 +479,11 @@
       "sha256": "3ea4f16e1be4d433f967ca524cb8c9a4d3a27f55d56b0a58b8b5265ad12869f9"
     },
     {
-      "bytes": 29352,
+      "bytes": 28084,
       "note": "export-only",
       "origin": "docs/source-export/BUILDING.md",
       "path": "BUILDING.md",
-      "sha256": "ecb0d1b551a74cae280de17e3f86488dc84ec58735b105ffeae86d718c61c311"
+      "sha256": "6acb199a7a998ab929b2619b9e8bc82ef24f1f94be4a10ad6f8378c0644c2a49"
     },
     {
       "bytes": 1347,
@@ -500,11 +500,11 @@
       "sha256": "2c67e8f118440adb723519a4e98c00ece70dcd7ce53abf430459f9099b3ed28d"
     },
     {
-      "bytes": 28857,
+      "bytes": 29099,
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "fe4fb8346190771e81a69e3fe3dccfd943a13559b61112ce0ccc1a4863b44846"
+      "sha256": "4ed6b53e55b9e4ca648dd3691d55e6a5958d94b8ef9391f79b85a1c344611ccb"
     },
     {
       "bytes": 9189,
@@ -1679,11 +1679,11 @@
       "sha256": "988d44bc0ed4e33c2dbcef30330a6906a8a6baced91e88caab36e2bfdb1b897d"
     },
     {
-      "bytes": 96757,
+      "bytes": 99338,
       "note": "export-only: the builder, not installed on the badge",
       "origin": "scripts/export-source-build.py",
       "path": "tools/build.py",
-      "sha256": "5f0c390a55a96aebd957a88d1db0506ed7cbf84b54dcf1ca2adc6d6dcccd1139"
+      "sha256": "edc32c6b01b53a73b3373d5060801d763bfa78f04857a44984e9965e6c0c1c4a"
     }
   ],
   "gates": [
@@ -1803,7 +1803,7 @@
       "ok": true
     },
     {
-      "detail": "the README's 191 payload files / 6,063,003 bytes and 192 manifest rows all match the manifest",
+      "detail": "the README's 191 payload files / 6,064,382 bytes and 192 manifest rows all match the manifest",
       "gate": "readme-matches-manifest",
       "offenders": [],
       "ok": true
@@ -1894,26 +1894,26 @@
         {
           "class": "repository-doc-paths",
           "fatal": false,
-          "files": 76,
-          "occurrences": 201,
+          "files": 75,
+          "occurrences": 200,
           "what": "a path into `docs/` other than this export's own prose"
         },
         {
           "class": "other-internal-paths",
           "fatal": false,
           "files": 85,
-          "occurrences": 261,
+          "occurrences": 260,
           "what": "a path into another tree this export omits (`*/host/`, `research/`, ...)"
         }
       ],
-      "detail": "census over 169 text subjects (report-only except device-identifiers): device-identifiers 0/0f!, val-identifiers 33/21f, owner-quotations 330/69f, verbatim-ruling-blocks 106/39f, benchmark-report-paths 34/18f, repository-doc-paths 201/76f, other-internal-paths 261/85f -- per-file counts kept in a maintainer report outside this package",
+      "detail": "census over 169 text subjects (report-only except device-identifiers): device-identifiers 0/0f!, val-identifiers 33/21f, owner-quotations 330/69f, verbatim-ruling-blocks 106/39f, benchmark-report-paths 34/18f, repository-doc-paths 200/75f, other-internal-paths 260/85f -- per-file counts kept in a maintainer report outside this package",
       "gate": "internal-exhaust-census",
       "offenders": [],
       "ok": true
     }
   ],
   "provenance": {
-    "commit": "4fa9aa17e81d1fb38ae7f8e772488e12c3dec60f",
+    "commit": "edfbdb43a741dd532370b9af225bad534ab6d306",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1972,10 +1972,10 @@
     "version": "v3.0.2"
   },
   "totals": {
-    "bytes": 6091860,
+    "bytes": 6093481,
     "files": 192,
     "payload": {
-      "bytes": 6063003,
+      "bytes": 6064382,
       "excludes": [
         "README.md",
         "MANIFEST.json"
@@ -1983,7 +1983,7 @@
       "files": 191
     }
   },
-  "tree_hash": "b9c42c63a2bbc8c805861ca72ab51efd45c0a70197c11f1ba72249e79a55e5de",
+  "tree_hash": "b7c1224cfa361d649c56d8fb6940b22b93ef33603344ad32c3917396f8104a7e",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",

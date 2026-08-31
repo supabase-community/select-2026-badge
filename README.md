@@ -1,6 +1,6 @@
 # Supabase Select 2026 badge software -- source export
 
-This is the software that would ship to the ~1,000 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `4fa9aa17e81d` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
+This is the software that would ship to the ~1,000 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `edfbdb43a741` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
 
 ## Status
 
@@ -67,6 +67,9 @@ make -C ../micropython/mpy-cross
 MPY=$(cd ../micropython/mpy-cross/build && pwd)/mpy-cross
 
 # 3. Compile the whole tree into build/system.
+#    Production: first place the protected, gitignored credential at
+#    secrets.prod.py. The builder validates it and stages it as secrets.py.
+#    If it is absent, the build deliberately emits an empty offline template.
 python3 tools/build.py --mpy-cross "$MPY" \
     --stock-menu  "$BADGEWARE/firmware/apps/menu" \
     --stock-fonts "$BADGEWARE/firmware/assets/fonts"
@@ -107,7 +110,7 @@ We precompile the thing we hand you for three measured reasons:
 
 Full detail, pins, and troubleshooting: **`BUILDING.md`**. It carries the pins with their one open caveat, `--check` (build twice, prove byte-identical output), a build without the release clone (`--skip-menu`, `--no-stock-fonts`), firmware flashing, and the refusals the build will not budge on.
 
-It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **191 files, 6,063,003 bytes**.
+It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **191 files, 6,064,382 bytes**.
 
 Those two numbers are the PAYLOAD: everything in this tree except this README and `MANIFEST.json`, the two files that cannot quote a total including themselves without changing it. `MANIFEST.json` lists 192 rows (the payload plus this README) and does not hash itself; its `totals.payload` repeats the two numbers above, and the exporter's `readme-matches-manifest` gate reads this paragraph back and fails the build if any of the three disagrees.
 
@@ -242,7 +245,7 @@ python3 tools/build.py --verify-manifest
 
 It hashes every file here against `MANIFEST.json` and recomputes the `tree_hash`, reporting missing files, wrong bytes and files the manifest does not name. It skips `build/`, `__pycache__/` and `.git/` when it walks the tree. The first two are what the build and the shipped test suite write, and are in `.gitignore` for the same reason; `.git/` is this repository's own metadata, present in every clone and never a manifest row, so a FRESH `git clone` of this repository verifies clean. (git cannot ignore its own metadata directory, which is why `.git/` is skipped in the walk rather than named in `.gitignore`.)
 
-Two exact files may also live at the repository root without becoming published source: `build.zip`, a disposable local archive, and `secrets.prod.py`, the protected production provisioning input. Both are gitignored and ignored by this manifest check. Neither is read by the build or copied into `/system`; the build still emits only its generated empty `/system/secrets.py` template, and provisioning the writable-root `/secrets.py` remains a separate operation. The exception is exact: different names and copies in subdirectories are reported as drift.
+Two exact files may also live at the repository root without becoming published source: `build.zip`, a disposable local archive, and `secrets.prod.py`, the protected production build input. Both are gitignored and ignored by this public-source manifest check. The builder does read `secrets.prod.py` when it exists: it validates the assignment shape without printing values and copies it into the private build as `/system/secrets.py`. If absent, it emits the empty offline template. The exception is exact: different names and copies in subdirectories are reported as drift.
 
 **The `tree_hash` formula, so you do not have to take our word for it.** SHA-256 over the concatenation of `<path>\0<sha256>\n` for every row in `MANIFEST.json`, rows sorted by path:
 
