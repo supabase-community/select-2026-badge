@@ -483,7 +483,7 @@
       "note": "export-only",
       "origin": "docs/source-export/BUILDING.md",
       "path": "BUILDING.md",
-      "sha256": "013549e031441237d6caff0f4bf2abc03a382ff544e0e094f53656619c6fbdcd"
+      "sha256": "ecb0d1b551a74cae280de17e3f86488dc84ec58735b105ffeae86d718c61c311"
     },
     {
       "bytes": 1347,
@@ -504,7 +504,7 @@
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "2ac569e1f971982a93d9d5d17c85905a17ea98ed00a78f602ff1993664b374b9"
+      "sha256": "fe4fb8346190771e81a69e3fe3dccfd943a13559b61112ce0ccc1a4863b44846"
     },
     {
       "bytes": 9189,
@@ -1086,10 +1086,10 @@
       "sha256": "af0a64d1c7de182212e1a5f0dae408c132737f7844dd77964260a3008e413b6e"
     },
     {
-      "bytes": 6772,
+      "bytes": 6622,
       "origin": "setup/badge/setup/card_board.py",
       "path": "apps/setup/card_board.py",
-      "sha256": "2e21d7bbf8d69aee6e0332c05678d22c60ec15b323a4b8d1cedd6ec30dc40fa3"
+      "sha256": "1e30a892cc7da1de46efca96e8321113eee7a124de17c8a02049f78041b0f5db"
     },
     {
       "bytes": 8218,
@@ -1182,10 +1182,10 @@
       "sha256": "2f5ef5e0dd7f3883f4a8a5141f593b4ac757e13f54fc47d54b589a49ef2aeef1"
     },
     {
-      "bytes": 37609,
+      "bytes": 40835,
       "origin": "setup/badge/setup/kbqwerty_board.py",
       "path": "apps/setup/kbqwerty_board.py",
-      "sha256": "296d1ff98f982e44910ef37c09de84a4bf83d04fb0aa38914beb9cf99f40b32c"
+      "sha256": "c4b48b73e138091f311b726269ddd6cd08f2180a57294b89e77b973d8e45474e"
     },
     {
       "bytes": 21108,
@@ -1803,7 +1803,7 @@
       "ok": true
     },
     {
-      "detail": "the README's 191 payload files / 6,059,927 bytes and 192 manifest rows all match the manifest",
+      "detail": "the README's 191 payload files / 6,063,003 bytes and 192 manifest rows all match the manifest",
       "gate": "readme-matches-manifest",
       "offenders": [],
       "ok": true
@@ -1838,7 +1838,7 @@
     },
     {
       "bytecode_verified": true,
-      "detail": "36 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 58 guarded import sites across 25 files, 3 launcher `badge.mode` call site(s), nothing debounced, one install procedure, a 1,483,095 B staged /system, no automation-enforcement claim, 502,783 B of bytecode measured from 90 modules, within 128 B of the pin",
+      "detail": "36 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 58 guarded import sites across 25 files, 3 launcher `badge.mode` call site(s), nothing debounced, one install procedure, a 1,483,941 B staged /system, no automation-enforcement claim, 503,629 B of bytecode measured from 90 modules, within 128 B of the pin",
       "gate": "doc-claims-verified",
       "offenders": [],
       "ok": true
@@ -1874,7 +1874,7 @@
           "class": "owner-quotations",
           "fatal": false,
           "files": 69,
-          "occurrences": 331,
+          "occurrences": 330,
           "what": "a quoted block with an owner attribution beside it"
         },
         {
@@ -1894,8 +1894,8 @@
         {
           "class": "repository-doc-paths",
           "fatal": false,
-          "files": 77,
-          "occurrences": 202,
+          "files": 76,
+          "occurrences": 201,
           "what": "a path into `docs/` other than this export's own prose"
         },
         {
@@ -1906,14 +1906,14 @@
           "what": "a path into another tree this export omits (`*/host/`, `research/`, ...)"
         }
       ],
-      "detail": "census over 169 text subjects (report-only except device-identifiers): device-identifiers 0/0f!, val-identifiers 33/21f, owner-quotations 331/69f, verbatim-ruling-blocks 106/39f, benchmark-report-paths 34/18f, repository-doc-paths 202/77f, other-internal-paths 261/85f -- per-file counts kept in a maintainer report outside this package",
+      "detail": "census over 169 text subjects (report-only except device-identifiers): device-identifiers 0/0f!, val-identifiers 33/21f, owner-quotations 330/69f, verbatim-ruling-blocks 106/39f, benchmark-report-paths 34/18f, repository-doc-paths 201/76f, other-internal-paths 261/85f -- per-file counts kept in a maintainer report outside this package",
       "gate": "internal-exhaust-census",
       "offenders": [],
       "ok": true
     }
   ],
   "provenance": {
-    "commit": "468b045e8266adfca58757f41177f695178e67ce",
+    "commit": "4fa9aa17e81d1fb38ae7f8e772488e12c3dec60f",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1972,10 +1972,10 @@
     "version": "v3.0.2"
   },
   "totals": {
-    "bytes": 6088784,
+    "bytes": 6091860,
     "files": 192,
     "payload": {
-      "bytes": 6059927,
+      "bytes": 6063003,
       "excludes": [
         "README.md",
         "MANIFEST.json"
@@ -1983,7 +1983,7 @@
       "files": 191
     }
   },
-  "tree_hash": "521800c4656f1a08726a433f63b1263be61163f2a20e4b26ec968399fadf49c0",
+  "tree_hash": "b9c42c63a2bbc8c805861ca72ab51efd45c0a70197c11f1ba72249e79a55e5de",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",

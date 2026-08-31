@@ -119,25 +119,25 @@ Reproduce with `node identity/host/measure_faces.mjs` for the per-face
 ladder; the per-glyph ink probe is described in `kb/README.md` section 3.
 
 =========================================================================
-4.  THE SOFTKEY BAR IS GONE, AND THE SHIFT LATCHES
+4.  THE BUTTON HINTS ARE NOT KEYS, AND THE SHIFT LATCHES
 =========================================================================
 
-THE BAR.  The owner asked for it explicitly: "let's see what it looks like
-without those and people just have to know that a is left, b is select, and c
-is right."  `docs/badge-button-rules.md` argues the other way and it is
-GUIDANCE, not law (owner ruling, 2026-08-16, recorded in that file's own
-header); this is a deliberate overrule and an experiment, not an oversight.
-`BAR` below is three empty strings rather than deleted, so the board still
-presents the shell's whole surface and the KB_BOOT marker still reports what
-the bar would say -- `keys=||` is the machine-readable form of "there isn't
-one".
+THE HINT STRIP.  A, B and C still move left, commit and move right; the owner
+now wants those three meanings visible while typing.  They are descriptive
+hardware-button hints, not selectable board cells, so the strip draws simple
+vector arrows/check below the board and never enters `ROWS`, `LAYOUT` or the
+caret model.  `BAR` remains three empty strings because the text-softkey API is
+still not the surface being used and the KB_BOOT marker must not claim three
+selectable text actions.
 
-What it buys: 13 px, which is 3 px on every one of the four rows.  With the
-bar the rows would be `(107 - 30) // 4 = 19` px; without it they are
-`(120 - 30) // 4 = 22` px, and the board runs to the foot of the panel.  Say
-plainly what it does NOT buy: it is not what makes ten columns fit.  Ten
-columns fit because a unit is 8 px.  Going from five rows to four already
-lifted the row height from 15 px to 19; the bar removal is the last 3.
+The strip is 22 px tall at HIRES (11 px at LORES), INCLUDING its top border.
+Most of that cost comes from the BACK/SPACE/DONE row: at LORES the three
+recognition rows move from 22 px to 21 px while the action row moves to 14 px.
+The board keeps its accepted top edge, so the header does not shift and the
+letter keys lose only one logical pixel each.  The chevrons and check are 15 px
+tall at HIRES; the check is shifted 15 px right to match the owner's mock-up.
+Ten columns still fit because a unit is 8 px; the hint strip does not
+participate in horizontal geometry.
 
 THE SHIFT IS INVERTED AND IT LATCHES.  A badge types a NAME, so the letters
 are UPPERCASE by default and the shift key switches to lowercase -- the
@@ -320,6 +320,22 @@ SYMBOL_ROWS = (
 # One key is two units, so a half-key inset is one unit and nothing in any
 # layout is ever a fraction.
 KEY_UNITS = 2
+
+# The product keyboard is HIRES, so these dimensions are stated in the pixels
+# the owner reviews.  `_hires_px` halves them for the retired LORES bench while
+# preserving the same physical size; keeping them here makes the mock-up's
+# three exact measurements testable rather than hidden in vector arithmetic.
+HIRES_SCALE = 2
+HINT_H_HIRES = 22
+HINT_ICON_H_HIRES = 15
+HINT_CHECK_SHIFT_HIRES = 15
+
+
+def _hires_px(pixels, scale):
+    """Scale one HIRES measurement without truncating odd-sized icons."""
+    return (pixels * scale + HIRES_SCALE - 1) // HIRES_SCALE
+
+
 UNITS = 20
 
 
@@ -753,6 +769,21 @@ def Model(*args, **kwargs):
     return PlaneModel(*args, **kwargs)
 
 
+def row_geometry(height, head_h, hint_y, rows, scale):
+    """`(board_y, row_heights)` with most hint cost paid by the verb row.
+
+    The existing board top is retained.  Taking one logical pixel from each
+    recognition row leaves their accepted physical size almost unchanged;
+    everything else needed to clear the hint strip comes from the final action
+    row, where the labels are short and recognition is not the task.
+    """
+    full_h = (height - head_h) // rows
+    board_y = height - full_h * rows
+    key_h = full_h - scale
+    action_h = hint_y - board_y - key_h * (rows - 1)
+    return board_y, (key_h,) * (rows - 1) + (action_h,)
+
+
 # --------------------------------------------------------------------------
 # the view the board brings with it
 # --------------------------------------------------------------------------
@@ -763,7 +794,7 @@ _BASE_VIEW = getattr(kb_shell.KeyboardView, "_PLAIN", kb_shell.KeyboardView)
 
 
 class PlaneView(_BASE_VIEW):
-    """`kb_shell.KeyboardView` plus a plane switch and minus the softkey bar.
+    """`kb_shell.KeyboardView` plus planes and hardware-button hints.
 
     BOARD-AGNOSTIC ON PURPOSE.  Everything below keys off `board.PLANES`, so a
     board without one -- `kbgrid`'s -- gets the base class's behaviour
@@ -782,13 +813,19 @@ class PlaneView(_BASE_VIEW):
         if self.planes is None:
             return
         chrome = self.chrome
-        # THE FULL PANEL, not `chrome.content_h`.  The bar is not drawn, so the
-        # 13 px it would occupy belong to the board.  Bottom-aligned the same
-        # way the base class is, so the slack from an inexact division lands
-        # between the header and the board rather than under it.
+        # Keep the old top edge and reclaim most of the hint strip from the
+        # action row.  Equal-height rows would shrink every recognition key
+        # even though only BACK/SPACE/DONE can give up space without making
+        # letters harder to scan.  `hint_h` includes its top border.
         rows = len(board.LAYOUT)
-        self.cell_h = (chrome.height - self.head_h) // rows
-        self.board_y = chrome.height - self.cell_h * rows
+        self.hint_h = _hires_px(HINT_H_HIRES, self.scale)
+        self.hint_y = chrome.height - self.hint_h
+        self.board_y, self.row_heights = row_geometry(
+            chrome.height, self.head_h, self.hint_y, rows, self.scale)
+        self.row_y = tuple(
+            self.board_y + sum(self.row_heights[:index])
+            for index in range(rows))
+        self.cell_h = self.row_heights[0]
         # One pixel table per plane, resolved once.  The base class builds one
         # from `board.LAYOUT` in its constructor and never rebuilds it, which
         # is the whole reason this subclass exists.
@@ -796,6 +833,45 @@ class PlaneView(_BASE_VIEW):
             tuple(self._pixels(row) for row in board.plane_layout(index))
             for index in range(len(self.planes)))
         self.cells = self.plane_cells[0]
+
+    def _stroke(self, x1, y1, x2, y2):
+        """A physically one-logical-pixel vector stroke at either mode."""
+        for offset in range(self.scale):
+            self.screen.line(x1, y1 + offset, x2, y2 + offset)
+
+    def _draw_button_hints(self):
+        """Chevron / accept / chevron under A, B and C, outside the model."""
+        screen = self.screen
+        scale = self.scale
+        screen.pen = self.band
+        screen.rectangle(0, self.hint_y, self.chrome.width, self.hint_h)
+        screen.pen = self.grey
+        screen.rectangle(0, self.hint_y, self.chrome.width, scale)
+        cy = self.hint_y + self.hint_h // 2
+        left, middle, right = self.chrome.softkey_x
+
+        # `_stroke` adds `scale - 1` pixels below each segment.  Shortening the
+        # raw bottom by that amount makes the final raster exactly 15 px tall
+        # at HIRES, including stroke thickness, rather than a nominal 15 that
+        # becomes 16 on panel.
+        icon_h = _hires_px(HINT_ICON_H_HIRES, scale)
+        top = cy - icon_h // 2
+        bottom = top + icon_h - scale
+        chevron_dx = 2 * scale
+        middle += _hires_px(HINT_CHECK_SHIFT_HIRES, scale)
+
+        screen.pen = self.white
+        self._stroke(left + chevron_dx, top, left - chevron_dx, cy)
+        self._stroke(left - chevron_dx, cy, left + chevron_dx, bottom)
+
+        check_left = middle - icon_h // 2
+        check_right = check_left + icon_h - 1
+        check_knee = middle - scale
+        self._stroke(check_left, cy + scale, check_knee, bottom)
+        self._stroke(check_knee, bottom, check_right, top)
+
+        self._stroke(right - chevron_dx, top, right + chevron_dx, cy)
+        self._stroke(right + chevron_dx, cy, right - chevron_dx, bottom)
 
     def draw(self, app):
         if self.planes is None:
@@ -836,12 +912,13 @@ class PlaneView(_BASE_VIEW):
         for index in range(len(self.cells)):
             line = self.cells[index]
             cells = rows[index]
-            y = self.board_y + index * self.cell_h
+            self.cell_h = self.row_heights[index]
+            y = self.row_y[index]
             for position in range(len(line)):
                 x, cell_w = line[position]
                 self._cell(cells[position], x, y, cell_w,
                            index == row and position == column)
-        # AND NO `chrome.bar(...)`.  That is the experiment (section 4).
+        self._draw_button_hints()
 
 
 # THE ADOPTION.  `kb_seam` constructs `kb_shell.KeyboardView` by name and is

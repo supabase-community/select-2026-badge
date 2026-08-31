@@ -55,8 +55,7 @@ class NameBoard(board.PlaneView):
     tiles seamlessly and cannot resolve differently in the browser than on the
     badge), `plane_cells` (one resolved table per plane, built once), `_cell`
     (bounded and ellipsed, because the renderer drops out-of-bounds glyphs
-    silently), and the bar-free geometry that lifts the four rows from 19 px to
-    22 -- 8.25 x 6.00 mm, larger than the 5 mm physical buttons.
+    silently), and the non-selectable A/B/C hint strip below the board.
     """
 
     def __init__(self, screen_api, image_api, color_api, font_api, rect_api):
@@ -121,11 +120,11 @@ class NameBoard(board.PlaneView):
         for index in range(len(self.cells)):
             line = self.cells[index]
             cells = rows[index]
-            top = self.board_y + index * self.cell_h
+            self.cell_h = self.row_heights[index]
+            top = self.row_y[index]
             for position in range(len(line)):
                 x, cell_w = line[position]
                 self._cell(cells[position], x, top, cell_w,
                            index == row and position == column)
-        # AND NO `chrome.bar(...)`.  The owner removed it on 2026-08-16 (kb
-        # deviation D9, an explicit overrule of I5) and BACK and DONE are cells
-        # on row four, so the screen still has a labelled way out.
+        # Descriptive hardware-button hints, never cells and never selectable.
+        self._draw_button_hints()

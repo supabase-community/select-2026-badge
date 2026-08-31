@@ -1,6 +1,6 @@
 # Supabase Select 2026 badge software -- source export
 
-This is the software that would ship to the ~1,000 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `468b045e8266` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
+This is the software that would ship to the ~1,000 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `4fa9aa17e81d` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
 
 ## Status
 
@@ -99,7 +99,7 @@ It does, and that is the right development loop: your own README's "Installing A
 
 We precompile the thing we hand you for three measured reasons:
 
-1. **Headroom.** The modules here are 2,934,716 B as source and 502,783 B as bytecode, 17%. With assets, the installed tree is 1,483,095 B, 12% of the 12 MB volume; as source it would be 3,915,028 B, 31%. Both fit today. The assets are what grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
+1. **Headroom.** The modules here are 2,937,792 B as source and 503,629 B as bytecode, 17%. With assets, the installed tree is 1,483,941 B, 12% of the 12 MB volume; as source it would be 3,918,104 B, 31%. Both fit today. The assets are what grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
 2. **First-open latency, which is the one a wearer feels.** MicroPython compiles each `.py` at import, as one uninterruptible native call per module, and every app exit resets the badge, so every open is a cold open. The largest module here is 326,156 B of source; even precompiled to a 102,017 B `.mpy`, its cold import measures 630-765 ms on device. Shipping source adds the parse to that, on every open.
 3. **Fleet integrity.** About 1,000 badges get a byte-identical, hash-verified install, and a stray `.py` beside its own `.mpy` silently wins: no speed-up, possibly stale code, no error. That is the failure `tools/build.py --verify-mount` exists to catch.
 
@@ -107,7 +107,7 @@ We precompile the thing we hand you for three measured reasons:
 
 Full detail, pins, and troubleshooting: **`BUILDING.md`**. It carries the pins with their one open caveat, `--check` (build twice, prove byte-identical output), a build without the release clone (`--skip-menu`, `--no-stock-fonts`), firmware flashing, and the refusals the build will not budge on.
 
-It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **191 files, 6,059,927 bytes**.
+It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **191 files, 6,063,003 bytes**.
 
 Those two numbers are the PAYLOAD: everything in this tree except this README and `MANIFEST.json`, the two files that cannot quote a total including themselves without changing it. `MANIFEST.json` lists 192 rows (the payload plus this README) and does not hash itself; its `totals.payload` repeats the two numbers above, and the exporter's `readme-matches-manifest` gate reads this paragraph back and fails the build if any of the three disagrees.
 
