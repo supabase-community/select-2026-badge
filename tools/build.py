@@ -73,7 +73,7 @@ WHAT IT REFUSES THAT IT DID NOT USED TO, all three from an outside review:
      refusal.
   2. AN INSTALL NOBODY VERIFIED.  `--verify-mount <MOUNT>` compares a mounted
      badge against the build manifest by size and SHA-256, names stray files and
-     AppleDouble sidecars, and exits non-zero.  Doing that by hand at 800 units
+     AppleDouble sidecars, and exits non-zero. Doing that by hand at roughly 1,000 units
      is the avoidable human-error surface the review named.
   3. NOTHING, on Windows.  `--check` used to shell out to the Unix `diff`
      executable, which a stock Windows Python does not have -- so the one command
@@ -575,7 +575,7 @@ def load_roster():
     THE ROSTER IS A GATE, NOT A HINT.  This build used to enumerate `apps/` and
     compile whatever it found, which means a directory copied in by accident -- a
     lab tile, a comparison harness, a half-finished experiment -- would have
-    become a shipping app with an icon on a wearer's grid, silently, at 800 units.
+    become a shipping app with an icon on a wearer's grid, silently, at roughly 1,000 units.
     The roster is the file the project's two exporters already coordinate through,
     so reading it here makes the three artifacts agree by construction.
     """
@@ -644,7 +644,7 @@ def assert_system_lib_agrees(roster, payload):
     runtime while every document in the box said the radio was on. The badge
     boots either way, because `main.py`'s import is guarded, and that is exactly
     why nothing downstream would have caught it: the failure is silent, it looks
-    like a clean build, and it is 800 units of a wrong claim.
+    like a clean build, and it is roughly 1,000 units of a wrong claim.
 
     BOTH DIRECTIONS ARE A STOP, for the reason `app_dirs` refuses a MISSING app
     and a STRAY one rather than only the first: a `lib/` in a tree whose roster
@@ -753,10 +753,10 @@ def secrets_template_text():
         "strings rather than an ImportError. Provision the per-unit",
         "`/secrets.py` separately; it must be a SUPERSET of these keys.",
         "",
-        "NOTHING IN THIS BUILD READS THEM. The network runtime is not part of",
-        'the source export (`apps-roster.json` -> `system_lib.ship`), so this',
-        "file is here for parity with the release artifact and for the day the",
-        "radio is turned on.",
+        "THE SHIPPED NETWORK RUNTIME READS THESE SLOTS. Every value is empty.",
+        "With empty credentials it stays offline though radio and push start ON.",
+        "The fresh local preference is absent by design; this does not connect.",
+        "Provision once.",
         '"""',
         "",
     ]
@@ -786,7 +786,7 @@ def assert_secrets_template_empty(out):
     the ONE artifact whose failure ships a working badge, so a populated value
     must stop the build no matter which code path wrote the file. Parsed rather
     than pattern-matched, because a regex over a credential file is a way to miss
-    one, and a build that missed one cannot be taken back off 800 badges.
+    one, and a build that missed one cannot be taken back off roughly 1,000 badges.
 
     IT REPORTS KEY NAMES AND NEVER VALUES. A refusal that echoes what it caught
     has moved the credential into a build log, which gets pasted around more than
@@ -886,7 +886,7 @@ def preflight(mpy_cross, stock_menu=None, skip_menu=False, stock_fonts=None,
     patched launcher bytes and the verified font paths come back with it.
     """
     # FIRST, ahead of even the compiler probe: it is one stat, and it is the only
-    # refusal in this list whose failure mode is a credential on 800 badges
+    # refusal in this list whose failure mode is a credential on roughly 1,000 badges
     # rather than a build that did not happen.
     refuse_source_secrets()
 
@@ -1319,7 +1319,7 @@ def verify_mount(mount, manifest_path=None):
     operator to identify stale directories, delete them, copy every subtree, look
     for stray `.py` and AppleDouble files, and compare every size and hash by
     hand.  An outside reviewer called that an avoidable human-error surface at
-    800 units and was right: every one of those steps is mechanical, and the
+    roughly 1,000 units and was right: every one of those steps is mechanical, and the
     manifest the build already writes has every number in it.
 
     Four findings, and each one is a real install failure that has happened to
@@ -1413,8 +1413,9 @@ def verify_mount(mount, manifest_path=None):
         raise BuildError(
             "THE INSTALL IS NOT VERIFIED. Equality with the build manifest is "
             "the install's only proof; anything less is a hope.\n"
-            "The install is four roots, not one -- apps/, assets/, main.py and "
-            "secrets.py -- and one command does all four, in the order that is "
+            "The install manages the whole build, not apps alone -- currently "
+            "apps/, assets/, lib/, main.py and secrets.py -- and one command "
+            "handles all five paths in the order that is "
             "safe:\n"
             "    python3 tools/build.py --install \"<MOUNT>\"\n"
             "It re-clears the roots, copies the build by name (`build/system/.` "
@@ -1702,6 +1703,12 @@ def install(mount, out=None, allow_degraded=False):
 # anyway, so this entry is inert there.
 UNMANIFESTED_DIRS = ("build", "__pycache__", ".git")
 
+# These exact root files are operator inputs/outputs beside the public source,
+# not part of it. Keep this an explicit allowlist: a suffix/glob would let an
+# accidentally renamed credential evade the manifest check. Neither name is in
+# SOURCE_ROOTS/COPIED_ROOTS, so the builder cannot stage it into `/system`.
+UNMANIFESTED_ROOT_FILES = ("build.zip", "secrets.prod.py")
+
 
 def verify_manifest(root=None):
     """Is this package the bytes that were published? The reviewer's question.
@@ -1738,6 +1745,8 @@ def verify_manifest(root=None):
             rel = os.path.relpath(path, root).replace(os.sep, "/")
             if rel == "MANIFEST.json":
                 continue  # It cannot hash itself; see the README's counts.
+            if rel in UNMANIFESTED_ROOT_FILES:
+                continue  # Exact local-only names; close spellings still fail.
             found[rel] = (os.path.getsize(path), digest(path))
 
     missing = sorted(set(expected) - set(found))
@@ -1753,8 +1762,10 @@ def verify_manifest(root=None):
 
     print("MANIFEST VERIFY %s" % root)
     print("  manifest   %d rows (MANIFEST.json does not hash itself)" % len(rows))
+    ignored = (["%s/" % name for name in UNMANIFESTED_DIRS]
+               + list(UNMANIFESTED_ROOT_FILES))
     print("  on disk    %d files, excluding %s"
-          % (len(found), " and ".join("%s/" % name for name in UNMANIFESTED_DIRS)))
+          % (len(found), " and ".join(ignored)))
     checks = [("missing from the tree", missing),
               ("wrong size or hash", wrong),
               ("in the tree and not in the manifest", extra)]
@@ -1775,7 +1786,7 @@ def verify_manifest(root=None):
             "is listed above. A fresh `git clone` of the published repository "
             "verifies clean; a working copy that has been built in or tested in "
             "should not have differences outside %s."
-            % " and ".join("%s/" % name for name in UNMANIFESTED_DIRS))
+            % " and ".join(ignored))
     print("  RESULT every file in this package matches MANIFEST.json, byte for "
           "byte, and the tree hash is the hash of its rows")
     return manifest

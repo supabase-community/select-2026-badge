@@ -5,3 +5,9 @@
 build/
 __pycache__/
 *.pyc
+
+# Exact root-local operator artifacts. The archive is disposable output and the
+# populated provisioning file is protected input; neither is source or a build
+# input, and tools/build.py never copies either into /system.
+/build.zip
+/secrets.prod.py

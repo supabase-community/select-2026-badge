@@ -48,7 +48,7 @@ Images are on the releases page: <https://github.com/pimoroni/tufty2350/releases
 
 A `.mpy` whose format version disagrees with the firmware raises `ValueError: incompatible .mpy file` at import. An import that raises inside `badgeware.launch()` is a traceback modal and a reset, so the symptom is a badge that reboots into the launcher every time you open one of these apps rather than an app that fails quietly. Section 1.1 is the build-side gate that stops us shipping bytecode in the wrong format in the first place.
 
-**One caveat that is ours to state, not yours to answer:** `v3.0.2` names the public release asset, and section 1.2 explains why that is weaker than it looks. Two images tagged `v3.0.2` need not be byte-identical, and the exact UF2 the ~800 units will be flashed with is an open request rather than something we are withholding.
+**One caveat that is ours to state, not yours to answer:** `v3.0.2` names the public release asset, and section 1.2 explains why that is weaker than it looks. Two images tagged `v3.0.2` need not be byte-identical, and the exact UF2 the ~1,000 units will be flashed with is an open request rather than something we are withholding.
 
 ---
 
@@ -92,7 +92,7 @@ git -C ../micropython checkout b29530abbd0550c8ab6963024aef36f3cd6cd278
 make -C ../micropython/mpy-cross
 ```
 
-**⚠️ THE ONE PIN WE CANNOT GIVE YOU IS THE ONE YOU OWN.** `v3.0.2` names the PUBLIC RELEASE asset and that is deliberately weaker than it looks: your CI builds picovector from a floating `main`, so two images tagged v3.0.2 need not be byte-identical. **We do not know the exact UF2 the ~800 units will be flashed with, and asking for it is an open request rather than something we are withholding.** Until it is answered, "this tree targets v3.0.2" means the public tag, and a first-article check against a production-flashed unit is the only thing that closes the gap. If you can name the image, we will pin to it and this table gains a row.
+**⚠️ THE ONE PIN WE CANNOT GIVE YOU IS THE ONE YOU OWN.** `v3.0.2` names the PUBLIC RELEASE asset and that is deliberately weaker than it looks: your CI builds picovector from a floating `main`, so two images tagged v3.0.2 need not be byte-identical. **We do not know the exact UF2 the ~1,000 units will be flashed with, and asking for it is an open request rather than something we are withholding.** Until it is answered, "this tree targets v3.0.2" means the public tag, and a first-article check against a production-flashed unit is the only thing that closes the gap. If you can name the image, we will pin to it and this table gains a row.
 
 ---
 
@@ -120,11 +120,11 @@ Output lands in `build/system/`, shaped exactly like the badge's `/system`.
 
 ### 2.1 What compiles: the production roster, not the directory listing
 
-`tools/build.py` reads the flattened `apps-roster.json` at the export root. It compiles the six names in `apps` in grid order, assembles the hidden `launcher`, and applies each `payload_only` keep list without adding an entry point. The exporter derives those keys from the source repository's `production.apps`, hidden menu and `production.payload_only`; the development `device` list never enters this file. **A directory under `apps/` that the production contract does not carry is a refusal, not an app.** That matters more than it sounds: without it, a lab tile or a half-finished experiment copied into the tree would compile into a shipping app with an icon on a wearer's grid, silently, 800 times. `--allow-unrostered` overrides it and prints what it took.
+`tools/build.py` reads the flattened `apps-roster.json` at the export root. It compiles the six names in `apps` in grid order, assembles the hidden `launcher`, and applies each `payload_only` keep list without adding an entry point. The exporter derives those keys from the source repository's `production.apps`, hidden menu and `production.payload_only`; the development `device` list never enters this file. **A directory under `apps/` that the production contract does not carry is a refusal, not an app.** That matters more than it sounds: without it, a lab tile or a half-finished experiment copied into the tree would compile into a shipping app with an icon on a wearer's grid, silently, roughly 1,000 times. `--allow-unrostered` overrides it and prints what it took.
 
 ### 2.2 Two things the build refuses to do
 
-Both because the failure is silent on a badge and expensive at 800 units:
+Both because the failure is silent on a badge and expensive at roughly 1,000 units:
 
 - ship a `.py` beside its own `.mpy`. MicroPython stats the source *first*, so a badge holding both runs the source: no speed-up, possibly stale code, and no error anywhere. `main.py` is the one allowed exception (the frozen boot imports it by path, and it is under a kilobyte, so there is nothing to win and a format to get wrong);
 - exceed the 12 MB FAT allocation `/system` is packed into. Over budget is not a slow install, it is an install that cannot happen.
@@ -185,9 +185,9 @@ Temporary file plus rename, then read it back to confirm without printing it. `/
 
 | | source form | bytecode form |
 |---|---:|---:|
-| the modules | 2,934,016 B | 502,576 B (17%) |
+| the modules | 2,934,716 B | 502,783 B (17%) |
 | plus assets and the two files that stay source | +980,312 B | +980,312 B |
-| **staged `/system`** | **3,914,328 B** | **1,482,888 B** |
+| **staged `/system`** | **3,915,028 B** | **1,483,095 B** |
 | of the 12 MB FAT allocation | 31% | 12% |
 
 1. **Headroom.** Source form fits today. It fits with 8.3 MB in hand against 0.9 MB, and the assets are the part that grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
@@ -245,6 +245,7 @@ The wearer-facing path. It is a file copy onto a USB volume.
    /system/apps/setup       ->   $MOUNT/apps/setup
    /system/main.py          ->   $MOUNT/main.py
    /system/assets/fonts     ->   $MOUNT/assets/fonts
+   /system/lib              ->   $MOUNT/lib
    ```
 
    Creating `$MOUNT/system/...` makes an unused duplicate tree, can fill the 12 MB volume, and leaves the running app unchanged.
@@ -261,7 +262,7 @@ The wearer-facing path. It is a file copy onto a USB volume.
 
    **Clearing first is still what it does, because this tree replaces `/system` wholesale rather than merging into it.** A badge arrives with a stock `/system`, and a copy over the top leaves the stock lineup in place: measured on a volume seeded from a release clone, 188 files the build did not emit, 54 stray `.py` shadowing their own bytecode, and 16 stale app directories, every one of them a live tile pointing at code that is not there. Clearing the roots is also what makes a `.py` to `.mpy` switch safe when it is interrupted.
 
-   **It copies the four roots by name rather than `build/system/.` wholesale.** The obvious one-liner also copies `build/system/manifest.json` onto the volume, where it is a file the build did not emit, and the verification fails the whole install over that one file: 204 files on the volume against 203 in the manifest. All four roots, not just `apps/`: `main.py` is the boot file and the badge ships with Pimoroni's, so leaving it behind boots the stock launcher from stock source, which `--verify-mount` catches and nothing else does.
+   **It copies manifest-named files rather than `build/system/.` wholesale.** The obvious one-liner also copies `build/system/manifest.json` onto the volume, where it is a file the build did not emit and the verification fails. The current build manages five top-level paths, not just `apps/`: `apps/`, `assets/`, `lib/`, `main.py`, and `secrets.py`. The three directories are cleared before copying; the two files are overwritten. Leaving `main.py` behind boots the stock launcher from stock source, while leaving `lib/` behind can run stale networking code. `--verify-mount` catches both.
 
    **It copies in Python rather than shelling out to `cp -R`, and that is the AppleDouble fix.** On macOS `cp -R` carries extended attributes, FAT cannot hold them, and the kernel writes them beside the file as a `._*` sidecar: one of those under `apps/` is a file the badge tries to IMPORT. `COPYFILE_DISABLE=1` is the documented suppression, this section documented it, and neither copy command in the old procedure set it. A data-only copy has no metadata to spill, so there is nothing left to disable. If you do copy by hand for any reason, `COPYFILE_DISABLE=1` and `dot_clean -m` on the volume still apply, and the sidecar check below is still there to catch you.
 
@@ -275,7 +276,7 @@ The wearer-facing path. It is a file copy onto a USB volume.
    python3 tools/build.py --verify-mount "$MOUNT"
    ```
 
-   That is the same check on its own, read-only, for when you want to ask the question again without reinstalling. Either way it replaces a hand checklist of the same seven things, and at 800 units the checklist is the failure mode, not the check.
+   That is the same check on its own, read-only, for when you want to ask the question again without reinstalling. Either way it replaces a hand checklist of the same seven things, and at roughly 1,000 units the checklist is the failure mode, not the check.
 
    For the current production build, a pass includes an exact app-root check: `menu`, `setup`, `nametag`, `schedule`, `snake`, `flappy`, `settings`, `glyph`; only the six rostered tiles are discoverable as wearer-facing tiles (`menu` is the hidden boot host and `glyph` has no entry point). It also requires the complete `/system/lib` payload. A review-only root such as `breakout`, `pacman`, `pong`, or `pet` is therefore an extra and fails.
 

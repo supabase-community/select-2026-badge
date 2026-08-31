@@ -11,9 +11,9 @@ A GENERATED projection of a canonical internal repository. Every file here was a
 1. `README.md` -- what this is, the app lineup, what installs and what is export-only.
 2. `ARCHITECTURE.md` -- how it is put together and why. Its closing section is the ranked list of where review effort is most valued; start a review there.
 3. `BUILDING.md` -- source to bytecode to badge, with every toolchain pin.
-4. `NETWORKING.md` -- why the fleet ships with networking off, and what enabling it takes.
+4. `NETWORKING.md` -- how the default-on radio connects, retries, and fails soft.
 
-The tree maps 1:1 onto `/system` on the badge: `apps/<app>/` installs at `/system/apps/<app>/` and `main.py` at `/system/main.py`. The export-only files (READMEs, `shared/`, `tools/`, the test suite) are listed in `README.md`.
+The tree maps 1:1 onto `/system` on the badge: `apps/<app>/` installs at `/system/apps/<app>/`, `lib/` at `/system/lib/`, and `main.py` at `/system/main.py`. The export-only files (READMEs, `shared/`, `tools/`, the test suite) are listed in `README.md`.
 
 ## Hard constraints -- do not "clean up" against these
 
@@ -51,7 +51,7 @@ It passes from this layout; a few cases skip with a printed reason because they 
 
 **58 import sites across 25 files** are wrapped in a `try` that catches `ImportError`, and this list is generated from an AST walk of the tree you are holding rather than maintained by hand. `ARCHITECTURE.md` section 2 quotes these two numbers and the exporter's `doc-claims-verified` gate refuses a build where they disagree.
 
-A guarded import is how this tree survives its own omissions: the badge puts exactly one directory on `sys.path`, `/system/lib` is not in this export, and the launcher is the app whose failure needs a USB cable. An import moved OUT of one of these guards is a reset at launch, not a tidy-up.
+A guarded import is how this tree survives its own omissions: the badge uses app-local paths for vendored UI code while `/system/lib` is added deliberately for BadgeLink, and the launcher is the app whose failure needs a USB cable. An import moved OUT of one of these guards is a reset at launch, not a tidy-up.
 
 | file | line | imports |
 |---|---:|---|

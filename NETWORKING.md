@@ -1,16 +1,16 @@
 # How this badge uses the network
 
-The badge is OFFLINE-FIRST and this package ships the network runtime. Both are true at once, and the order matters: every shipping app works with no network, no account and no pairing, and the radio is OFF until somebody turns it on. Networking is additive here. Nothing in this tree waits for it, asks the wearer to fix it, or degrades without it.
+The badge is OFFLINE-FIRST and this package ships the network runtime. Both are true at once, and the order matters: every shipping app works with no network, no account and no pairing. On a fresh badge the radio and instant updates start ON. Networking is additive here. Nothing in this tree waits for it, asks the wearer to fix it, or degrades without it.
 
-## The radio fails closed
+## Fresh starts on; damaged preference fails closed
 
-The runtime being installed is not the radio being on. It runs only if whoever is holding the badge turned it on from Settings. The preference is a small record on the badge's writable volume; a missing, corrupt, over-sized or wrong-schema record all read as OFF, and the write is atomic (temp file, flush, sync, rename) so a power cut cannot turn a half-written record into an enabled radio. The fleet default is OFF.
+The runtime being installed is not proof of a connection. Production leaves the small local preference record absent, which means radio and push ON. A valid stored preference wins. A corrupt, over-sized, unreadable or wrong-schema record reads the radio as OFF, and the write is atomic (temp file, flush, sync, rename) so a power cut cannot turn a half-written record into an enabled radio. Push remains ON unless a valid stored preference or retained fleet policy disables it.
 
-This was the second of two independent layers. The first was that the runtime simply was not in the package, and it is the layer that just went away, so this one is now load-bearing on its own. `main.py` still appends `/system/lib` to `sys.path` and imports the runtime inside a `try` whose handler prints `BADGELINK_NETWORK boot=offline` and boots straight on into the launcher, so the same source boots both ways and a badge whose library is missing or damaged is a working offline badge rather than a brick. `settings` is the only app that touches `/system/lib` modules and it takes all three or none, degrading to its "Not ready" view.
+`main.py` appends `/system/lib` to `sys.path` and imports the runtime inside a `try` whose handler prints `BADGELINK_NETWORK boot=offline` and boots straight on into the launcher, so the same source boots both ways and a badge whose library is missing or damaged is a working offline badge rather than a brick. Settings guards its library controls and degrades to its "Not ready" view if they are unavailable.
 
 ## What it cost, and what changed
 
-This is the part worth reading before trusting the radio, because the product shipped offline for months on the strength of it.
+This is the part worth reading before trusting networking on this single-threaded badge.
 
 The badge is a single-threaded MicroPython machine that runs one cooperative network step inside each rendered frame, so a blocking call is a stopped screen, not a slow one. Building a connection used to be a sequence of blocking calls: measured on hardware over three runs, connection establishment blocked ONE rendered frame for 2,252 to 2,436 ms. Out of range it was worse, because the badge spent its whole 5,000 ms open budget inside a single frame, measured at 5,163 ms and 5,166 ms by two independent instruments.
 

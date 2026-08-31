@@ -1,12 +1,12 @@
 # Supabase Select 2026 badge software -- source export
 
-This is the software that would ship to the ~800 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `646cc39dcbbc` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
+This is the software that would ship to the ~1,000 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `468b045e8266` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
 
 ## Status
 
-**This is a RELEASE CANDIDATE for Supabase Select 2026** (conference day: October 2, 2026, roughly 800 badges). Read it as software we intend to ship, and hold it to that standard. Three things a reviewer should know before forming an opinion:
+**This is a RELEASE CANDIDATE for Supabase Select 2026** (conference day: October 2, 2026, roughly 1,000 badges). Read it as software we intend to ship, and hold it to that standard. Three things a reviewer should know before forming an opinion:
 
-- **Networking is intentionally disabled for launch.** The badge is offline-first and fully functional without it. `NETWORKING.md` is the whole story: what keeps the radio off, why, and what enabling it takes.
+- **Networking ships and starts on for a fresh badge.** The badge remains offline-first and fully functional without a connection. `NETWORKING.md` explains connection, retry, Realtime, and the local off switch.
 - **The exact fleet UF2 is an open ask.** We build against the public **v3.0.2** release; the exact image the fleet will be flashed with is still an open question (`BUILDING.md` has the pins and the caveat).
 - **A first-article acceptance run is pending.** No unit flashed by the production process has been walked through the acceptance procedure yet; until one has, treat install-level claims as verified on dev hardware only.
 
@@ -80,7 +80,8 @@ MOUNT=/media/$USER/Tufty2350      # Linux, or /run/media/$USER/Tufty2350
 
 # 5. Install, then eject -- CHAINED, so the eject cannot run unless the install
 #    verified. --install checks the build is complete and built from this tree,
-#    checks $MOUNT is a mounted badge, and only then clears the four roots, copies
+#    checks $MOUNT is a mounted badge, then clears apps/assets/lib, overwrites
+#    main.py and secrets.py, copies
 #    and hashes every file against the build. It refuses before it deletes anything.
 python3 tools/build.py --install "$MOUNT" && umount "$MOUNT"
 #python3 tools/build.py --install "$MOUNT" && diskutil eject "$MOUNT"   # macOS
@@ -98,15 +99,15 @@ It does, and that is the right development loop: your own README's "Installing A
 
 We precompile the thing we hand you for three measured reasons:
 
-1. **Headroom.** The modules here are 2,934,016 B as source and 502,576 B as bytecode, 17%. With assets, the installed tree is 1,482,888 B, 12% of the 12 MB volume; as source it would be 3,914,328 B, 31%. Both fit today. The assets are what grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
+1. **Headroom.** The modules here are 2,934,716 B as source and 502,783 B as bytecode, 17%. With assets, the installed tree is 1,483,095 B, 12% of the 12 MB volume; as source it would be 3,915,028 B, 31%. Both fit today. The assets are what grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
 2. **First-open latency, which is the one a wearer feels.** MicroPython compiles each `.py` at import, as one uninterruptible native call per module, and every app exit resets the badge, so every open is a cold open. The largest module here is 326,156 B of source; even precompiled to a 102,017 B `.mpy`, its cold import measures 630-765 ms on device. Shipping source adds the parse to that, on every open.
-3. **Fleet integrity.** 800 badges get a byte-identical, hash-verified install, and a stray `.py` beside its own `.mpy` silently wins: no speed-up, possibly stale code, no error. That is the failure `tools/build.py --verify-mount` exists to catch.
+3. **Fleet integrity.** About 1,000 badges get a byte-identical, hash-verified install, and a stray `.py` beside its own `.mpy` silently wins: no speed-up, possibly stale code, no error. That is the failure `tools/build.py --verify-mount` exists to catch.
 
 `BUILDING.md` section 2.5 is the full treatment, including how to mix the two safely.
 
 Full detail, pins, and troubleshooting: **`BUILDING.md`**. It carries the pins with their one open caveat, `--check` (build twice, prove byte-identical output), a build without the release clone (`--skip-menu`, `--no-stock-fonts`), firmware flashing, and the refusals the build will not budge on.
 
-It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **191 files, 6,058,265 bytes**.
+It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **191 files, 6,059,927 bytes**.
 
 Those two numbers are the PAYLOAD: everything in this tree except this README and `MANIFEST.json`, the two files that cannot quote a total including themselves without changing it. `MANIFEST.json` lists 192 rows (the payload plus this README) and does not hash itself; its `totals.payload` repeats the two numbers above, and the exporter's `readme-matches-manifest` gate reads this paragraph back and fails the build if any of the three disagrees.
 
@@ -116,7 +117,7 @@ Those two numbers are the PAYLOAD: everything in this tree except this README an
 |---|---|
 | **`ARCHITECTURE.md`** | how it is put together and why, including where we would value your eyes |
 | **`BUILDING.md`** | source to bytecode to badge: two commands and a file copy |
-| **`NETWORKING.md`** | why the fleet ships with networking off, and what enabling it takes |
+| **`NETWORKING.md`** | how the default-on radio connects, retries, and fails soft |
 | `AGENTS.md` | orientation and hard constraints for an AI agent reviewing or modifying this tree |
 | `apps/<app>/README.md` | one short page per app: what it does, its controls, the non-obvious bits |
 | `shared/README.md` | why every app carries its own copy of the shared layer |
@@ -144,15 +145,15 @@ Each app directory carries its own short `README.md`: what it does, its controls
 ## The architecture, in ten sentences
 
 1. The launcher owns the home screen: it is the boot host, it draws the app grid, and it is the only thing that runs when nothing else does.
-2. Every app is a directory under `/system/apps/`, and the badge puts exactly one path on `sys.path` -- that app's own directory -- so an app is a closed world with no shared import path.
-3. That is why `shared/` exists here but not on the badge: `scripts/sync_ui.py` copies each canonical module into every app that needs it, and a `--check` mode proves the copies are byte-identical rather than trusting anyone to remember.
+2. Every app is a directory under `/system/apps/`. The running app's directory is its only app-specific import path; `/system/lib` is added separately for the shared BadgeLink runtime.
+3. That is why UI machinery in `shared/` is vendored rather than imported: `scripts/sync_ui.py` copies each canonical module into every app that needs it, and a `--check` mode proves the copies are byte-identical rather than trusting anyone to remember.
 4. Every app exit is a `machine.reset`, so an app never has to unwind its own state, and the launcher is always entered on a known-good heap.
 5. `shared/` is the common layer: `ui` (chrome, lists, softkeys, the repeat curve), `effects` (the present-time filters), `idle` (the inactivity clock), `backlight` (the one home of every brightness number), plus `poster`, `backdrop`, `wallpaper` and `loading`.
 6. The identity surfaces run HIRES, 320x240 at 1:1, because a name and a QR code are read rather than played; the games run LORES, 160x120, because a game frame has a budget and the panel cost is where it goes.
 7. The panel is chosen exactly once per app, in its entry seam, and nothing downstream names a mode: `ui.Chrome` reads `screen.width`, the glyph skin reads the cell geometry, the mark sheet reads `chrome.scale`.
 8. A first-wake ceremony runs on RESET only, so the badge introduces itself once when it is switched on and never interrupts a wearer who is using it.
 9. Idle is a ladder rather than a sleep: the panel dims after a period without input and the badge opens itself after a longer one, and the press that un-dims the screen is consumed so a wearer's wake-up tap cannot also press a button.
-10. Nothing in this tree talks to a network.
+10. BadgeLink under `/system/lib` handles network sync and one-shot fleet actions; its guarded boot seam leaves the local badge usable when networking fails.
 
 `ARCHITECTURE.md` is that page at length: the boot chain, the app lifecycle, the shared layer, the resolution split, memory discipline, and why the code that looks over-engineered is over-engineered.
 
@@ -160,7 +161,7 @@ Each app directory carries its own short `README.md`: what it does, its controls
 
 The Quick start at the top of this page is the whole path in one block. Two things it does not spell out:
 
-- **`--mpy-cross` is not optional in practice.** The script does not search `PATH`. It checks the flag, then the `MPY_CROSS` environment variable, then one cached default path, and if none of the three resolves it stops with the `make` line you need.
+- **`--mpy-cross` is not optional in practice.** The script does not search `PATH`. It checks the flag, then the `MPY_CROSS` environment variable. If neither explicit source resolves, it stops with the `make` line you need.
 - **`--check` does not populate `build/system`.** It compiles the tree twice into temporary directories, hashes both and asserts they are byte-identical, then deletes them. So proving the build reproducible and producing the tree you install are two separate commands.
 
 `BUILDING.md` is the whole procedure: the exact pins (release tag and commit, UF2 filename and SHA-256, the MicroPython branch/commit that builds `mpy-cross`, the picovector commit, the mpy format, and the two stock font hashes), the refusals the build will not budge on, the Disk Mode install and the byte-verify. Three inputs are yours rather than ours, because the pinned release publishes no licence grant for them: four files of the stock launcher (`apps/menu/README.md` names them with their pinned hashes, `apps/menu/PATCHES.json` is the machine-appliable patch register) and the two stock `.af` faces (`assets/fonts/README.md`). All three come out of a **v3.0.2** release clone and all three are hash-gated.
@@ -174,6 +175,7 @@ Disk Mode mounts logical `/system` at the volume root, so the mapping is direct 
 <export>/apps/<app>/          ->  /system/apps/<app>/
 <export>/apps/menu/           ->  /system/apps/menu/   (the launcher)
 <export>/assets/fonts/        ->  /system/assets/fonts/
+<export>/lib/                 ->  /system/lib/
 ```
 
 What in this tree is **export-only** and does not install:
@@ -193,12 +195,12 @@ What installs is bytecode, not source: the badge parses and compiles every `.py`
 
 `main.py` here is byte-for-byte what a finished badge boots. It starts as Pimoroni's own hash-pinned main and takes two patches:
 
-1. the Poster hold handoff -- the factory main drains held buttons before launching an app, which makes an app selected AT a long-press threshold visibly wait for key-up; `poster` is the one app selected that way and the one app whose update consumes press edges only, so it is the single named exception and every other app keeps the factory drain;
+1. the Nametag hold handoff -- the factory main drains held buttons before launching an app, which makes an app selected AT a long-press threshold visibly wait for key-up; `nametag` is the one app selected that way and the one app whose update consumes press edges only, so it is the single named exception and every other app keeps the factory drain;
 2. the BadgeLink block -- a `sys.path.append("/system/lib")` and a `try/except` that installs a network runtime.
 
 Everything else in that file is yours, including a comment above the `launch()` call about temporarily auto-launching the `world` app for rasteriser testing. It is stock, it is inherited, and it does not describe this tree. We left it rather than take a third patch on a file we are trying to patch less.
 
-**The BadgeLink block is in this export on purpose, and it is dead code here.** `/system/lib` is not part of this tree, so the guarded import fails, the handler prints `BADGELINK_NETWORK boot=offline error=ImportError` and the badge boots clean into the launcher. Stripping the block would have made the export disagree with the badge about its own boot file, which is a worse thing for a reader than a guarded import they can see.
+**The BadgeLink block is active and fail-soft.** This export includes `/system/lib`, so the guarded import starts the runtime. If that payload is missing or damaged, the handler prints `BADGELINK_NETWORK boot=offline error=...` and the badge still boots into the launcher instead of entering a reset loop.
 
 ## The shared layer, and why every app has its own copy of it
 
@@ -209,14 +211,13 @@ The badge puts exactly one directory on `sys.path`: the app's own. An app *can* 
 ## What a wearer experiences
 
 - **Switch on.** The badge resets, `main.py` runs, the launcher draws the home screen, and the first-wake ceremony plays -- once, on RESET only.
-- **Pick something.** The grid scrolls with UP/DOWN; B opens the highlighted app. Holding B for about a second and a half opens `poster` from anywhere on the grid, which is the wearer's "show my badge" gesture.
+- **Pick something.** The grid scrolls with UP/DOWN; B opens the highlighted app. Holding B for about a second and a half opens `nametag` from anywhere on the grid, which is the wearer's "show my badge" gesture.
 - **Leave.** HOME leaves any app. Because every exit is a hard reset, the home screen is always entered clean.
 - **Do nothing.** The panel dims after a short period without input, and after a longer one the badge opens itself to its identity surface, which is the state it should be in while it hangs on a lanyard. The press that wakes the panel back up is consumed: a wearer tapping to see the screen does not also press a button in whatever app is open.
 - **Run out of battery.** Nothing is lost that was saved; every app that persists anything writes to the badge's own `/state` volume.
 
 ## What is deliberately NOT here
 
-- **The network runtime.** BadgeLink -- the `/system/lib` payload, its transport, its pairing and its realtime client -- is not in this tree. It is written and it works; it is dark until it earns its way in, and the software above is built so that its absence costs exactly the features that need it and nothing else. The one visible seam is the Settings tile's pairing view, which guards its three imports and says so when they are missing.
 - **The research repository.** Benchmarks, device probes, measurement reports, design records, the skin lab, the glyph labs, the keyboard bench and every `evidence/` directory stay behind. The numbers quoted in the comments in this source come from those reports; the reports themselves are a much larger body of work than the software.
 - **Host tooling.** Every `*/host/` tree: the catalogue generators, the asset bakers, the `mpy-cross` build, the browser playground and the deploy scripts.
 - **The test suites**, with one exception. The shipping apps carry 107 host test modules totalling roughly 55,000 lines -- a codebase larger than the software it tests, and not the thing to read first. `apps/nametag/tests/` ships as the worked example: it is the smallest suite in the repository, and it pins the two invariants this README claims out loud (the staged arrival, and the panel resolution being decided in exactly one place). **It runs from this tree, and the exporter proves it:** the `included-tests-run` gate executes `python3 -m unittest discover -s apps/nametag/tests -v` from the export root on every build and refuses on any error or failure. A few of its cases pin the app against trees this export omits -- the archived editor it replaced, and `scripts/sync_ui.py` -- and those SKIP from here, with the reason printed. The gate counts the skips so an all-skip suite could not pass as green.
@@ -241,6 +242,8 @@ python3 tools/build.py --verify-manifest
 
 It hashes every file here against `MANIFEST.json` and recomputes the `tree_hash`, reporting missing files, wrong bytes and files the manifest does not name. It skips `build/`, `__pycache__/` and `.git/` when it walks the tree. The first two are what the build and the shipped test suite write, and are in `.gitignore` for the same reason; `.git/` is this repository's own metadata, present in every clone and never a manifest row, so a FRESH `git clone` of this repository verifies clean. (git cannot ignore its own metadata directory, which is why `.git/` is skipped in the walk rather than named in `.gitignore`.)
 
+Two exact files may also live at the repository root without becoming published source: `build.zip`, a disposable local archive, and `secrets.prod.py`, the protected production provisioning input. Both are gitignored and ignored by this manifest check. Neither is read by the build or copied into `/system`; the build still emits only its generated empty `/system/secrets.py` template, and provisioning the writable-root `/secrets.py` remains a separate operation. The exception is exact: different names and copies in subdirectories are reported as drift.
+
 **The `tree_hash` formula, so you do not have to take our word for it.** SHA-256 over the concatenation of `<path>\0<sha256>\n` for every row in `MANIFEST.json`, rows sorted by path:
 
 ```sh
@@ -249,6 +252,6 @@ python3 -c "import hashlib,json;r=sorted(json.load(open('MANIFEST.json'))['files
 
 Both prove this tree is self-consistent; neither proves it is ours. The canonical commit is in `MANIFEST.json`'s `provenance` and in this document's header, and the exporter that assembled the tree lives in that repository, not in this one. The export is deterministic by construction -- sorted walks, `copyfile` so no host metadata rides along, and no wall-clock timestamp in any generated file -- so two runs from one commit produce the same `tree_hash`, which the exporter's own `--check` asserts in the full repository.
 
-23 gates run on every build and there is no warning TIER, because a warning in a build log is how something ships: exactly two rows report rather than refuse, both are named below, and both are judgements our owner has not made yet. Their results are in `MANIFEST.json`. The one that matters most is the first: no credential, no private address, no `/state` content, no `secrets.py`. The one most likely to catch a real mistake is `imports-resolve`, which proves every import in every app either lands inside that app's own directory, is a firmware module, or sits inside a `try/except ImportError` -- because the badge puts exactly one path on `sys.path` and this export drops `/system/lib` on purpose. The ones that exist because an outside engineer read an earlier cut of this package and found them missing are `included-tests-run` (execute the shipped suite from the artifact), `readme-matches-manifest` (this document's counts against the manifest's), `building-md-pins` (every pin in `BUILDING.md` against the file in our repository that owns it), `roster-ships-and-matches`, `provenance-records-present` and `no-device-identifiers`. Two more came from a second reading of the package after those landed: `hold-contract-consistent`, which reads the launcher's `HOLD_MS` out of this export and refuses any sentence anywhere in it that names a different hold duration (a stale one survived a fix because the string was split across two source lines), and `internal-exhaust-census`, which counts the internal residue still in this source -- validation-row identifiers, quoted decisions, paths into reports you do not have -- in every text file and in the manifest. Its per-file counts go to a maintainer report kept outside this package, because that ledger is our cleanup homework, not yours. It is REPORT-ONLY except for the class that already refused (a bench badge's serial number), because what to remove and what to keep is a judgement rather than a rule.
+23 gates run on every build and there is no warning TIER, because a warning in a build log is how something ships: exactly two rows report rather than refuse, both are named below, and both are judgements our owner has not made yet. Their results are in `MANIFEST.json`. The one that matters most is the first: no credential, no private address, no `/state` content, no `secrets.py`. The one most likely to catch a real mistake is `imports-resolve`, which proves every import in every app either lands inside that app's own directory, is a firmware module, or sits inside a `try/except ImportError` -- because the badge puts the app-specific path plus the deliberate `/system/lib` runtime path. The ones that exist because an outside engineer read an earlier cut of this package and found them missing are `included-tests-run` (execute the shipped suite from the artifact), `readme-matches-manifest` (this document's counts against the manifest's), `building-md-pins` (every pin in `BUILDING.md` against the file in our repository that owns it), `roster-ships-and-matches`, `provenance-records-present` and `no-device-identifiers`. Two more came from a second reading of the package after those landed: `hold-contract-consistent`, which reads the launcher's `HOLD_MS` out of this export and refuses any sentence anywhere in it that names a different hold duration (a stale one survived a fix because the string was split across two source lines), and `internal-exhaust-census`, which counts the internal residue still in this source -- validation-row identifiers, quoted decisions, paths into reports you do not have -- in every text file and in the manifest. Its per-file counts go to a maintainer report kept outside this package, because that ledger is our cleanup homework, not yours. It is REPORT-ONLY except for the class that already refused (a bench badge's serial number), because what to remove and what to keep is a judgement rather than a rule.
 
-The two schedule/event gates are the ones whose stakes are the fleet's rather than a reviewer's. `schedule-covers-event-date` refuses a build whose baked agenda (`apps/*/schedule.json`) does not cover the conference day this package declares, which is **October 2, 2026**. The badges ship with networking off, so a badge carrying the wrong agenda cannot learn it is wrong and there is no path to correct 800 of them: the build is the last cheap place to catch it. `schedule-timezone-matches-event-date` derives the civil-time rule for that day from `America/Los_Angeles` and refuses a timezone label or UTC offset that is not actually in force at the San Francisco venue. The date gate's second half is the other report-only row -- a session title that reads as a placeholder is named with its file and line and does not block, because a session may legitimately be called `General Session` and that is not our call to make mechanically.
+The two schedule/event gates are the ones whose stakes are the fleet's rather than a reviewer's. `schedule-covers-event-date` refuses a build whose baked agenda (`apps/*/schedule.json`) does not cover the conference day this package declares, which is **October 2, 2026**. The badges ship with a complete fallback because connectivity is never guaranteed; a wrong baked agenda cannot be assumed correctable across roughly 1,000 units. The build is the last cheap place to catch it. `schedule-timezone-matches-event-date` derives the civil-time rule for that day from `America/Los_Angeles` and refuses a timezone label or UTC offset that is not actually in force at the San Francisco venue. The date gate's second half is the other report-only row -- a session title that reads as a placeholder is named with its file and line and does not block, because a session may legitimately be called `General Session` and that is not our call to make mechanically.

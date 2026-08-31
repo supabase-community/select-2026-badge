@@ -62,6 +62,12 @@ HEAD_PAD = 2
 RING = 2
 DASH = 3
 
+# ADD and DONE are outlined action rows, not sticker rows.  The first hardware
+# photo put the two-pixel outline through the font because the old row allowed
+# only one logical pixel between the border and the text box.  Three logical
+# pixels per side clear the full ring without enlarging ordinary sticker rows.
+ACTION_ROW_PAD = 3
+
 # THE HOME-SCREEN PREVIEW IS GONE (owner ruling, 2026-08-21): the wearer does
 # not need an extra screen to confirm a save.  Its six geometry fractions -- the
 # frame, the launcher's two bands and its six icon centres -- went with it, and
@@ -127,6 +133,8 @@ class CardView:
         self.ring = RING * scale
         self.dash = DASH * scale
         self.row_h = chrome.text_h + 2 * scale
+        self.action_pad = ACTION_ROW_PAD * scale
+        self.action_row_h = self.row_h + 2 * self.action_pad
         self.head_h = self.row_h + 2 * HEAD_PAD * scale
 
         self.dark = color_api.rgb(9, 14, 24)
@@ -351,18 +359,18 @@ class CardView:
         screen = self.screen
         screen.font = chrome.font
         index = plan["index"]
-        room = (chrome.content_h - top) // self.row_h
         total = len(labels)
+        available = chrome.content_h - top
+        heights = tuple(self.action_row_h if position in boxed else self.row_h
+                        for position in range(total))
         first = 0
-        if index >= room:
-            first = index - room + 1
-        if first > total - room:
-            first = max(0, total - room)
-        for offset in range(room):
-            position = first + offset
-            if position >= total:
+        while first < index and sum(heights[first:index + 1]) > available:
+            first += 1
+        y = top
+        for position in range(first, total):
+            row_h = heights[position]
+            if y + row_h > chrome.content_h:
                 break
-            y = top + offset * self.row_h
             if position == split:
                 # One quiet rule separates editing choices from final actions
                 # without spending another screen or changing list controls.
@@ -373,31 +381,35 @@ class CardView:
             if chosen:
                 screen.pen = self.accent
                 screen.rectangle(0, y, chrome.width - 3 * self.scale,
-                                 self.row_h)
+                                 row_h)
+            text_y = y
             if position in boxed:
                 # ADD and DONE are verbs among sticker-object rows.  Their
-                # outline keeps that distinction visible before focus arrives.
+                # outline keeps that distinction visible before focus arrives;
+                # hardware showed that its ring also needs real vertical air.
                 self._outline(self.scale, y + self.scale,
                               chrome.width - 5 * self.scale,
-                              self.row_h - 2 * self.scale,
+                              row_h - 2 * self.scale,
                               self.black if chosen else self.accent)
+                text_y += self.action_pad
             value = values[position] if position < len(values) else ""
             width = chrome.width - 2 * self.text_x
             if value:
                 width -= self._width(value) + self.text_x
                 value_x = chrome.width - self.text_x - self._width(value)
-                self._bounded(value, value_x, y, self._width(value),
+                self._bounded(value, value_x, text_y, self._width(value),
                               self.black if chosen
                               else (marks_pen or self.grey))
-            self._bounded(labels[position], self.text_x, y, width,
+            self._bounded(labels[position], self.text_x, text_y, width,
                           self.black if chosen else self.white)
+            y += row_h
         # BOTH AFFORDANCES ARE GATED ON THE LIST ACTUALLY SCROLLING.
         # `ui.Chrome.position` draws its rail whenever `total > 1`, which on a
         # five-row menu that fits the panel is two columns of chrome promising
         # movement that cannot happen -- and it lands in the four pixels
         # between the value column and the edge, which is exactly where the eye
         # is already reading.
-        if total > room:
+        if sum(heights) > available:
             chrome.scroll_hints(True, True)
             chrome.position(index, total)
 
