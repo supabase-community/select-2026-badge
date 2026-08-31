@@ -413,9 +413,8 @@ def sanitize(text, limit=MAX_TITLE):
 #
 # SPELLED HERE rather than imported from `schedule/badge/schedule/schedule_model.py`,
 # which owns the identical table: a /system/lib module must not depend on an
-# app's source tree (the same rule that keeps `_valid_slug` duplicated in
-# `enabled_apps`). `badgelink/tests/test_ft_b_schedule.py` pins the two equal and
-# compares the two functions' output, so the pin is what stops them drifting.
+# app's source tree. `badgelink/tests/test_ft_b_schedule.py` pins the two equal
+# and compares the two functions' output, so the pin is what stops them drifting.
 MARKUP_ESCAPE = {"[": "[["}
 
 

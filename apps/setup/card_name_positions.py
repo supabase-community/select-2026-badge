@@ -18,7 +18,7 @@ FALLBACK_Y = 0.08
 
 # (catalogue entry id, top edge as a fraction of canvas height)
 POSITIONS = (
-    ('glyph.ring-buffer', 0.3625),
+    ('glyph.ring-buffer', 0.2791666667),
     ('glyph.wave', 0.2625),
     ('glyph.memory-compactor', 0.2625),
     ('glyph.brackets', 0.2625),

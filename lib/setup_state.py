@@ -69,6 +69,8 @@ import os
 # pass; change setup and let the pin tell you.
 # ---------------------------------------------------------------------------
 
+# The app rename cannot rename 800 wearer-card files already on devices. Setup
+# and the remote writer therefore keep card_store's historical state pathname.
 STATE_PATH = "/state/badgecard.json"      # card_store.STATE_PATH
 BACKUP_SUFFIX = ".bak"                    # card_store.BACKUP_SUFFIX
 SCHEMA = 1                                # card_model.SCHEMA
@@ -99,6 +101,15 @@ KEY_BADGES = "badges"
 KEY_HOME = "home"
 KEY_NAME = "name"
 KEY_BACKGROUND = "background"
+KEY_BRIGHTNESS = "brightness"
+
+# Settings owns the wearer's ladder; this boot-path writer mirrors only the
+# stored bounds so a fleet persistence request cannot create a level Settings
+# will change at the next reset.  The real constants are pinned in
+# ``test_setup_state`` without importing another app into ``/system/lib``.
+BRIGHTNESS_MIN = 20
+BRIGHTNESS_MAX = 100
+BRIGHTNESS_DEFAULT = 80
 
 # NOT WRITTEN, DELIBERATELY, and this is the whole reason the applier needs no
 # copy of the 108-row face table.  `card_model.repair_badge` recomputes `face`
@@ -461,6 +472,33 @@ def set_skin(background, path=None, **io):
     badge[KEY_BACKGROUND] = resolved
     save(state, path, **io)
     return {"stored": resolved}
+
+
+def set_brightness(percent, path=None, **io):
+    """Write Settings' root brightness key and return its canonical integer.
+
+    The panel takes a fraction, but the only durable wearer store is an integer
+    percent.  Truncating before the caller moves the panel keeps the visible
+    level and the next-boot level identical (20.5 percent is 20 in both places).
+    This deliberately uses :func:`read`/:func:`save`, so corrupt state and a
+    missing primary with a backup are refused before either persistence or the
+    panel can claim success.
+    """
+
+    if isinstance(percent, bool) or not isinstance(percent, (int, float)):
+        stored = BRIGHTNESS_DEFAULT
+    elif percent != percent or percent * 0 != 0:
+        stored = BRIGHTNESS_DEFAULT
+    elif percent < BRIGHTNESS_MIN:
+        stored = BRIGHTNESS_MIN
+    elif percent > BRIGHTNESS_MAX:
+        stored = BRIGHTNESS_MAX
+    else:
+        stored = int(percent)
+    state = read(path, io.get("open_fn"))
+    state[KEY_BRIGHTNESS] = stored
+    save(state, path, **io)
+    return {"stored": stored}
 
 
 def live_refresh(enabled=None, path=None, open_fn=None, **io):

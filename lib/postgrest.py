@@ -393,12 +393,11 @@ def _bounded_str(value, maximum):
 
 
 def parse_poll_rows(decoded):
-    """Normalise ``badgelink_badge_poll`` rows to transport-neutral commands.
+    """Normalise legacy ``badgelink_badge_poll`` rows for historical probes.
 
-    Each RPC row is ``{command_id, command_type, payload, execute_at,
-    delivery_attempts}``; the transport wants ``{id, type, payload, execute_at,
-    attempts}``. Rows are capped, and a row missing an id/type is dropped rather
-    than trusted.
+    The rebuild dropped this RPC and production calls no longer reach here. The
+    parser remains only because dated transport probes use its old row shape as
+    an oracle; it must not be read as a shipping queue or scheduling surface.
     """
     if decoded is None:
         return []
@@ -427,15 +426,26 @@ def parse_poll_rows(decoded):
 
 
 def parse_policy_row(decoded):
-    """Normalise the transport-policy row into steering fields.
+    """Normalise the fleet-settings row into steering fields.
 
     FAILS OPEN, deliberately and in one place: anything this cannot read
     confidently is dropped, and a dropped field leaves the client on its own
     default. The reasoning is in ``pushlink.PushPolicy.set_remote`` — a kill
-    switch that fails closed makes the switch load-bearing, and a truncated poll
+    switch that fails closed makes the switch load-bearing, and a truncated
     body (a class Card E measured on real relay faults) would then disable push
-    on badges nobody touched. It cannot fail the other way either: a policy can
-    only ever say NO, so nothing here can enable anything.
+    on badges nobody touched.
+
+    W8 keeps physical acts out of this repeating row. Radio, backlight and sleep
+    arrive through fleet broadcasts; parsing a legacy copy here would silently
+    restore the very repeated-state behavior the split removed.
+
+    ITS PRODUCER CHANGED AND ITS SHAPE DID NOT (rebuild, 2026-08-29). This read
+    an RPC's row until today and now reads ``GET /rest/v1/fleet_settings?limit=1``,
+    which is a JSON ARRAY of one object -- a case the list branch below already
+    handled, because the RPC returned ``returns table``. ``policy_version`` and
+    ``source`` have no column in the new table and simply never arrive; they are
+    still read because nothing is gained by refusing a field a future row might
+    carry, and ``pushlink`` still consumes the version when it is there.
     """
     row = decoded
     if isinstance(row, list):
@@ -445,15 +455,28 @@ def parse_policy_row(decoded):
     if not isinstance(row, dict):
         return {}
     out = {}
-    push = row.get("push_enabled")
-    if isinstance(push, bool):
-        out["push_enabled"] = push
+    # THE BOOLEAN LEVERS. `isinstance(x, bool)` and nothing else: a `0`, a `""` or
+    # a `"false"` is a MALFORMED field, not a false one, and the difference is
+    # whether a typo in one console field can take the fleet's radios down.
+    # `scores_enabled` joined them on 2026-08-29 and takes the same treatment for
+    # the same reason: a malformed value must leave the drain on its own default,
+    # which is ON. A firmware that read `0`/`"false"` as false would let one typo
+    # in one console field silently stop every badge in the hall from posting.
+    for key in ("push_enabled", "scores_enabled"):
+        value = row.get(key)
+        if isinstance(value, bool):
+            out[key] = value
     version = row.get("policy_version")
     if isinstance(version, int) and not isinstance(version, bool):
         out["policy_version"] = version
     cadence = row.get("next_cadence_ms")
     if isinstance(cadence, int) and not isinstance(cadence, bool):
         out["next_cadence_ms"] = cadence
+    elif "next_cadence_ms" in row and cadence is None:
+        # NULL IS AN EXPLICIT OPERATOR ANSWER, not a truncated field. Admin uses
+        # it for "return to the badge default"; dropping it left a cadence the
+        # badge learned earlier in force until the next app-reset.
+        out["next_cadence_ms"] = None
     source = _bounded_str(row.get("source"), 32)
     if source:
         out["source"] = source

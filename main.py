@@ -39,7 +39,17 @@ if app_to_launch is not None:
         while badge.pressed() or badge.held() or badge.released():
             badge.poll()
 
-    launch(app_to_launch)
+    try:
+        app_result = launch(app_to_launch)
+    except SystemExit as app_exit:
+        # Schedule's unavailable modal cannot return through its module body;
+        # its exact sentinel still takes this same missing-target-guarded path.
+        if app_exit.args != ("/system/apps/nametag",):
+            raise
+        app_result = app_exit.args[0]
+
+    if app_result == "/system/apps/nametag" and is_dir(app_result):
+        launch(app_result)
 
 # Catch any exit and reset back to the launcher
 reset()

@@ -61,22 +61,23 @@ stepped off the device at all, which is the same argument
 `identity_keyboard` and `card_app` both record for taking their input as an
 argument.
 
-WHO WIRES THIS, AND THE ONE APP THAT DELIBERATELY DOES NOT.  The launcher and
-`setup`, and that is the whole list.  **`nametag` wired this module between
+WHO WIRES THIS, AND THE ONE APP THAT DELIBERATELY DOES NOT.  The launcher,
+`setup`, `schedule`, `settings`, `snake` and `flappy`.  **`nametag` wired this
+module between
 2026-08-23 and 2026-08-24 and no longer does** -- owner ruling: *"The nametag app
 currently dims after a timeout.  Nametag should never dim"*.  It is the resting
 state this ladder exists to REACH, so a dim there is the ladder undoing its own
 destination; it holds the wearer's chosen brightness for as long as it is open.
-`nametag/badge/nametag/idle.py` was deleted with the seam, so this file is
-vendored into two apps rather than three.
+`nametag/badge/nametag/idle.py` was deleted with the seam; the resting surface
+remains the deliberate exception to every clock in this file.
 
 `busy` IS PART OF THE DESIGN AND NOT AN AFTERTHOUGHT (§4.3).  A running game is
 not idle in any sense a wearer would recognise even when no button has been
 pressed for twenty seconds -- Snake moves on its own -- so an idle timer that
 dims a running game is a bug.  `poll(now, busy=True)` says "I am doing
-something", and it holds the clock exactly as an input would.  No game wires
-this module today; the seam exists so that the app which needs it does not have
-to invent one.
+something", and it holds the clock exactly as an input would.  Snake and Flappy
+use that seam so autonomous play cannot be mistaken for an abandoned menu or
+pause card.
 """
 
 import time
@@ -103,6 +104,14 @@ POSTER_MS = 30000
 # the divergence is visible from the file that owns the numbers.
 # `docs/design/idle-and-off.md` §5.1 carries it as an open question.
 CARD_DIM_MS = 30000
+
+# Visible utility screens return to the one surface that can present fleet
+# notices after half a minute.  Editors get four times that window: committing
+# an unfinished name/clock would be worse than abandoning it, while treating a
+# draft as busy forever would strand the badge outside Nametag indefinitely.
+APP_RETURN_MS = 30000
+DRAFT_RETURN_MS = 120000
+NAMETAG_APP = "/system/apps/nametag"
 
 # What `poll` returns.  Empty string for "nothing changed this frame", which is
 # every frame but three in a session and is why the falsy value is the common
@@ -197,6 +206,39 @@ class Idle:
             self.opened = True
             return NAMETAG
         return NOTHING
+
+
+class ReturnToNametag:
+    """A return-only inactivity clock; it never changes panel brightness.
+
+    Callers supply button activity and their one load-bearing exception:
+    ``busy`` means autonomous work is still live (a game or an atomic/bake
+    operation).  Reading Badgeware's already-latched ``held`` tuple does not
+    consume its press edges, so apps can sample activity before dispatching the
+    same frame's input.
+    """
+
+    def __init__(self, clock, now=None):
+        self._clock = clock
+        self.since = clock() if now is None else now
+        self.expired = False
+
+    def touch(self, now=None):
+        self.since = self._clock() if now is None else now
+        self.expired = False
+
+    def frame(self, touched=False, busy=False, timeout_ms=APP_RETURN_MS):
+        """True at and after ``timeout_ms``; input or busy work restarts it."""
+        now = self._clock()
+        if touched or busy:
+            self.touch(now)
+            return False
+        span = time.ticks_diff(now, self.since)
+        if span < 0:
+            span = 0
+        if span >= timeout_ms:
+            self.expired = True
+        return self.expired
 
 
 class Panel:

@@ -22,7 +22,7 @@ _SINK = ScoreSink("flappy", STATE_PATH, SCHEMA, "POOLER.SQL")
 
 
 def load(path=STATE_PATH):
-    """Return ``(high_score, status)``.
+    """Return ``(high_score, plays, status)``.
 
     Tolerant by construction: a missing file is a badge that has never been
     played, a corrupt one is a badge whose write was interrupted, both read as
@@ -30,22 +30,37 @@ def load(path=STATE_PATH):
     unknown keys are IGNORED rather than rejected -- the rule that lets a future
     build add a field without invalidating every badge's record.  All of that is
     `score_sink.ScoreSink.read`; the reasoning is in that module.
+
+    ``plays`` IS THAT RULE BEING USED (2026-08-29): how many runs of this game
+    have been finished, added as a key at SCHEMA 1 so a badge holding a file
+    written before the counter existed keeps its high score and counts 0.  The
+    number prices every leaderboard row this game submits -- a score is unique in
+    the database as ``(badge_id, game, play_number, score)``.
     """
-    high_score, _extras, status = _SINK.read(path)
-    return high_score, status
+    high_score, _extras, plays, status = _SINK.read(path)
+    return high_score, plays, status
 
 
-def save(high_score, path=STATE_PATH):
-    """Write the record so a power cut cannot leave a half-written file."""
-    return _SINK.write(high_score, (), path)[0]
+def save(high_score, plays, path=STATE_PATH):
+    """Write the record so a power cut cannot leave a half-written file.
 
-
-def update_high_score(score, current, path=STATE_PATH):
-    """Persist a run only when it beats the record.
-
-    Returns ``(high_score, changed)``.  A run that does not beat the record
-    writes nothing at all -- flash wear is real and a losing run has no reason
-    to touch the file.
+    ``plays`` IS REQUIRED AND POSITIONAL rather than defaulted, so a call site
+    that predates the counter is a loud ``TypeError`` instead of a silent zero.
+    A zeroed counter re-mints play numbers the database already holds, and
+    ``on conflict do nothing`` answers 200 to every one of them -- the wearer's
+    runs would simply stop appearing, with nothing anywhere to notice.
     """
-    high_score, _extras, changed = _SINK.commit(score, current, (), (), path)
+    return _SINK.write(high_score, (), plays, path)[0]
+
+
+def update_high_score(score, current, plays, path=STATE_PATH):
+    """Persist the run: the record when it beats one, the count always.
+
+    Returns ``(high_score, changed)``.  A run that does not beat the record USED
+    to write nothing at all, to spare the flash; it writes now because the play
+    counter changes on every completed run and has to be durable.  The record
+    itself is still only replaced by a run that beat it.
+    """
+    high_score, _extras, changed = _SINK.commit(score, current, plays, (), (),
+                                                path)
     return high_score, changed

@@ -131,18 +131,15 @@ RPC_SCHEDULE_VERSION = "badgelink_schedule_version"
 # changed content remains one atomic replacement rather than a patch stream.
 RPC_SCHEDULE_CURRENT_V2 = "badgelink_schedule_current_v2"
 
-# Card FT-B's score drain. Badge identity is deliberately NOT an argument: the
-# authenticated function derives it from ``grants.whoami()`` and checks the
-# live ``scores/write`` grant before inserting. This preserves the write-only
-# badge boundary while the idempotency key is resolved inside PostgreSQL.
-#
-# ⚠ RETAINED AS A FROZEN HISTORICAL LITERAL. Under the shared fleet token
-# ``whoami()`` is the same subject on every badge, so this function attributes
-# the whole hall's scores to ONE leaderboard row. New firmware routes to
-# ``RPC_SCORE_SUBMIT_SELF``; the literal stays because the server keeps the
-# function live and a badge on its own per-badge token still resolves it
-# correctly.
-RPC_SCORE_SUBMIT = "badgelink_badge_submit_score"
+# ``RPC_SCORE_SUBMIT`` AND ``score_submit_params`` ARE DELETED (2026-08-29), and
+# the deletion is the migration's rather than a tidy-up. They were kept as a
+# frozen historical literal expressly "because the server keeps the function
+# live" -- and ``20260829170000_scores_play_number`` DROPS it, because its body
+# inserts into ``idempotency_key``, a column that no longer exists. A plpgsql
+# body is not validated until it is called, so leaving the literal here would
+# have turned a stale caller into a runtime error instead of a 404. Nothing
+# called it: the fleet-token ``whoami()`` derivation attributed the whole hall to
+# one row, which is why ``_self`` exists.
 
 #: The self-addressed score write. Takes ``p_badge_id`` FIRST, auto-provisions a
 #: ``badges`` row so the FK holds for an unseeded physical id, and bypasses RLS
@@ -194,10 +191,13 @@ HEADER_DEVICE_TOKEN = "x-device-token"
 
 # DIRECT-TABLE paths. Badge state and schedule events remain ordinary PostgREST
 # endpoints because that is what their schema grants. ``TABLE_SCORES`` remains
-# as a frozen historical/shared table literal, but the badge drain no longer
-# uses it: PostgREST's client-side ON CONFLICT forced SELECT privileges onto a
-# write-only surface, so score conflict resolution moved behind
-# ``RPC_SCORE_SUBMIT``.
+# as a shared table literal, but the badge drain does not use it: PostgREST's
+# client-side ON CONFLICT forced SELECT privileges onto a write-only surface, so
+# score conflict resolution moved behind ``RPC_SCORE_SUBMIT_SELF``. The lane is
+# kept working by the grants and ``scores_badge_read_self`` so firmware can move
+# to it without another migration -- and since the primary key IS the natural key
+# ``(badge_id, game, play_number, score)``, PostgREST would infer the conflict
+# target from it with no ``on_conflict`` parameter.
 #
 # `data_api.py` spelled `REST_PREFIX + "/badge_state"` inline before Card FT-B
 # needed the same string on the device lane. It is here now for the reason every
@@ -207,15 +207,93 @@ TABLE_BADGE_STATE = "badge_state"
 TABLE_SCORES = "scores"
 TABLE_SCHEDULE_EVENTS = "schedule_events"
 
+#: THE HEARTBEAT AND THE SELF-REGISTRATION, WHICH ARE ONE REQUEST (rebuild,
+#: 2026-08-29). `badges` and `badge_state` were 1:1 on the same key, so splitting
+#: them made "who is alive?" a join and made a badge's first contact two writes.
+#: A ~60 s ``POST /rest/v1/badges`` with ``PREFER_MERGE_MINIMAL`` both creates the
+#: row and refreshes it -- the owner's "they try to pull, and we create a row for
+#: them" -- which is why the old ``PATCH ?badge_id=eq.`` shape had to go: PATCH on
+#: a row that does not exist is a 204 affecting zero rows, which
+#: ``parse_response`` reads as SUCCESS, so a badge the server had never seen would
+#: heartbeat into nothing for the whole event and look identical to a healthy one.
+#:
+#: ⚠ THE ROW'S KEY IS ``id`` AND IT IS ``network_runtime.hardware_uid()``, NEVER
+#: the credential subject. All ~1,000 badges carry one JWT, so `sub` names the FLEET;
+#: that single confusion is why the old ``badge_state`` table holds ONE row for
+#: every badge in the building. See `NetworkService.state_report`.
+TABLE_BADGES = "badges"
+
+#: THE OPERATOR'S 2 pm LEVERS, read on a ~5 minute cadence, and the REST half of
+#: the rebuild's "MOMENTS are broadcast, STATES are polled" split. It replaces
+#: ``RPC_TRANSPORT_POLICY``: one ordinary singleton table with an RLS read policy
+#: instead of a SECURITY DEFINER function, because a table a console can UPDATE is
+#: a lever an operator can actually pull at the venue.
+#:
+#: IT IS ALSO THE CATCH-UP MECHANISM. A badge that missed a broadcast (or was
+#: asleep, or off) learns the CURRENT state here, which is why every field it
+#: carries has to be a STATE rather than an event: re-applying the same values
+#: every five minutes must change nothing. See `NetworkService._apply_settings`.
+TABLE_FLEET_SETTINGS = "fleet_settings"
+
+#: THE COLUMN LIST, PINNED, AND ``select=*`` IS REFUSED ON PURPOSE. `postgrest`
+#: caps a RESPONSE at ``MAX_BODY_BYTES`` (8192) on this lane, and a ``*`` that
+#: grows a column one afternoon is a parse failure on ~1,000 badges the same
+#: afternoon -- the failure mode being an operator lever that silently stops
+#: working. Every name here is also a key `postgrest.parse_policy_row` knows.
+#:
+#: Every character must survive `postgrest._safe_query_part` unencoded (``,`` and
+#: ``_`` are in its safe set); nothing on this lane is percent-encoded.
+#:
+#: `scores_enabled` JOINED IT ON 2026-08-29, AND IT WAS THE ONLY COLUMN IN THE
+#: TABLE THE FIRMWARE NEVER ASKED FOR. It has existed in the schema and in the
+#: admin console since the rebuild, and `host/verify_rebuild_wire.py` has always
+#: read it -- but the string appeared nowhere in the badge, so the operator's
+#: switch moved a boolean in Postgres and changed nothing on any badge. See
+#: `network_runtime._apply_settings_scores`.
+#:
+#: W8 KEEPS ROUTINE BUSINESS STEERING AND NOTHING PHYSICAL. Sleep, networking
+#: and backlight are one-shot broadcasts; asking for their old columns here
+#: would turn a moment back into a value re-applied about 96 times per event day.
+#: This is a required subset, not a frozen exact count: a future routine control
+#: may join it once firmware has an observable consumer.
+FLEET_SETTINGS_COLUMNS = ("next_cadence_ms", "push_enabled", "scores_enabled")
+FLEET_SETTINGS_SELECT = ",".join(FLEET_SETTINGS_COLUMNS)
+
+#: ONE ROW, FOREVER: the table is a singleton (`id boolean primary key default
+#: true`), and ``limit=1`` says so on the wire rather than trusting it. The reply
+#: is a JSON ARRAY of one object, which `parse_policy_row` already unwraps.
+FLEET_SETTINGS_QUERY = (("select", FLEET_SETTINGS_SELECT), ("limit", "1"))
+
+#: WHAT THE BADGE POSTS AFTER IT ACCEPTS A BROADCAST. For immediate effects that
+#: also means acted; deferred sleep and radio-off are only ARMED at this point,
+#: because sleeping cannot post after its radio closes. Hardware observation is
+#: the execution proof. Shape: `{action_id, badge_id, at, result}`.
+#:
+#: IT REPLACES AN ACK AND IT IS NOT ONE. An ack answered a durable row the server
+#: was holding open; a receipt answers nothing and is owed to nobody. Rows exist
+#: only for badges that genuinely received and accepted the action, rather than
+#: for every badge an operator hoped was connected.
+#:
+#: THEREFORE FAILING TO POST ONE IS NOT A FAILURE OF THE ACTION. The show played;
+#: nobody found out. `network_runtime._on_receipt_posted` counts it and stops,
+#: and no retry ladder hangs off it: a receipt that arrives after the moment it
+#: describes is worth less than the request it costs, and ~1,000 badges retrying
+#: one is the stampede the jitter exists to prevent, rebuilt.
+TABLE_FLEET_RECEIPTS = "fleet_receipts"
+
 # PostgREST's `Prefer` values, which are part of the wire shape rather than a
 # preference. `resolution=merge-duplicates` is what makes a repeat badge_state
 # post an idempotent UPDATE instead of a duplicate-key error; `return=minimal`
 # keeps the response empty, which matters on a lane with an 8192-byte cap.
 PREFER_MERGE_MINIMAL = "resolution=merge-duplicates,return=minimal"
 PREFER_MINIMAL = "return=minimal"
-# Historical direct-score shape, retained as a frozen literal for consumers
-# that may still describe an old request. The badge drain uses
-# ``RPC_SCORE_SUBMIT`` now and sends neither this preference nor ``on_conflict``.
+# LIVE AGAIN, for ``fleet_receipts``. This was the historical direct-score shape
+# and it sat here as a frozen literal with no consumer; the receipt insert is a
+# real one. `resolution=ignore-duplicates` is what makes a receipt idempotent
+# under its `(action_id, badge_id)` key: a badge that somehow posts twice for one
+# action gets a no-op rather than a 409, which matters because `parse_response`
+# maps 409 into the generic retryable bucket and a retryable receipt is exactly
+# the fleet-wide retry storm the jitter exists to prevent.
 PREFER_IGNORE_MINIMAL = "resolution=ignore-duplicates,return=minimal"
 
 # Ack status vocabulary the badge_commands CHECK constraint accepts.
@@ -349,29 +427,7 @@ def ack_self_params(command_id, status, result, badge_id):
             "p_status": status, "p_result": result}
 
 
-def score_submit_params(game, score, idempotency_key, metadata):
-    """Argument object for ``badgelink_badge_submit_score``. Does not validate.
-
-    Badge identity is absent on purpose. The authenticated server function owns
-    that attribution, so no caller-supplied badge id can cross the wire.
-
-    ⚠ THAT SENTENCE IS THE WHOLE REASON THIS FUNCTION IS HISTORICAL. Deriving
-    attribution server-side from ``whoami()`` is strictly better *when the token
-    identifies a badge*. Under one shared token it identifies the FLEET, so the
-    stronger design attributes every score in the hall to one row. See
-    :func:`score_submit_self_params`, where the id is self-reported and
-    spoofable, and that is the accepted trade for a leaderboard that works.
-    """
-
-    return {
-        "p_game": game,
-        "p_score": score,
-        "p_idempotency_key": idempotency_key,
-        "p_metadata": metadata,
-    }
-
-
-def score_submit_self_params(badge_id, game, score, idempotency_key, metadata):
+def score_submit_self_params(badge_id, game, score, play_number, metadata):
     """Argument object for ``badgelink_badge_submit_score_self``. No validation.
 
     ``p_badge_id`` is SELF-REPORTED and spoofable, which is an accepted trade for
@@ -380,18 +436,27 @@ def score_submit_self_params(badge_id, game, score, idempotency_key, metadata):
     and bypasses RLS as ``postgres`` -- so it does NOT derive identity from
     ``whoami()`` and the badge still gains no ``scores`` SELECT.
 
+    ``p_play_number`` REPLACED ``p_idempotency_key`` on 2026-08-29 and the
+    parameter was RENAMED rather than added, which is why the migration drops and
+    recreates the function instead of ``create or replace`` -- replace refuses to
+    rename an input parameter. Retry safety is now the NATURAL key: the primary
+    key is ``(badge_id, game, play_number, score)``, the insert is
+    ``on conflict ... do nothing``, so re-posting the identical tuple returns
+    success and creates no second row. That is the only guarantee the random
+    handle ever provided.
+
     ``p_metadata`` IS SENT even though the server declares a default for it. The
-    frozen signature declares the argument, the existing ``scorebox`` plumbing
-    already carries the value, and a body key the server does not declare is a
-    PGRST202 -- so the safe direction is to match the declared signature exactly
-    rather than to rely on a default.
+    signature declares the argument, the ``scorebox`` plumbing already carries
+    the value, and a body key the server does not declare is a PGRST202 -- so the
+    safe direction is to match the declared signature exactly rather than to rely
+    on a default.
     """
 
     return {
         "p_badge_id": badge_id,
         "p_game": game,
         "p_score": score,
-        "p_idempotency_key": idempotency_key,
+        "p_play_number": play_number,
         "p_metadata": metadata,
     }
 

@@ -4,7 +4,8 @@ WHAT IT IS.  The picture the EDITOR shows when resting, and nothing else: the
 wearer's artwork, their marks and their name, drawn by the same
 `shared/nametag.Nametag` object the editor's own `worn()` screen calls.  It reads
 `/state/badgecard.json`, passes identity's flat shape through, and writes
-neither.  Any button returns to the launcher.
+neither.  Any button returns to the launcher, except that a temporary fleet
+notice consumes one press to dismiss itself and then continues as the Nametag.
 
 WHY IT EXISTS.  The editor is `setup`; a WORN badge needs a slice of it, 14
 resident modules against 27.  This app is that slice.  It is not a second
@@ -86,6 +87,12 @@ import badgeware  # noqa: F401,E402  - presence check; the API arrives as global
 # they ever differ, so this is a checked duplicate rather than a hopeful one.
 DARK = (9, 14, 24)
 
+# The notice is loaded only after stage 0 has reached the panel.  Defining the
+# slot now lets `_stage` preserve that notice across the ordinary card's staged
+# construction without importing or reading anything before the first frame.
+_notice = None
+_notice_record = None
+
 # What the wearer's state lives in.  `setup`'S FILE, read-only: this app is
 # a second window onto one badge, not a second badge.
 #
@@ -104,6 +111,11 @@ def _stage(number):
     can perceive; the `update()` is the ~11.4 ms VSYNC floor and is the entire
     price of arriving in stages.
     """
+    # The normal card continues building underneath a temporary notice so it is
+    # ready the instant the notice ends. Repainting before each present keeps
+    # those construction stages from flashing through for one frame.
+    if _notice is not None:
+        _paint_notice()
     display.update()
     print("POSTER_STAGE n=%d modules=%d" % (number, len(sys.modules)))
 
@@ -151,9 +163,70 @@ badge.caselights(0)
 _previous_clear = badge.default_clear
 _clear_pen = _previous_clear
 badge.default_clear = None
+# CONSUMED BEFORE THE FIRST PRESENT, even before stage 0.  Delete-first is the
+# line between a transient cross-reset handoff and a message that reappears on
+# every later Nametag visit.  A stale /system/lib or storage failure falls
+# through to the ordinary dark field and card.
+try:
+    import notice_note  # noqa: E402
+
+    _notice_record = notice_note.consume()
+except Exception as _notice_consume_error:  # noqa: BLE001
+    print("NOTICE_FAIL stage=consume error=%r" % _notice_consume_error)
 screen.pen = color.rgb(DARK[0], DARK[1], DARK[2])
 screen.clear()
 _stage(0)
+
+# -- one-shot custom notice, before the ordinary card is presented ---------
+#
+# IMPORTS ARE GUARDED TOGETHER.  A badge with a stale /system/lib must remain a
+# nametag, while a current one consumes the note DELETE-FIRST before a single
+# notice pixel is shown.  No campaign state survives: only this reset handoff.
+import time  # noqa: E402
+
+
+def _retire_notice():
+    """Drop notice RAM and leave the case LEDs provably dark. Never raises."""
+
+    global _notice
+    session = _notice
+    _notice = None
+    if session is not None:
+        try:
+            session.close()
+        except Exception as error:  # noqa: BLE001 - cleanup cannot block exit
+            print("NOTICE_FAIL stage=close error=%r" % error)
+
+
+def _paint_notice():
+    """Repaint the complete notice, or fail back to the ordinary card."""
+
+    if _notice is None:
+        return False
+    try:
+        _notice.paint()
+    except Exception as error:  # noqa: BLE001 - a notice may not crash Nametag
+        print("NOTICE_FAIL stage=paint error=%r" % error)
+        _retire_notice()
+        return False
+    return True
+
+
+if _notice_record is not None:
+    try:
+        # Lazy on the one boot that has a notice; ordinary Nametag opens do not
+        # parse a renderer for a file that was absent.
+        import notice_view  # noqa: E402
+
+        _notice = notice_view.Session(
+            _notice_record, screen, color, font, badge.caselights, time)
+        if _paint_notice():
+            display.update()
+            print("NOTICE_OPEN duration_s=%d" %
+                  _notice_record["duration_s"])
+    except Exception as _notice_error:  # noqa: BLE001 - ordinary card wins
+        print("NOTICE_FAIL stage=consume error=%r" % _notice_error)
+        _retire_notice()
 
 import badge_state  # noqa: E402
 import nametag as poster_module  # noqa: E402
@@ -257,7 +330,6 @@ _try(1, _name_only)
 # rung brings a bumped badge straight back.  No auto-sleep, still and always:
 # `nametag/README.md` "The nametag never dims, and never sleeps".
 import backlight  # noqa: E402
-import time  # noqa: E402
 
 def _light(pct):
     """The panel, and NEVER a reset for it.
@@ -405,6 +477,56 @@ def _network_active(active):
         print("POSTER_NETWORK stage=set_active error=%r" % error)
 
 
+def _note_panel_level(fraction):
+    """Tell BadgeLink what level the panel is actually at. Never raises.
+
+    *** WITHOUT THIS CALL, A `glyph` EFFECT HAS NO PANEL HALF IN THIS APP, AND
+    THIS APP IS THE ONE THE ACCEPTANCE TEST NAMES. *** `EffectPlayer` disables
+    its panel channel outright when it is handed no base --
+    `effect_library`: "if panel_cycle is None or panel_base is None: self._panel
+    = None" -- and `NetworkService._panel_base` starts as None and is only ever
+    written by this seam or by a fleet `set_backlight`. `settings` calls it on
+    every brightness press, but leaving an app is `machine.reset()`, so that
+    value never survives into the nametag's process. Measured across all 14 glyph
+    ids on a real service: `panel_active` was False for every one of them with no
+    prior notify, and True for every one of them with it. A glyph and a lights
+    effect were therefore visually indistinguishable here -- both moved only the
+    case lights.
+
+    A FRACTION, NEVER THE PERCENT, and this is the trap the settings-side comment
+    was written to stop repeating: `note_panel_level` feeds `display.backlight`,
+    which the pinned firmware reads as a float and multiplies by 255, while this
+    module's unit is a 20..100 int. Handing over 20 would ask the panel for 5100
+    and poison every later restore, and the parameter is called "level" on both
+    sides, so nothing would have caught it.
+
+    GUARDED, AND THE GUARD IS THE RESET RULE RATHER THAN DEFENSIVE STYLE. An
+    `AttributeError` on the launch path reaches `fatal_error`, which draws a modal
+    and resets -- so on any badge whose `/system/lib` predates the seam, or which
+    ships without one at all, an unguarded call would reset the badge instead of
+    lighting it. Same four steps as `_network_active` above.
+    """
+
+    if _network is None:
+        return
+    setter = getattr(_network, "note_panel_level", None)
+    if not callable(setter):
+        return
+    try:
+        setter(fraction)
+    except Exception as error:  # noqa: BLE001 - a reset is the alternative
+        print("POSTER_NETWORK stage=note_panel error=%r" % error)
+
+
+# CALLED HERE AND NOT INSIDE `_light`, because `_light` runs at STAGE 1 -- before
+# the `badgelink_network` builtin has been read into `_network` -- so a notify in
+# there would raise `NameError` on the launch path of every badge. The nametag
+# sets its brightness exactly once, at launch, so one call after the binding is
+# the whole of it; if this app ever grows a brightness press, that press must
+# call this too.
+_note_panel_level(backlight.fraction(state["brightness"]))
+
+
 # THE SHOW IS A TEMPORARY SKIN, not another renderer. This module is imported
 # after the staged wearer picture is complete, so a badge with no system library
 # pays none of it before its name and artwork have reached the panel.
@@ -442,9 +564,9 @@ def on_exit():
     so an app that opted in and never opted out would leave a WSS establishment
     admissible from inside the next app's frames.
     """
-    # HOME may leave without another rendered frame. Retire a glyph show here
-    # as well as on the labelled press path so its panel/caselight restore is
-    # not left to the reset that happens to follow today's launcher handoff.
+    # HOME may leave without another rendered frame. Retire both temporary
+    # surfaces here so neither can leave the case LEDs behind for the launcher.
+    _retire_notice()
     _show.exit()
     badge.default_clear = _previous_clear
     _network_active(False)
@@ -468,6 +590,32 @@ def update():
     # `set_active(False)` from anywhere else while the nametag is still up.
     _network_active(True)
     pressed = bool(badge.pressed())
+    if _notice is not None:
+        # The light effect and the screen share this exact lifetime.  A button
+        # ends both early; otherwise the same required duration_s ends both.
+        if not _notice.active(pressed):
+            reason = "button" if pressed else "timeout"
+            _retire_notice()
+            # Continue into the ordinary Nametag in THIS run.  The dismissing
+            # press is consumed here rather than falling through to the normal
+            # any-button exit on the same frame.
+            if plain or view is None:
+                _plain_badge()
+            else:
+                try:
+                    _paint()
+                except Exception as error:  # noqa: BLE001
+                    plain = True
+                    _plain_badge()
+                    print("POSTER_FAIL stage=notice-restore error=%r" % error)
+            print("NOTICE_CLOSE reason=%s" % reason)
+            return None
+        try:
+            _notice.step()
+        except Exception as error:  # noqa: BLE001 - ordinary card wins
+            print("NOTICE_FAIL stage=frame error=%r" % error)
+            _retire_notice()
+        return None
     # NO IDLE POLL, and its absence is the 2026-08-24 ruling rather than an
     # oversight: the nametag never dims, so there is no clock to advance and no
     # WAKE press to consume.  See the brightness block above.

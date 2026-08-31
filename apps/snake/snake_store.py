@@ -35,23 +35,45 @@ _SINK = ScoreSink(
 
 
 def load(path=STATE_PATH):
-    """Return ``(high_score, high_level, status)``."""
-    high_score, extras, status = _SINK.read(path)
-    return high_score, extras[0], status
+    """Return ``(high_score, high_level, plays, status)``.
+
+    ``plays`` IS A KEY, NOT A SCHEMA BUMP (2026-08-29), for `high_level`'s own
+    reason: `read` accepts any dict at schema 1 and ignores what it does not
+    know, so a badge holding a file written before the counter existed keeps its
+    record and counts 0.  The number prices every leaderboard row this game
+    submits -- a score is unique in the database as
+    ``(badge_id, game, play_number, score)``.
+    """
+    high_score, extras, plays, status = _SINK.read(path)
+    return high_score, extras[0], plays, status
 
 
-def save(high_score, high_level=UNKNOWN_LEVEL, path=STATE_PATH):
-    high_score, extras = _SINK.write(high_score, (high_level,), path)
+def save(high_score, high_level, plays, path=STATE_PATH):
+    """Write the record so a power cut cannot leave a half-written file.
+
+    ``high_level`` LOST ITS DEFAULT AND ``plays`` NEVER HAD ONE, so a call site
+    that predates the counter is a loud ``TypeError`` rather than a silent zero.
+    A zeroed counter re-mints play numbers the database already holds, and
+    ``on conflict do nothing`` answers 200 to every one of them -- the wearer's
+    runs would simply stop appearing, with nothing anywhere to notice.
+    """
+    high_score, extras, _plays = _SINK.write(high_score, (high_level,), plays,
+                                             path)
     return high_score, extras[0]
 
 
-def update_high_score(score, level, current, current_level=UNKNOWN_LEVEL, path=STATE_PATH):
-    """Persist a run only when it beats the record, and record its level too.
+def update_high_score(score, level, current, current_level, plays,
+                      path=STATE_PATH):
+    """Persist the run: the record when it beats one, the count always.
 
     The level travels WITH the score and is never written on its own: a run
     that does not beat the record must not relabel the record it failed to
-    beat.
+    beat, so a losing level-9 run leaves a level-4 record reading 4.
+
+    A LOSING RUN NOW WRITES, where it used to write nothing at all to spare the
+    flash: `plays` changes on every completed run and has to be durable. Only
+    the record itself is still gated on beating it.
     """
     high_score, extras, changed = _SINK.commit(
-        score, current, (level,), (current_level,), path)
+        score, current, plays, (level,), (current_level,), path)
     return high_score, extras[0], changed

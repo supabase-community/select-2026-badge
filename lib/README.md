@@ -4,7 +4,7 @@ This is BadgeLink, the library the badge installs to `/system/lib`. `tools/build
 
 The layout is the badge's, not a source tree's. Modules are FLAT and imported by bare name, which is why they are here by basename rather than in nested directories.
 
-- **27 modules**, flat.
+- **26 modules**, flat.
 - **2 packages**: `aiohttp`, `realtime`. These stay directories because their members are named `__init__.py` and `client.py`, which only a package keeps apart.
 - **3 trust anchors** under `ca/`, loaded by path, not imported.
 

@@ -269,11 +269,11 @@ MENU_NAME = "NAME"
 MENU_SKIN = "SKIN"
 MENU_MARKS = "STICKERS"
 MENU_EFFECT = "EFFECT"
-MENU_HOME = "SAVE TO HOME"
+MENU_HOME = "DONE"
 # "RESET BADGE" AND NOT "RESET NAME BADGE", which is the owner's own phrase.
 # Inside this app every noun is already the badge, so the second word would be
 # carried by every other row too and none of them says it; the register the other
-# five rows set is NAME / SKIN / STICKERS / EFFECT / SAVE TO HOME.  The full
+# five rows set is NAME / SKIN / STICKERS / EFFECT / DONE.  The full
 # phrase survives where a wearer might actually need the disambiguation: the
 # confirmation modal, which spells out what goes and what stays.
 MENU_RESET = "RESET BADGE"
@@ -297,12 +297,12 @@ JUMP = "JUMP"
 ADD = "ADD"
 MOVE = "MOVE"
 DEL = "DEL"
-DROP = "DROP"
+PUT = "PUT"
+DONE = "DONE"
 LEFT = "LEFT"
 RIGHT = "RIGHT"
 PLACE_LABEL = "PLACE"
 KEEP = "KEEP"
-SAVE = "SAVE"
 CLEAR = "CLEAR"
 # THE ONE KEY IN THIS APP THAT RESETS ANYTHING.  29 px against `ui.LABEL_MAX_PX`
 # of 34, measured through the real `font.sins` advance table by
@@ -324,7 +324,7 @@ RESET = "RESET"
 NO_BAR = ("", "", "")
 
 
-def softkeys(view, index=0, installed=False):
+def softkeys(view, index=0, installed=False, pick_action=-1, mark_count=0):
     """The three labels for a screen, as `(A, B, C)`.  Never raises.
 
     `count` LEFT THIS SIGNATURE WITH THE CARDS SCREEN (2026-08-24).  It said how
@@ -332,6 +332,11 @@ def softkeys(view, index=0, installed=False):
     NEW on a row of that list.  A parameter nothing reads is a parameter every
     caller has to guess a value for, and `labels()` below would have gone on
     sweeping three values of it forever to measure strings that cannot be drawn.
+
+    `mark_count` is different: the trailing DONE row moves whenever a sticker
+    is added or removed, so its position is part of the current screen shape.
+    Supplying that count here keeps the bar in this one pure function instead of
+    making the controller secretly replace MOVE/DEL with DONE after the fact.
 
     ONE FUNCTION OWNS THE BAR, and it is pure, so the browser lane can assert
     what a screen offers without rendering it and the label ruler can measure
@@ -343,20 +348,20 @@ def softkeys(view, index=0, installed=False):
     if view == BADGE or view == NAME or view == BAKING:
         return NO_BAR
     if view == MENU:
-        # THE SAVE-TO-HOME ROW IS A BUTTON, so its keys say so: B is SAVE rather
-        # than OPEN because nothing opens, and C offers CLEAR only when there is
-        # a film to remove.  The MARKS and CARDS screens already label B and C
-        # per ROW for the same reason -- a key labelled for what it will
-        # actually do beats a key labelled for the screen it lives on.
+        # DONE is an action, so its keys say so: B finishes rather than OPENing
+        # a screen, while C retains the existing recoverable film CLEAR.
         if index == MENU_ITEMS.index(MENU_HOME):
-            return (BACK, SAVE, CLEAR if installed else "")
+            # DONE is the one consistent save-and-view action.  HOME remains
+            # the global launcher route, so A is deliberately not advertised
+            # as a second exit from the menu root.
+            return ("", DONE, CLEAR if installed else "")
         # AND THE RESET ROW IS NOT A BUTTON, WHICH IS THE WHOLE GATE.  Its B says
         # OPEN because a screen is what it opens; nothing on this menu can reset
         # anything.  A row that said RESET here would be one press from a wiped
         # badge and would be reading its label off the same B every other row
         # uses to browse -- which is precisely the "wake and fire" shape I5
         # forbids, one screen further in.
-        return (BACK, OPEN, "")
+        return ("", OPEN, "")
     if view == SKIN:
         return (BACK, APPLY, JUMP)
     if view == EFFECT:
@@ -370,23 +375,31 @@ def softkeys(view, index=0, installed=False):
         # seven presses away and a third key would be chrome for nothing.
         return (BACK, APPLY, "")
     if view == MARKS:
-        # Row 0 is ADD; every row after it is a mark the wearer placed.  B and C
-        # therefore mean different things on the first row, and both are
-        # labelled for what they will actually do rather than greyed.
+        # ADD and DONE bracket the placed marks so the list remains the hub.
+        # The controller supplies the count because DONE moves as marks are
+        # added or deleted; guessing from the row would make the last mark look
+        # finished before it had ever been placed.
         if index == 0:
             return (BACK, ADD, "")
+        if index == mark_count + 1:
+            return (BACK, DONE, "")
         return (BACK, MOVE, DEL)
     if view == PICK:
-        return (BACK, PLACE_LABEL, "")
+        # A/C belong wholly to grid navigation.  The focusable bottom BACK is
+        # deliberately singular: completion belongs to the sticker-list hub,
+        # where a wearer can see what they have placed before finishing.
+        if pick_action == 0:
+            return ("", BACK, "")
+        return (LEFT, PLACE_LABEL, RIGHT)
     if view == PLACE:
         # ALL FOUR DIRECTION KEYS PLUS B, so there is no room for a labelled
         # cancel.  This is `identity`'s recorded D3 exception to I2 and it is
-        # carried here deliberately: `DROP` is non-destructive, it lands back on
+        # carried here deliberately: `PUT` is non-destructive, it lands back on
         # the mark list with the placed mark selected, and `DEL` is one press
         # away.  The two costed alternatives -- pay a press per placement to
         # keep a cancel on A, or build the button rules' 9.2 odometer -- are
         # still open and still not free.
-        return (LEFT, DROP, RIGHT)
+        return (LEFT, PUT, RIGHT)
     if view == CONFIRM:
         # B IS INERT ON A CONFIRMATION.  B7, and `identity` learned it the hard
         # way: B is the primary action on every other screen in the app, so a
@@ -409,9 +422,12 @@ def labels():
     for view in VIEWS:
         for index in range(len(MENU_ITEMS) + 1):
             for installed in (False, True):
-                for label in softkeys(view, index, installed):
-                    if label and label not in out:
-                        out.append(label)
+                for pick_action in (-1, 0):
+                    for mark_count in (0, 1, MAX_STICKERS):
+                        for label in softkeys(view, index, installed,
+                                             pick_action, mark_count):
+                            if label and label not in out:
+                                out.append(label)
     return tuple(out)
 
 

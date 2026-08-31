@@ -90,8 +90,10 @@ tick:
   moment (``CONNECTING``) the UI renders behind a connecting screen. Raises
   :class:`LinkError` on failure.
 * ``begin(kind, payload, now)`` — start one request over the kept-alive socket.
-  ``kind`` is ``"poll"``, ``"ack"``, ``"policy"``, or one of Card FT-B's two
-  ERRAND kinds (``"table"``/``"rpc"``). Non-blocking. Raises :class:`LinkError`
+  ``kind`` is ``"poll"``, ``"ack"``, or one of Card FT-B's two ERRAND kinds
+  (``"table"``/``"rpc"``). There was a ``"policy"`` kind until 2026-08-29; the
+  fleet settings are a ``"table"`` errand now, issued on a cadence
+  `NetworkService` owns. Non-blocking. Raises :class:`LinkError`
   if the socket is already dead.
 * ``pump(now)`` — advance the in-flight request by one bounded step. Returns
   :data:`PENDING` while still in flight, or the decoded response (any value) when
@@ -188,26 +190,25 @@ ACTIVE_CADENCE_MAX_MS = 5000
 IDLE_CADENCE_MS = 30000
 IDLE_CADENCE_MAX_MS = 60000
 
-# How often the badge re-reads the SERVER-STEERED transport policy (the venue
-# herd kill-switch). FIVE MINUTES, and the number is a herd calculation rather
-# than a latency preference: 800 badges reading a policy every 5 minutes is ~2.7
-# requests/second against the ~27/second the 30 s idle poll already costs, so the
-# feature is a ~10% surcharge on the transport it controls. A 60 s refresh would
-# have made it a 50% surcharge, and this is a switch an operator throws when a
-# ROOM is misbehaving, not a security boundary — the security boundary is
-# `realtime.messages` RLS, which refuses the join whatever a client believes.
-# THE PRICE, STATED PLAINLY: a fleet-wide push disable takes up to
-# POLICY_REFRESH_MS + one poll to reach the last badge.
-POLICY_REFRESH_MS = 300000
-POLICY_REFRESH_MIN_MS = 30000
-POLICY_REFRESH_MAX_MS = 3600000
+# THE STEERING CADENCE USED TO LIVE HERE (`POLICY_REFRESH_MS`, 300000) AND IT
+# DOES NOT ANY MORE (rebuild, 2026-08-29). The venue kill-switch is a row in
+# `fleet_settings` that `NetworkService._pump_fleet_settings` reads as an ordinary
+# ERRAND, on `network_runtime.SETTINGS_REFRESH_MS`, so this loop no longer has a
+# request kind of its own for it -- and with the kind went the due time, the phase
+# `NetworkService` used to arm through `arm_policy`, and the mirror it read back
+# through `policy_due`. That pair was CX-8's finding and then CX-8's correction:
+# two objects holding one cadence disagree the first time a read FAILS.
+#
+# WHAT STAYS HERE IS THE ONLY PART THAT WAS EVER THIS OBJECT'S: `policy`,
+# `suggested_cadence_ms` and `_policy_sink` -- the fields a steering answer sets
+# and the exchange rate it steers, which is decided where the exchanges are.
 
 # HOW MANY SIDE REQUESTS MAY WAIT (Card FT-B's errand channel). Four, and the
 # number is an argument rather than a guess: the concurrent requesters are
 # `report_state` (coalesced to ONE by key), the scorebox drain (one row at a
 # time) and the schedule sync (a version read, then at most one fetch). Four
 # covers every one of them being in flight at once with a slot spare, and it
-# bounds the worst case an errand can add to a queued command's wait to four
+# bounds the worst case an errand can add to another queued errand's wait to four
 # exchanges. A refusal is better than a deeper queue: the only requester that
 # needs a retry has a durable spool.
 MAX_ERRANDS = 4
@@ -708,13 +709,9 @@ class PollLoop:
         backoff_max_ms=BACKOFF_MAX_MS,
         liveness_misses=1,
         policy_sink=None,
-        policy_refresh_ms=POLICY_REFRESH_MS,
     ):
         if link is None:
             raise ValueError("a link is required")
-        if not POLICY_REFRESH_MIN_MS <= policy_refresh_ms <= POLICY_REFRESH_MAX_MS:
-            raise ValueError("policy refresh must be {}..{} ms".format(
-                POLICY_REFRESH_MIN_MS, POLICY_REFRESH_MAX_MS))
         if not (0 < active_cadence_ms <= idle_cadence_ms):
             raise ValueError("cadence must satisfy 0 < active <= idle")
         if not (0 < backoff_base_ms <= backoff_max_ms):
@@ -727,7 +724,6 @@ class PollLoop:
         self._command_sink = command_sink
         self._event_sink = event_sink
         self._policy_sink = policy_sink
-        self.policy_refresh_ms = int(policy_refresh_ms)
         self.active_cadence_ms = int(active_cadence_ms)
         self.idle_cadence_ms = int(idle_cadence_ms)
         self.backoff_base_ms = int(backoff_base_ms)
@@ -782,7 +778,6 @@ class PollLoop:
         self._need_full_resync = True
         self._connect_wanted = False
         self.desired_version = 0
-        self._pending_acks = []
         #: Card FT-B's side channel: bounded, RAM-only, one attempt each. Never
         #: persisted -- the only requester that needs durability has its own
         #: spool, and an errand replayed after a reboot would post a snapshot
@@ -792,24 +787,6 @@ class PollLoop:
         self._errand_gap_until = None
         self._inflight = None
         self._last_exchange_ms = None
-        #: WHEN THE NEXT STEERING READ IS DUE, and WHO DECIDES IT (CX-8).
-        #: ``None`` means "nobody has armed one", and the FIRST successful open
-        #: arms it to ``now`` only in that case -- so a bare ``PollLoop`` still
-        #: reads steering at session start, while an owner that armed a phase
-        #: (`arm_policy`, which `NetworkService` uses to jitter the first read
-        #: away from the boot burst) keeps it. Every LATER open leaves it alone:
-        #: it used to be re-armed to ``now`` on every successful open, so a
-        #: mid-boot AP blip re-paid a 5-minute cadence, which is CX-8's second
-        #: half. Never persisted -- see `policy`.
-        #:
-        #: THIS LOOP OWNS EVERY ADVANCE OF IT, and `NetworkService` MIRRORS the
-        #: value rather than keeping a second opinion (`policy_due` below, read
-        #: through `DeviceBackend.policy_due`). It advances for exactly two
-        #: reasons -- the request being ISSUED (`_begin_next`) and steering
-        #: arriving on ANY exchange (`_process_steering`) -- and the service's job
-        #: is only to carry the answer across a loop REBUILD, which is the one
-        #: thing this object cannot do because it does not survive one.
-        self._policy_due = None
         #: The last STEERING fields the server sent, whichever exchange carried
         #: them. Never persisted: a policy is the server's live opinion, and a
         #: badge that cached one across a reboot would keep enforcing a kill
@@ -872,16 +849,19 @@ class PollLoop:
         self.poll_failures = 0
         self.reconnects = 0
         self.commands_in = 0
+        #: PERMANENTLY 0 SINCE THE REBUILD, and kept because `network_runtime`
+        #: still reads it (`_backend_acks_sent`) as the delivery proof for the
+        #: power verbs. It can never advance now that `queue_ack` drops, which is
+        #: exactly why `_pump_power_action` acts on the `needed == 0` branch
+        #: instead of waiting for it.
         self.acks_sent = 0
-        self.policies = 0
-        #: STEERING READS THAT WERE ISSUED AND DID NOT ARRIVE (CX-8, 2026-08-23).
-        #: The due time advances when the request is ISSUED, so a failed read is
-        #: not re-fired -- which means `policies` alone cannot tell a boot that
-        #: never READ a policy from a boot that never TRIED. This counter, beside
-        #: `poll_failures` and next to the `exchange kind=policy ok=False` line,
-        #: is the whole failure story, and carrying it here is what lets the
-        #: cadence stay a cadence during the outage that broke it.
-        self.policy_failures = 0
+        #: Acks handed to `queue_ack` and discarded. The one number that tells an
+        #: operator a verb still expects an acknowledgement nothing will send.
+        self.acks_dropped = 0
+        #: `policies` AND `policy_failures` WENT WITH THE REQUEST KIND (rebuild,
+        #: 2026-08-29). The steering read is an errand now, so it is counted by
+        #: `errands_done`/`errands_failed` along with every other one, and the
+        #: `exchange kind=table` line names it on the wire log.
         self.errands_done = 0
         self.errands_failed = 0
         #: EVERY REQUEST THAT REACHED A TERMINAL OUTCOME IN A FRAME, whatever
@@ -1131,12 +1111,10 @@ class PollLoop:
     def pull_forward(self, now=None, reason="doorbell", delay_ms=0):
         """A DOORBELL: bring the next poll forward. Carries nothing, proves nothing.
 
-        This is the entire correctness surface the P6 push upgrade is allowed to
-        touch (transport memo §0: Realtime shortens latency and never carries
-        correctness). A broadcast arriving on the badge's private topic means
-        only "go look"; the durable ``badge_commands`` rows, the idempotency key
-        and the ack RPC keep carrying delivery, so a doorbell that is dropped,
-        duplicated or forged costs latency and nothing else.
+        This seam now serves only the private-topic compatibility branch. Fleet
+        broadcasts carry and apply their action on the shared topic instead. A
+        private-topic ring still means only "go look", so dropping or duplicating
+        one costs dev-fixture latency and no production action.
 
         Three refusals are the load-bearing part:
 
@@ -1182,17 +1160,32 @@ class PollLoop:
         return True
 
     def queue_ack(self, ack):
-        """Enqueue an opaque ack payload to flush on the next exchange."""
+        """Accept an ack and DROP IT. There is no ack RPC any more.
+
+        *** RETAINED AS A SEAM, NOT AS A FEATURE, AND IT ANSWERS 0 ON PURPOSE. ***
+        `badgelink_badge_ack_command_self` is dropped by the rebuild
+        (`migrations/20260829060000_badge_rebuild_v2.sql` §6a). Nothing routine
+        reaches here now -- the broadcast lane posts a receipt instead and never
+        acks. The compatibility command callback and its ledger re-ack branch
+        still call this seam in host probes; deleting it would turn stale probe
+        input into an `AttributeError` inside a frame, while sending would put a
+        request to a function that no longer exists onto the wire. So it accepts
+        and discards without reviving the removed queue.
+
+        THE RETURN VALUE IS THE INTERESTING PART. `0` is the retained
+        compatibility machinery's "cannot prove" answer, so an old callback
+        cannot pretend an ack left. Production power actions use the independent
+        fleet-receipt gate and never call this seam.
+
+        ⚠ WHAT THAT COSTS IS REAL AND IS NOT FIXED HERE: an operator can no
+        longer distinguish a badge that slept on command from one that died. The
+        receipt POST is fire-and-forget with jitter, which is not the same
+        guarantee. Flagged for the owner rather than papered over.
+        """
         if ack is None:
             raise ValueError("ack payload must not be None")
-        self._pending_acks.append(ack)
-        # A pending ack makes us active — the wearer just did something — and is
-        # urgent: pull the next exchange forward to now rather than waiting a
-        # whole cadence. The in-flight guard still serialises it after any
-        # request already on the wire.
-        self.set_active(True)
-        self._next_due = self.clock.ms()
-        return len(self._pending_acks)
+        self.acks_dropped += 1
+        return 0
 
     # -- the per-tick pump -------------------------------------------------
 
@@ -1228,7 +1221,15 @@ class PollLoop:
                 return self.state
             self._begin_revoked_reprobe(now)
         if self.state in (DISCONNECTED, BACKOFF):
-            if (self._connect_wanted and self._due(now)
+            # `_errands_due` JOINED THIS GATE WITH THE REBUILD. It used to be
+            # `_due` alone, which was complete when the poll was the reason to
+            # have a socket: anything else worth sending was queued behind a poll
+            # that was already coming. Errands are now the ONLY traffic, so a
+            # score finishing, a receipt arming or the first heartbeat could
+            # otherwise sit on a closed socket for a whole cadence with the
+            # transport believing it had nothing to do.
+            if (self._connect_wanted
+                    and (self._due(now) or self._errands_due(now))
                     and self._establishment_allowed and allow_establishment):
                 if self._parked_open_enabled:
                     self._begin_parked_open(now)
@@ -1328,14 +1329,13 @@ class PollLoop:
         self._consecutive_misses = 0
         self._need_full_resync = True
         # Poll immediately after a successful (re)connect to re-fetch desired
-        # state. THE STEERING READ IS NOT RE-ARMED HERE (CX-8): this line used to
-        # be `self._policy_due = now` unconditionally, so every reconnect --
-        # every AP blip, every missed-ack teardown, every `restart()` -- re-paid
-        # a request whose whole design is a 5-minute cadence. It is armed once,
-        # by whoever owns the phase, and `None` means nobody has.
+        # state. NO STEERING READ IS ARMED HERE and there is no longer one to arm:
+        # the settings cadence belongs to `NetworkService._pump_fleet_settings`,
+        # which phases itself per badge. This line used to be `self._policy_due =
+        # now` unconditionally, so every reconnect -- every AP blip, every
+        # missed-ack teardown, every `restart()` -- re-paid a request whose whole
+        # design is a 5-minute cadence (CX-8).
         self._next_due = now
-        if self._policy_due is None:
-            self._policy_due = now
         self._emit("connected", resync=True, open_ms=self.open_ms)
 
     def _begin_parked_open(self, now):
@@ -1408,8 +1408,6 @@ class PollLoop:
         self._consecutive_misses = 0
         self._need_full_resync = True
         self._next_due = terminal
-        if self._policy_due is None:
-            self._policy_due = terminal
         self._emit("connected", resync=True, open_ms=self.open_ms)
         return self.state
 
@@ -1430,79 +1428,62 @@ class PollLoop:
         # Exactly one bounded link operation per tick keeps every frame cheap.
         if self._inflight is not None:
             self._pump_inflight(now)
-        elif (self._due(now) or self._errands_due(now)
-              or self._policy_due_now(now)):
+        elif self._due(now) or self._errands_due(now):
             self._begin_next(now)
 
-    def arm_policy(self, due_at):
-        """Set when the next steering read is due. The OWNER's call, not an open's.
+    def set_suggested_cadence(self, cadence_ms):
+        """The exchange cadence the SERVER suggests, from the fleet settings.
 
-        `NetworkService` owns the PHASE of this cadence because it outlives every
-        loop it builds: a wearer toggling networking off and on, or a backend
-        rebuilt after a fault, must not restart a 5-minute interval that was
-        served thirty seconds ago. The loop still owns the INTERVAL -- it advances
-        the due time by ``policy_refresh_ms`` when it issues the request.
+        THE CLAMP IS WHY THIS IS A SETTER AND NOT AN ASSIGNMENT: `_resolved_cadence`
+        bounds whatever arrives into the ACTIVE or IDLE band, so nothing an
+        operator (or a mistyped row) can send makes a badge ask faster than its own
+        floor or slower than its own ceiling. Explicit ``None`` clears the prior
+        suggestion because it is Admin's well-formed "badge default" value;
+        every other non-integer stays ignored, since unreadable input is not an
+        instruction to forget a readable value.
 
-        Duck-typed from the service through ``DeviceBackend.set_policy_due``, so a
-        backend or a fixture that predates this seam simply never arms one and
-        gets the old session-start behaviour from `_attempt_open`.
+        Reached from `NetworkService._apply_settings` through
+        `DeviceBackend.set_suggested_cadence`; it is the one steering field that
+        stays this object's, because the interval between exchanges belongs where
+        the exchanges are.
         """
-        self._policy_due = due_at
-        return due_at
-
-    def policy_due(self):
-        """When this loop says the next steering read is due, or ``None``.
-
-        THE READ-BACK HALF OF `arm_policy`, and it exists because the write-only
-        half was not enough (CX-8, corrected 2026-08-23). The service armed a
-        phase and then advanced its own copy only when steering ARRIVED, while
-        this loop advances on ISSUE -- so a steering read that FAILED left the two
-        copies disagreeing, and the next rebuild handed the service's stale
-        past-due straight back down through `arm_policy`, overwriting the value
-        this loop had correctly moved. The new session then issued
-        poll-then-immediate-policy, which is the CX-8 boot burst reappearing
-        behind a Settings toggle.
-
-        Duck-typed exactly like `arm_policy` and read-only, so the service holds a
-        MIRROR and not a second opinion.
-        """
-        return self._policy_due
-
-    def _policy_due_now(self, now):
-        return (
-            self._policy_sink is not None
-            and self._policy_due is not None
-            and self.clock.diff(now, self._policy_due) >= 0
-        )
+        if cadence_ms is None:
+            self.suggested_cadence_ms = None
+            return None
+        if isinstance(cadence_ms, bool) or not isinstance(cadence_ms, int):
+            return self.suggested_cadence_ms
+        self.suggested_cadence_ms = cadence_ms
+        return self.suggested_cadence_ms
 
     def _begin_next(self, now):
-        # Acks flush before the poll; a pending ack is never left behind a poll.
-        # ERRANDS (Card FT-B) go after the poll and before the steering read:
-        # correctness first, then the thing an operator or a game is waiting for,
-        # then the optimisation about an optimisation. A queued command may never
-        # wait behind either.
-        # A failure to even start is a liveness signal, not a same-socket retry.
-        if self._pending_acks:
-            kind, payload = "ack", self._pending_acks[0]
-        elif self._due(now):
-            kind, payload = "poll", self._poll_payload()
-        elif self._errands_due(now):
+        # *** THE LADDER IS ONE RUNG NOW: ERRANDS. *** It was ack, then poll, then
+        # errand, and the two rungs above disappeared on 2026-08-29 with the RPCs
+        # behind them -- `migrations/20260829060000_badge_rebuild_v2.sql` §6a drops
+        # `badgelink_badge_poll_self` and `badgelink_badge_ack_command_self`.
+        #
+        # This is what "THE 3-5s CLAIM PATCH IS DELETED" actually means in code.
+        # Moments now arrive on the doorbell and are acted on directly, so there
+        # is no queue to drain and nothing to acknowledge; every remaining reason
+        # to touch the network -- the ~60 s registration, the ~5 min settings
+        # read, the score drain, the schedule sync, a broadcast receipt -- was
+        # already an errand. Keeping a poll rung pointed at a dropped RPC would
+        # not have failed loudly: PostgREST answers PGRST202, `parse_response`
+        # calls that retryable, and ~1,000 badges would have retried a function that
+        # does not exist every three seconds for a whole day.
+        #
+        # THE CADENCE DID NOT DIE WITH THE POLL, IT CHANGED JOBS. `_next_due` used
+        # to say "ask the server for work"; it now says "wake and see whether this
+        # badge has any of its own". The else-branch below re-arms it, which is
+        # load-bearing in a way the old ladder never needed: `_due` gates the OPEN
+        # (see `poll`), so a `_next_due` left permanently hot would call this
+        # method on every rendered frame forever.
+        if self._errands_due(now):
             kind, payload = self._errands[0][0], self._errands[0][1]
             self._errand_gap_until = self.clock.add(now, ERRAND_MIN_GAP_MS)
-        elif self._policy_due_now(now):
-            kind, payload = "policy", None
-            # RECORD THE ATTEMPT, NOT THE OUTCOME (CX-8). This used to advance
-            # only on a SUCCESSFUL read, down in `_pump_inflight`, so a steering
-            # read that failed left the due time in the past: the loop re-issued
-            # the request on every tick that had nothing better to do, and a badge
-            # that reset mid-failure asked again immediately. Advancing here costs
-            # one skipped cycle on a transient failure and cannot herd.
-            #
-            # FAIL-OPEN IS UNTOUCHED. A read that never happens is a
-            # `_policy_sink` that is never called, and `pushlink.PushPolicy`
-            # leaves push ENABLED when it has heard nothing.
-            self._policy_due = self.clock.add(now, self.policy_refresh_ms)
         else:
+            # Nothing of our own to send this wake. Re-arm and come back; the
+            # socket stays open, which is what makes the next errand cheap.
+            self._schedule_next(now, self.cadence_ms())
             return
         # The exchange's clock starts at the FRAME tick, not at `clock.ms()`:
         # `span_ms` is meant to be comparable with the caller's own frame
@@ -1539,41 +1520,17 @@ class PollLoop:
         self._report_exchange(now, kind, True)
         self._consecutive_misses = 0
         self._last_exchange_ms = now
-        if kind == "ack":
-            # The ack landed; drop it. Cadence is unchanged — we still owe the
-            # poll (or the next queued ack), which the next tick begins.
-            if self._pending_acks:
-                self._pending_acks.pop(0)
-            self.acks_sent += 1
-        elif kind == "policy":
-            self.policies += 1
-            fields = outcome.get("policy") if isinstance(outcome, dict) else None
-            self._process_steering(fields, now)
-            # The due time was advanced by `_begin_next` when the request was
-            # ISSUED, so a failure cannot leave it in the past, and
-            # `_process_steering` moves it again from the ANSWER when one came.
-            # See CX-8 and its 2026-08-23 correction.
-        elif kind == "table" or kind == "rpc":
+        if kind == "table" or kind == "rpc":
             self.errands_done += 1
             data = outcome.get("data") if isinstance(outcome, dict) else None
             self._finish_errand(True, data)
         else:
-            self.polls += 1
-            self._process_response(outcome, now)
-            self._schedule_next(now, self._resolved_cadence(outcome))
-            if self._pending_acks:
-                # THE ACK URGENCY, RESTORED. `queue_ack` pulls the next exchange
-                # to now, and this is the one path that ran AFTER it and undid
-                # that: a command arrives inside the poll response, so the sink
-                # queues its ack from inside `_process_response`, and the cadence
-                # scheduled one line above then pushed the ack a full cadence
-                # away (3 s active, 30 s idle). The wearer sees the physical
-                # effect immediately either way -- the effect is applied before
-                # the ack -- but the web app's status chip waited for a round
-                # trip nobody needed to wait for. Overriding here rather than
-                # skipping the cadence keeps `_resolved_cadence`'s server
-                # steering recorded for the poll that follows the ack.
-                self._next_due = now
+            # UNREACHABLE, AND LOUD RATHER THAN SILENT. `_begin_next` can only
+            # start an errand now that the poll and ack rungs are gone, so a kind
+            # arriving here means someone added a rung without adding its
+            # completion. Counting it as a generic success would make that
+            # invisible; a raise into the caller's own containment names it.
+            raise LinkError("unknown in-flight kind: {}".format(kind))
 
     def _note_open(self, entered):
         """One handshake's cost. Never averaged into an exchange."""
@@ -1632,11 +1589,6 @@ class PollLoop:
         self._report_exchange(now, kind, False)
         if kind == "poll":
             self.poll_failures += 1
-        elif kind == "policy":
-            # COUNTED, NOT RE-FIRED. `_begin_next` already advanced the due time
-            # when it issued this request, so the cadence is intact and the
-            # failure needs somewhere to be visible instead.
-            self.policy_failures += 1
         self.last_error = _error_text(exc)
         if kind == "table" or kind == "rpc":
             # A 403 ON AN ERRAND IS NOT A REVOCATION, and telling the two apart
@@ -1756,12 +1708,6 @@ class PollLoop:
             # A requester's callback may not break the transport that ran it.
             self.last_error = _error_text(exc)
 
-    def _poll_payload(self):
-        return {
-            "since_version": 0 if self._need_full_resync else self.desired_version,
-            "full_resync": self._need_full_resync,
-        }
-
     def _process_response(self, response, now=None):
         if not isinstance(response, dict):
             self._need_full_resync = False
@@ -1825,14 +1771,10 @@ class PollLoop:
         # as well as of the fields. Inert against today's server, which sends no
         # steering keys on a poll.
         #
-        # THE RULE IS "NOT SOONER THAN `policy_refresh_ms` AFTER THE LAST ASK OR
-        # THE LAST ANSWER", and taking the later of the two is why this cannot
-        # move the due time BACKWARDS: `_begin_next` set it to an ISSUE plus the
-        # interval, and an answer can only arrive after the issue it answers. So a
-        # dedicated read that succeeds pays one extra exchange's latency before
-        # its next one, per badge, which cannot herd.
-        if self._policy_due is not None:
-            self._policy_due = self.clock.add(now, self.policy_refresh_ms)
+        # NO DUE TIME IS ADVANCED HERE ANY MORE (rebuild, 2026-08-29). This used
+        # to move the loop's own steering cadence from the ANSWER as well as from
+        # the ISSUE; the cadence belongs to `NetworkService._pump_fleet_settings`
+        # now, and there is nothing here to keep in step with it.
         self._emit("policy", version=self.policy.get("policy_version"))
         if self._policy_sink is not None:
             self._policy_sink(dict(self.policy))
@@ -2123,7 +2065,7 @@ class PollLoop:
             "revoked_reprobes": self.revoked_reprobes,
             "desired_version": self.desired_version,
             "inflight": self._inflight,
-            "pending_acks": len(self._pending_acks),
+            "acks_dropped": self.acks_dropped,
             "pending_errands": len(self._errands),
             "backoff_level": self._backoff_level,
             "backoff_max_level": self.backoff_max_level,
@@ -2141,8 +2083,6 @@ class PollLoop:
             "reconnects": self.reconnects,
             "commands_in": self.commands_in,
             "acks_sent": self.acks_sent,
-            "policies": self.policies,
-            "policy_failures": self.policy_failures,
             "policy": dict(self.policy),
             "suggested_cadence_ms": self.suggested_cadence_ms,
             "doorbells": self.doorbells,

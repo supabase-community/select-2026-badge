@@ -2,11 +2,10 @@
 
 WHY A SEPARATE MODULE. The owner's ruling of 2026-08-21, after seeing the
 Confirm screen on the physical badge: **the labels were protocol words, not
-human words.** "Confirm code" with ACCEPT / DECLINE under it answers a question
-the screen never clearly asks. So the tile now follows one pattern wherever the
-wearer makes a choice — the screen asks ONE plain question and the buttons
-ANSWER it (B = ``YES``, C = ``NO``) — and every title says what the wearer is
-doing rather than which protocol step they are on.
+human words.** So the tile follows one pattern wherever the wearer makes a
+choice — the screen asks ONE plain question and the buttons ANSWER it — and
+every title says what the wearer is doing rather than which protocol step they
+are on.
 
 Copy is the owner's voice, so it is collected here rather than scattered through
 two modules: one file to read, one file to override, and
@@ -15,27 +14,29 @@ The fit tests price every string in this file against the band it is drawn in
 (``settings/tests/test_settings_fit.py``), so replacing any of them is safe: a
 too-long replacement fails the fast lane instead of reaching a badge.
 
-WHAT THIS MODULE IS NOT. It is not a fork of ``badgelink.pairview``. Card E's
-view-models are canvas-agnostic and shared, and this tile CONSUMES them: the
-maps below are a CONSUMER-SIDE presentation layer keyed on the exact strings
-pairview publishes, applied in ``settings_model.pair_view``. pairview keeps its
-own words for its own tests and for any other consumer, the pairstate event
-names and screen ids are untouched, and
-``settings/tests/test_settings_seam.py`` fails if pairview ever publishes a
-title, line or softkey label this file has no answer for. That is the whole
-guard: a silent pass-through of protocol copy is the failure worth catching.
+**THE PAIR FLOW'S COPY IS GONE (owner instruction, 2026-08-28: "can you
+completely remove the phone linked thing, because that's going to be just
+removed from the system anyway as part of the new update").** This module used
+to carry a CONSUMER-SIDE presentation layer keyed on the exact strings
+``badgelink.pairview`` publishes — ``PAIR_TITLES``, ``PAIR_LINES``,
+``BUTTON_WORDS`` and the passthrough prefixes — because the Phone row rendered
+that shared view-model. With the row deleted nothing here consumes pairview,
+and the shared module keeps its own words for its own tests and any other
+consumer. It is still installed under ``/system/lib``; this tile simply no
+longer reads it.
 
 THE ASCII FOLD IS NOT COSMETIC — IT IS THE ONE THING THAT MAKES THE COPY
 VISIBLE AT ALL. ``MonaSans-Medium`` draws NO ellipsis, en dash, em dash, curly
 quote, bullet or arrow: every one of them measures ZERO WIDTH
-(``docs/engineering-findings.md`` § "Fonts and softkey geometry"). pairview
-ships ``Starting…`` and ``Finishing pairing…`` with a real U+2026, so at HIRES
-those screens would silently lose their punctuation, and ``image.ELLIPSES`` as
-an overflow marker would draw nothing at all. Everything the model emits is
-therefore folded to printable ASCII first, and anything left unrenderable
-becomes a visible ``?`` — loud degrade for the unrenderable, silent correctness
-for the merely typographic, which is the rule Schedule's ``sanitize_title``
-already set.
+(``docs/engineering-findings.md`` § "Fonts and softkey geometry"), and
+``image.ELLIPSES`` as an overflow marker would draw nothing at all. **The fold
+survives the pair removal even though pairview's two U+2026 strings were its
+loudest customers**, because the tile still draws text it did not author: a
+runtime literal on the Network, Updates and Diagnostics screens comes from
+`/system/lib` and may be any build's. Everything the model emits is therefore
+folded to printable ASCII first, and anything left unrenderable becomes a
+visible ``?`` — loud degrade for the unrenderable, silent correctness for the
+merely typographic, which is the rule Schedule's ``sanitize_title`` already set.
 """
 
 
@@ -50,7 +51,9 @@ VECTOR_FACE = "MonaSans-Medium"
 #: The ROM face to fall back to when the ``.af`` outlines are missing from
 #: ``/system``. NOT ``shared/ui.py``'s HIRES default: ``bacteria`` is picked for
 #: sizing DISPLAY type and loses this app's layout before it gains any height —
-#: DECLINE measures 90 px in it against a 68 px softkey box, and one line of
+#: DECLINE (the widest label this app carried until the Phone row was deleted on
+#: 2026-08-28, and the measurement that made this choice) measures 90 px in it
+#: against a 68 px softkey box, and one line of
 #: body copy 357 px against 308 px of content width. ``smart`` is the shortest
 #: ROM face still taller than ``sins`` and is what Schedule chose for the same
 #: job ("pick the HIRES bitmap fallback by the job, not from one recipe... never
@@ -115,82 +118,27 @@ def ascii_fold(text):
     return text if out is None else "".join(out)
 
 
-# -- the pair flow, in the wearer's words ------------------------------------
-#
-# Keyed on exactly what `badgelink.pairview` publishes. The seam test walks
-# every reachable pairstate phase and fails if a published title, line or
-# softkey label is missing from these tables, so protocol copy cannot reach a
-# panel by default.
-
-#: pairview title -> what the wearer is DOING on that screen.
-PAIR_TITLES = {
-    "Pair this badge": "Link your phone",
-    "Starting…": "Getting a code",
-    "Scan to pair": "Scan with your phone",
-    # The owner's own example of the defect: a title naming the protocol step
-    # over a question the screen never asked.
-    "Confirm code": "Check your phone",
-    "Almost there": "Almost there",
-    "Paired": "Badge linked",
-    "Unpaired": "Link removed",
-}
-
-#: pairview body line -> the same fact in plain words. Unchanged entries are
-#: listed rather than omitted, so the seam test's "every published line has an
-#: answer" check stays total and a deliberate keep is visible as a decision.
-PAIR_LINES = {
-    "Press B to show a QR code.": "Press B to show a QR code.",
-    "Contacting the server.": "Contacting the server.",
-    # VERBATIM, and named as such by the owner: this is the question the
-    # Confirm screen exists to ask, and at HIRES it finally fits on one line.
-    "Does your phone show this code?": "Does your phone show this code?",
-    "Finishing pairing…": "Finishing up.",
-    "This badge is linked.": "This badge is linked.",
-    "This badge was revoked.": "This badge was unlinked.",
-    "The code expired. Try again.": "The code expired. Try again.",
-    "Confirmation timed out. Try again.": "Timed out. Try again.",
-    "Pairing cancelled.": "Cancelled.",
-    # Reads back the button the wearer actually pressed, now that C says NO.
-    "Pairing declined.": "You chose No.",
-    "Could not reach the server.": "Could not reach the server.",
-    "Could not finish pairing.": "Could not finish linking.",
-    "Unlinked from your account.": "Unlinked from your account.",
-    "Something went wrong. Try again.": "Something went wrong. Try again.",
-}
-
-#: pairview lines this tile deliberately passes through because they are
-#: composed at runtime rather than written down. Matched by PREFIX, and the
-#: seam test requires a published line to be in ``PAIR_LINES`` or to start with
-#: one of these — an unmatched line is a copy decision nobody made.
-PAIR_LINE_PASSTHROUGH = (
-    # "Linked to sam." / "Linked to your account." - already the wearer's
-    # words, and the tail is the server's own hint, which no table can hold.
-    "Linked to ",
-)
-
-#: pairview softkey label -> the word printed over the physical button.
-#:
-#: The Q&A pattern: the Confirm screen asks one question and B/C answer it, so
-#: ACCEPT/DECLINE become YES/NO. That is the owner's instruction and it also
-#: retires the defect that produced it — DECLINE is the widest label this app
-#: can draw (65.1 px of a 68 px box, 95.7% full), and NO is 23.5 px.
-#: ``LABEL_EVENTS`` still keys on the pairview label, so the wiring is
-#: untouched and this table is presentation only.
-BUTTON_WORDS = {
-    # The idle screen's line is "Press B to show a QR code."; the button says
-    # the same verb rather than naming the protocol.
-    "PAIR": "SHOW",
-    "CANCEL": "CANCEL",
-    "ACCEPT": "YES",
-    "DECLINE": "NO",
-    "RETRY": "RETRY",
-}
-
 #: This app's own labels. A is the labelled way back on every screen but the
 #: root, where HOME is the accepted route to the launcher and
 #: ``docs/badge-button-rules.md`` §10 forbids printing a label for it.
 BACK = "BACK"
 OPEN = "OPEN"
+
+#: The Q&A answers, on B and C wherever a screen asks one plain question. Owner
+#: ruling, 2026-08-21, after reading `ACCEPT` / `DECLINE` off the panel: the
+#: screen asks and the buttons ANSWER, rather than naming the protocol step.
+#:
+#: THEY LIVED IN `BUTTON_WORDS` UNTIL 2026-08-28, keyed on the pairview labels
+#: they translated. That table went with the Phone row, and the Updates screen is
+#: the reader left -- it asks "Use instant updates?" -- so the two words are
+#: spelled here directly instead of being looked up through a protocol
+#: vocabulary this tile no longer speaks.
+#:
+#: The owner's second reason for two short words, which `test_settings_fit`
+#: pins: a three-character answer cannot crowd the panel boundary the way a
+#: seven-character verb does (`DECLINE` was 65.1 px of a 68 px box; `NO` is 23.5).
+YES = "YES"
+NO = "NO"
 
 #: The Network screen's B action, and the SECOND copy defect the owner read off
 #: the panel: it used to say ``TURN ON`` / ``TURN OFF``, which measure 69.06 px
@@ -203,19 +151,21 @@ OPEN = "OPEN"
 #: imperative verbs like every other label in this bar (BACK, OPEN, SHOW,
 #: CANCEL, RETRY) rather than a switch position that could be read as a state
 #: report, and they fit with room to spare: 49.27 px and 40.64 px of the 68 px
-#: box, against ``CANCEL``'s 62.69 px, which stays this app's widest label.
+#: box. (The comparison was against ``CANCEL``'s 62.69 px while the pair flow
+#: owned that label; the Clock editor's own CANCEL is the widest one now.)
 START = "START"
 STOP = "STOP"
 
 
 # -- the menu ----------------------------------------------------------------
 
-#: Row labels. "Phone" rather than "Pair": pairing is what the protocol does,
-#: linking your phone is what the wearer does, and every screen behind this row
-#: now says "link" and "phone". OWNER-DECISIONS #2 names the FEATURE "Pair";
-#: this is the label over it and the README's copy table is where to override
-#: it.
-ROW_PAIR_LABEL = "Phone"
+#: Row labels.
+#:
+#: **THERE IS NO `ROW_PAIR_LABEL` ANY MORE.** "Phone" was the first row of this
+#: menu from the tile's first day until 2026-08-28, when the owner deleted the
+#: feature outright: *"can you completely remove the phone linked thing, because
+#: that's going to be just removed from the system anyway as part of the new
+#: update."* Network is the head of the menu now.
 ROW_NETWORK_LABEL = "Network"
 #: "Updates" rather than "Push": push is what the protocol does, and what the
 #: wearer cares about is how fast a change from their phone shows up. The row
@@ -234,11 +184,16 @@ ROW_BRIGHT_LABEL = "Brightness"
 #: this hardware has no switch for.
 ROW_SLEEP_LABEL = "Sleep"
 
-#: Right-hand row values for the phone row: the live state, at a glance.
-PAIR_VALUE_UNAVAILABLE = "Unavailable"
-PAIR_VALUE_REVOKED = "Link removed"
-PAIR_VALUE_LINKED = "Linked"
-PAIR_VALUE_UNLINKED = "Not linked"
+#: The right-hand row word for a row whose answer needs `/system/lib` on a badge
+#: that has none -- which is the badge that SHIPS with networking uninstalled.
+#:
+#: RENAMED FROM `PAIR_VALUE_UNAVAILABLE` ON 2026-08-28. It was named for the
+#: Phone row, which is deleted; the Updates row is the one reader left, and a
+#: constant still carrying the name of a removed feature is the kind of thing a
+#: later reader mis-files. Its three siblings -- `Link removed`, `Linked` and
+#: `Not linked` -- went with the row, because nothing else in this tile has a
+#: link to report.
+VALUE_UNAVAILABLE = "Unavailable"
 
 
 # -- the sleep note ----------------------------------------------------------
@@ -380,16 +335,273 @@ NET_LINE_NO_SESSION = "Not connected"
 #: cuts both ways, and a wearer reading this is reading it to a maintainer.
 NET_LINE_STATE = "State: {}"
 
-NET_LINE_LINKED = "Linked to {}"
-NET_LINE_LINKED_ANON = "your account"
-NET_LINE_UNLINKED = "No account linked"
-
 #: The one line that is an ACTION rather than a description, and the only
 #: status that earns it: ``polltransport`` refuses ``request_reconnect`` once
 #: revoked, so a RETRY softkey there would be a label over a key that cannot
 #: act (OWNER-DECISIONS #14). Was "Reboot to retry", which is three words of
 #: telegraph for a sentence the wearer has to act on.
 NET_LINE_REBOOT = "Restart the badge to try again"
+
+#: THE TWO SPLIT LINES, AND THEY CLOSE THE OLDEST DEFECT ON THIS SCREEN.
+#: `NetworkService.state` answers CONNECTING whenever its backend is None -- a
+#: cold badge, a boot before the first radio start, a `CredentialError` out of
+#: the factory -- so a badge that has NEVER TOUCHED ITS RADIO printed
+#: "Connecting to the server", which is a claim about a TCP session that cannot
+#: exist yet. `wifi_diagnostics()["online"]` is what separates them, and it is
+#: `ResilientWiFi`'s own `_was_online` rather than a second opinion.
+#:
+#: NEITHER SENTENCE ASSERTS ANYTHING BEYOND THAT BIT. "Not on Wi-Fi yet" says
+#: the radio has not reported an assigned address; it does NOT say the password
+#: is wrong, the AP is absent or the radio is broken, because the badge cannot
+#: tell those apart and page 2 is where the raw evidence is.
+NET_LINE_JOINING = "Joining Wi-Fi"
+NET_LINE_NO_WIFI = "Not on Wi-Fi yet"
+
+
+# -- the network screen's four pages (2026-08-29) -----------------------------
+#
+# **WHY THIS BLOCK EXISTS, AND IT IS NOT HYPOTHETICAL.** On 2026-08-27 the
+# owner's badge would not join Wi-Fi. It was on a USB cable, with root access,
+# full source and a maintainer reading its serial output, and it was STILL
+# impossible to tell a wrong password from an out-of-range AP from a radio
+# fault. The badge printed
+# `BADGELINK_NETWORK installed=1 enabled=1 state=connecting` once and then went
+# silent into backoff. On 2026-10-02 ~200 badges go to a one-day conference:
+# no cable, no serial, no re-provisioning and no maintainer, so THE BADGE'S OWN
+# SCREEN IS THE ONLY DIAGNOSTIC CHANNEL THAT WILL EXIST.
+#
+# EVERY VALUE THESE LINES DRAW WAS ALREADY BEING COMPUTED AND HAD NO READER.
+# `ResilientWiFi.snapshot()` has published {state, reason, attempts, failures,
+# connected_ms} every frame all along and its only consumers were two
+# edge-gated serial emitters -- so a badge that NEVER associates emitted
+# nothing at all. `DeviceLink.open_phases` split every connect into dns /
+# connect+TLS / headers / body with an outcome word. `BoundedResolver` knew the
+# DHCP resolver's address and its query counts. `NetworkService.last_error`
+# held the exact `CredentialError` sentence. None of it could reach a pixel.
+#
+# THE SCREEN IS FOUR PAGES BECAUSE THE OWNER RULED IT COULD BE (2026-08-28):
+# *"Scrolling is absolutely fine. The more information, the better."* Before
+# that ruling this was a one-screen, eight-band budget and the information had
+# nowhere to go.
+#
+# ⚠ **THE ONE RULE THAT GOVERNS ALL OF IT: DO NOT TRANSLATE A RAW STATUS CODE
+# INTO A VERDICT.** `benchmark/results/reports/2026-08-13-v3.0.1-network-authenticated.md`
+# recorded a spurious CYW43 `-3` on CORRECT credentials and ruled that a
+# negative status is "a retry signal and diagnostic fact, not a safe basis for
+# a permanent user-facing" claim. So `status_-3` draws as `Wi-Fi said status_-3`
+# and the badge NEVER prints "wrong password".
+
+#: A PAGED SCREEN'S TITLE. The ordinal is in the TITLE and not in a body band
+#: because the title band already exists and costs nothing, and because a
+#: PHOTOGRAPH of a badge in a hall has to say which page it is -- that photo is
+#: the only bug report this event will produce. Composed by the model:
+#: `Network  1/4`, `Diagnostics  4/4`.
+PAGE_TITLE = "{}  {}/{}"
+
+#: WHERE THE CONNECTION STOPPED, in one word from a closed set this app owns.
+#: The words are deliberately not the runtime's: `associating` is the wearer's
+#: half of `resilient_wifi.CONNECTING`, and the RAW literal is on page 2 beside
+#: it. `Stage: DNS` and `Stage: TLS` are the two that no badge could say before,
+#: and the pair is the whole reason `bounded_dns` and `device_link` publish a
+#: split at all.
+NET_LINE_STAGE = "Stage: {}"
+#: A malformed BadgeLink value in `/secrets.py`. **CHECKED BEFORE THE RADIO
+#: BECAUSE THAT IS WHERE IT HAPPENS:** `credentials.load` raises inside
+#: `DeviceBackend.__init__`, so the backend is never built, the radio is never
+#: started and `_retry_at` is set -- which makes the service report BACKOFF,
+#: which folds onto "Can't reach the server". Page 4 prints the sentence; this
+#: word is the signpost to it.
+NET_STAGE_CREDENTIAL = "credential"
+NET_STAGE_OFF = "off"
+NET_STAGE_ASSOCIATING = "associating"
+NET_STAGE_WAITING = "waiting"
+NET_STAGE_ON_WIFI = "on Wi-Fi"
+NET_STAGE_CONNECTED = "connected"
+NET_STAGE_DNS = "DNS"
+#: TCP AND TLS TOGETHER, because that is how this client measures it: the
+#: handshake is not splittable at the `connect_ms` seam (VAL-031-BLT), and
+#: inventing a third number the badge does not have would be worse than one
+#: honest word.
+NET_STAGE_TLS = "TLS"
+#: THE CLOSED SET, for `every_string()`. `DIAG_MISSING` is priced separately
+#: rather than listed here, because it is defined further down this file and a
+#: forward reference in a module-level tuple is an import error on the badge.
+NET_STAGE_WORDS = (
+    NET_STAGE_CREDENTIAL, NET_STAGE_OFF, NET_STAGE_ASSOCIATING,
+    NET_STAGE_WAITING, NET_STAGE_ON_WIFI, NET_STAGE_CONNECTED,
+    NET_STAGE_DNS, NET_STAGE_TLS,
+)
+
+#: `ResilientWiFi.reason` -> a plain sentence. THE VOCABULARY IS CLOSED and it
+#: is the module's own: `idle`, `joining`, `connected`, `forgiven` and `stopped`
+#: are the healthy words, and the six failure words all arrive through `_fail`.
+#: A reason this table does not know is still DRAWN, raw, by
+#: `NET_LINE_WIFI_REASON` -- "no invented states" cuts both ways.
+#:
+#: NONE OF THESE IS A VERDICT ABOUT THE PASSWORD OR THE AP. `The radio refused
+#: the join` is `connect_exception`, which is the driver call raising; it is not
+#: "wrong password", and the badge has no way to know which it was.
+NET_WIFI_REASON_LINES = {
+    "idle": "The radio has not started",
+    "joining": "Looking for the Wi-Fi",
+    "connected": "On Wi-Fi",
+    "forgiven": "On Wi-Fi and steady",
+    "stopped": "The radio was switched off",
+    "timeout": "No answer from the Wi-Fi",
+    "connection_lost": "The Wi-Fi dropped",
+    "radio_activate_error": "The radio would not switch on",
+    "connect_exception": "The radio refused the join",
+    "isconnected_exception": "The radio stopped answering",
+}
+#: A `status_<n>` reason. ⚠ **THE RAW WORD, NEVER A VERDICT** -- see the block
+#: above and the 2026-08-13 report it cites. `status_-3` is nine characters and
+#: survives `DIAG_TEXT_CHARS` whole, and so does any two-digit code.
+NET_LINE_WIFI_STATUS = "Wi-Fi said {}"
+#: A reason word from a `/system/lib` newer than this app. Raw, for
+#: `NET_LINE_STATE`'s reason.
+NET_LINE_WIFI_REASON = "Wi-Fi: {}"
+
+#: HOW HARD THE RADIO TRIED. `Tries 0  fails 0` on a badge that never started is
+#: the honest reading and it immediately separates "never tried" from "tried
+#: forty times" -- which is the difference between a credential fault and an AP
+#: out of range, and nothing on this badge could show it before.
+NET_LINE_TRIES = "Tries {}  fails {}"
+
+#: PAGE 2, THE RADIO RAW. `Radio {}` carries `resilient_wifi`'s own literal --
+#: `off` / `connecting` / `online` / `backoff` -- so a reader can correlate the
+#: panel against the module's source and against a serial capture.
+NET_LINE_RADIO = "Radio {}"
+#: A BARE LABEL over the raw reason word. The label is its own band so the value
+#: below it gets the WHOLE 308 px content width, which is what buys
+#: `DIAG_CHUNK_CHARS` instead of `DIAG_TEXT_CHARS` for the one string on this
+#: screen that is a closed-vocabulary identifier rather than a sentence.
+NET_LABEL_WHY = "Why"
+#: How long the current association has held. `0 s` the instant it lands, `?`
+#: when the radio has never been up: a badge that keeps dropping at 40 s reads
+#: differently from one that has been up for an hour, and the pair of them is
+#: the difference between a flaky AP and a badge nobody has to touch.
+NET_LINE_HELD = "Wi-Fi held {} s"
+#: THE REGULATORY DOMAIN THE RADIO WAS STARTED IN. It comes out of `secrets.py`
+#: and it is NOT credential material: it is the two-letter domain `start`
+#: already validates and hands to `network.country()`. It is on the screen
+#: because a badge provisioned `GB` and flown to San Francisco cannot see the
+#: venue's channels, and nothing else on this badge can say so.
+#:
+#: ⚠ FLAGGED FOR THE OWNER. This is the one value here that is read out of the
+#: provisioning file. Strike this line if that is not wanted; see the SSID note
+#: at the end of this block for the value that was NOT put on the screen.
+NET_LINE_REGION = "Region {}"
+
+#: PAGE 3, THE PATH TO THE SERVER. `Link {}` carries the RAW `polltransport`
+#: literal -- the value `settings_model.TRANSPORT_STATUS` folds, where both
+#: `disconnected` and `backoff` become one "Can't reach the server" line. That
+#: fold is why page 1 alone cannot separate no-Wi-Fi from no-Supabase.
+NET_LINE_LINK_STATE = "Link {}"
+#: The address `bounded_dns` would ask. THE WHOLE MODULE EXISTS BECAUSE
+#: `getaddrinfo` blocks 13.1-14.0 s with no route, and this line is what turns
+#: "the badge just sits there" into a fact a reader can act on.
+NET_LINE_RESOLVER = "DNS via {}"
+#: DHCP offered no option 6 and the gateway is unusable -- `resolver_address`'s
+#: documented grey zone, named. NOT drawn when the resolver was never asked at
+#: all; that reads `?`, because the absence of a measurement is not a finding.
+NET_DNS_NONE = "No DNS server offered"
+NET_LINE_DNS_COUNTS = "Lookups {}  failed {}"
+NET_LINE_OPENS = "Opens {}  failed {}"
+#: `open_phases["outcome"]`: `opened`, or the exception class the open ended in
+#: (`LinkStalled` / `LinkError` / `LinkRevoked`). A class name is a protocol
+#: word on a screen whose audience is an operator -- the same declared exception
+#: the Diagnostics block makes -- and it is what a serial capture will say too.
+NET_LINE_OUTCOME = "Open {}"
+#: **THE LINE THAT SEPARATES "DNS IS DEAD" FROM "TLS IS DEAD" NUMERICALLY.**
+#: Nothing on the badge could answer that question before, and it is the
+#: question a venue's captive portal or blocked 443 actually poses.
+NET_LINE_SPLIT = "dns {} ms  tls {} ms"
+#: How long the last open went without hearing the peer. It is the EVIDENCE for
+#: the outcome word above: a `LinkStalled` open is one whose silence reached the
+#: no-progress deadline, and printing the number lets a reader check the
+#: classification rather than trust it.
+NET_LINE_STALL = "Silent for {} ms"
+
+#: PAGE 4, THE TWO ERRORS, AND THEY ARE NEVER MERGED. `Last error` is
+#: `NetworkService.last_error` -- the field that holds the `CredentialError`
+#: sentence today and was read by NO VIEW; `Link error` is `PollLoop.last_error`.
+#: They are different repairs by different people: the first is a fault in what
+#: this badge was PROVISIONED with, the second a fault in what the network did,
+#: and one merged "last error" line would send an operator to the wrong one.
+NET_LABEL_ERROR = "Last error"
+NET_LABEL_LINK_ERROR = "Link error"
+#: Under either label when there is nothing to report. Said out loud rather than
+#: left blank, for `DIAG_NO_PUSH`'s reason: a blank band reads as a line that
+#: failed to draw, on the screen that has to be trusted when nothing else works.
+NET_NO_ERROR = "No error recorded"
+
+#: THE THREE "THIS BADGE CANNOT TELL YOU" SENTENCES, modelled word-for-word on
+#: `DIAG_NO_PUSH` and `DIAG_NO_CLOCK`. They are drawn when the ACCESSOR is
+#: absent -- a `/system/lib` older than this app, or a tile built with no
+#: network controller at all -- and NEVER when a value merely came back empty.
+#: A row of zeroes would be a measurement nobody took.
+NET_NO_RADIO = "No radio details on this badge"
+NET_NO_LINK = "No link details on this badge"
+
+# -- THE SSID IS ON THIS SCREEN. THE OWNER SAID YES, 2026-08-29 --------------
+#
+# This block said the opposite until today, and the reversal is an OWNER RULING
+# rather than a re-reading of the old one: *"the SSID name would be awesome."*
+# The product question the old note deferred -- ~200 badges in a public hall,
+# each with a screen anyone can wake, each showing the venue's network name --
+# has been answered. **THE PASSWORD IS STILL NOWHERE NEAR THIS FILE** and
+# nothing below reads `secrets.WIFI_PASSWORD`; the name is not the credential.
+#
+# WHAT IT BUYS, and it is the reason it was worth asking twice: it is the ONLY
+# thing that separates "this badge was provisioned for the WRONG network" from
+# "the right network is out of range". Both of those badges read `Stage:
+# associating`, `No answer from the Wi-Fi` and `Tries 40  fails 40`, and until
+# this line nothing on the badge could tell them apart -- which at a venue with
+# no cable is the difference between a five-second answer and no answer at all.
+#
+# ⚠ **THE VALUE CANNOT REACH THIS APP YET, AND THAT IS A DIFFERENT LANE'S
+# FILE.** `resilient_wifi.snapshot()` publishes {state, reason, attempts,
+# failures, connected_ms} and no name, `network_runtime.WIFI_DIAGNOSTIC_KEYS`
+# has no `ssid` entry, and `badgelink/tests/test_network_diagnostics.py::
+# test_THE_SSID_HAS_NO_KEY_IN_THIS_RECORD` asserts BOTH of those -- it even
+# feeds `ssid` into a fake backend and asserts the record drops it. So the
+# runtime half is three files this lane does not own.
+#
+# WHAT IS WRITTEN HERE IS THE WHOLE SETTINGS HALF, AND IT IS NOT A DEAD
+# CONSTANT. `settings_model._network_answer` draws the line the moment the
+# radio record carries a non-empty `ssid`, and draws NOTHING when it does not --
+# which is this tile's existing rule for `wifi_reason_line` and for both
+# `push_cause` lines, and is why a badge whose `/system/lib` predates the key
+# gets no `Network ?` band claiming a measurement nobody took. The corpus
+# prices it, the model tests drive it, and the day the runtime publishes the
+# key it lights up with no further edit. The runtime patch is three lines:
+# `"ssid": self._ssid` in `resilient_wifi.snapshot()`, `"ssid"` in
+# `WIFI_DIAGNOSTIC_KEYS`, and `record["ssid"] = _text(snapshot.get("ssid"))`
+# in `NetworkService.wifi_diagnostics()` -- plus reversing that badgelink test.
+
+#: THE NETWORK NAME THE RADIO WAS TOLD TO LOOK FOR. **NEVER THE PASSWORD**, and
+#: never a claim that the AP was found: this is what `start()` was handed, so on
+#: the wrong-network badge it is exactly the wrong name and that IS the finding.
+#:
+#: ONE BAND, ON PAGE 1, AND THE BUDGET IS WHY. Page 1's worst case is already
+#: seven of `settings_view.MAX_BODY_LINES`' eight bands (a revoked transport
+#: draws two status lines, a stage, a reason, the tries and the restart
+#: instruction), so the bare-label-plus-two-chunks shape the errors use -- three
+#: bands, 40 characters -- does not fit and neither does it on page 2, which is
+#: six bands of its own. A prefixed single band is what there is room for.
+NET_LINE_SSID = "Network {}"
+#: ITS OWN BOUND, DERIVED, exactly as `DIAG_UID_CHARS` is and for the same kind
+#: of reason: this is a value somebody COMPARES CHARACTER BY CHARACTER against a
+#: name printed on a sign, so every character bought is worth buying. `Network `
+#: is 62.69 px in `MonaSans-Medium` at 17 pt and `W` is 14.742 px, so 16 W lands
+#: at 298.6 px of the 308 px content width and 17 W at 313.3 -- ONE CHARACTER
+#: over. Sixteen is arithmetic, not taste, and `test_settings_fit` re-derives it.
+#:
+#: ⚠ A 32-BYTE SSID STILL LOSES ITS TAIL, and that is disclosed rather than
+#: fixed. The alternative is three bands this page does not have. Sixteen
+#: characters is enough to tell `SupabaseLaunchWeek` from `venue-guest`, which
+#: is the discrimination the line exists for.
+NET_SSID_CHARS = 16
 
 
 # -- the updates screen (P6-L3, 2026-08-21) ----------------------------------
@@ -707,6 +919,39 @@ PUSH_WAS_LINES = {
 #: the class, which is the half that identifies it.
 DIAG_TEXT_CHARS = 15
 
+#: HOW MUCH OF A RUNTIME STRING A **BARE** BAND WILL DRAW, under a label of its
+#: own. A SECOND BOUND RATHER THAN A WIDER ONE, and the two are not
+#: interchangeable: `DIAG_TEXT_CHARS` is right for a PREFIXED line and stays
+#: exactly as it is (`Push mode: ` + 15 W is 306.9 px of 308, and 16 busts it).
+#: A bare band has no prefix, so the whole 308 px is the value's and the bound
+#: is the widest glyph in the face instead of a prefix's leftovers: `W` is
+#: 14.742 px, 20 W is 294.84 px and 21 W is 309.6 -- ONE CHARACTER over. The
+#: number is arithmetic, not taste.
+#:
+#: WHAT IT BUYS, AND IT IS THE WHOLE REASON PAGING WAS WORTH BUILDING. Under the
+#: 15-character clip, `CredentialError: BADGELINK_HOST must be a bare hostname`
+#: drew as `CredentialError` and `OSError: [Errno 6] Device not configured` drew
+#: as `OSError: [Errn`. `settings_model.diag_chunks` spends three bands on
+#: 60 characters and both survive, naming the exact field and the exact errno.
+#:
+#: ⚠ ONE DISCLOSED LOSS. `isconnected_exception` is 21 characters and draws as
+#: `isconnected_exceptio`. It is the only word in the closed Wi-Fi vocabulary
+#: over 20 and it stays unambiguous against every other word in that set. DO NOT
+#: "fix" it by raising the bound to 21:
+#: `test_every_body_string_fits_the_content_width_on_one_line` goes red,
+#: correctly. Under the old 15-character clip it drew as `isconnected_exc` and
+#: `radio_activate_error` as `radio_activate_`.
+DIAG_CHUNK_CHARS = 20
+
+#: THE HARDWARE BADGE ID'S OWN BOUND, and it is the VALUE's length rather than a
+#: band's. `machine.unique_id().hex()` is 16 lowercase hex characters and every
+#: one of them identifies the badge -- this is the value somebody reads down a
+#: phone to match a row in a database -- so a clip that dropped the last nibble
+#: would be worse than drawing no line at all, and `DIAG_TEXT_CHARS`' 15 does
+#: exactly that. It fits with room: `Badge ` + 16 W is 285.0 px of the 308 px
+#: band (18 W is what busts it), so nothing had to be traded for it.
+DIAG_UID_CHARS = 16
+
 #: THE LARGEST COUNTER VALUE DRAWN AS ITSELF; past it the line reads `9999+`.
 #:
 #: A CAP AND NOT A CLIP. Clipping 12345 to `1234` is a WRONG NUMBER a reader
@@ -725,6 +970,16 @@ DIAG_SMALL_MAX = 99
 #: the constants, never spelled out, so a change to a bound reprices itself
 #: instead of quietly leaving the corpus behind.
 _WIDEST = "W" * DIAG_TEXT_CHARS
+#: The bare-band worst case. ITS OWN ENTRY, because the two bounds are different
+#: numbers: pricing a chunked line at `_WIDEST` would leave five characters of
+#: the real worst case unmeasured on every error line this tile draws.
+_WIDEST_CHUNK = "W" * DIAG_CHUNK_CHARS
+_WIDEST_UID = "W" * DIAG_UID_CHARS
+#: The SSID band's own worst case. ITS OWN ENTRY for `_WIDEST_CHUNK`'s reason:
+#: `NET_SSID_CHARS` is a third bound and pricing it at `_WIDEST` would leave one
+#: character of the real worst case unmeasured -- the one character that bound
+#: exists to buy.
+_WIDEST_SSID = "W" * NET_SSID_CHARS
 _WIDEST_COUNT = "{}+".format(DIAG_COUNT_MAX)
 _WIDEST_SMALL = "{}+".format(DIAG_SMALL_MAX)
 
@@ -798,12 +1053,80 @@ DIAG_LINE_BELLS = "Bells {}  other {}  skip {}"
 #: terminal 403, and a transcript has to be able to hold both at once; on this
 #: screen there is only one subject, so it is drawn as `revoked`.
 DIAG_LINE_FLAGS = "Demoted {}  revoked {}"
-#: `PushLink.last_error`, bounded. It is `_error_text`'s "ClassName: message" on
-#: most paths and layer 2's own `event.reason` on a refused or dropped join,
+#: `PushLink.last_error`, AS A BARE LABEL OVER ITS OWN BANDS.
+#:
+#: **`DIAG_LINE_ERROR = "Last error: {}"` IS RETIRED AND THIS REPLACED IT ON
+#: 2026-08-29.** That line carried the value inline at `DIAG_TEXT_CHARS`, so
+#: `OSError: [Errno 6] Device not configured` -- forty characters -- drew as
+#: `Last error: OSError: [Errn` and the errno, the one half that identifies it,
+#: was gone. Paging is what made the fix affordable: the error moved to its own
+#: page with bands to spare, so the label gets one and
+#: `settings_model.diag_chunks` spends up to three more at `DIAG_CHUNK_CHARS`.
+#: The whole sentence now survives. It is `_error_text`'s "ClassName: message"
+#: on most paths and layer 2's own `event.reason` on a refused or dropped join,
 #: which is where `connect_failed` / `join_refused` / `join_unanswered` /
-#: `token_unusable` land. Drawn ONLY when there is one: an empty error line is a
-#: band spent saying nothing on a screen with exactly eight.
-DIAG_LINE_ERROR = "Last error: {}"
+#: `token_unusable` land.
+DIAG_LABEL_ERROR = "Last error"
+#: Under the label when there is nothing to report. It replaces the chunks, not
+#: the label: two identical bare sentences on one page cannot be told apart, and
+#: the label is what says WHICH error is absent.
+DIAG_NO_ERROR = "No error recorded"
+
+#: THE TWO CAUSE LINES, PROMOTED TO THE OPERATOR'S SCREEN (2026-08-29). Both
+#: values exist today and have exactly ONE reader between them, the Updates
+#: screen -- which is the wearer's screen, in the wearer's words. An operator
+#: holding somebody else's badge needs the same two facts, and
+#: `push_cause_previous` in particular is the accessor that exists BECAUSE
+#: READING DESTROYS THE ANSWER: `settings/__init__.py` calls `set_active(True)`
+#: while this tile is open, which GRANTS the placement `push_cause()` would have
+#: reported, and that mechanism hid the 2026-08-26 doorbell root cause for a
+#: whole session.
+#:
+#: RAW CAUSE LITERALS, NOT THE WEARER SENTENCES. This screen's declared
+#: exception applies: the words are the runtime's own, so a panel reading and a
+#: serial capture say the same thing and can be correlated.
+DIAG_LINE_CAUSE = "Cause {}"
+DIAG_LINE_WAS = "Earlier {}"
+
+#: PAGE 4, THIS BADGE. Every one of these is posted to the server on EVERY
+#: heartbeat and none of them could be read off the badge in the hand -- which
+#: is the wrong way round for the one day when the server is what nobody can
+#: reach.
+#:
+#: ⚠ `Badge {}` CARRIES THE HARDWARE UID, NOT THE JWT SUBJECT. On the
+#: shared-token fleet every badge ships a byte-identical `/secrets.py`, so the
+#: subject is the same 16-hex value on all ~200 and names the FLEET rather than
+#: a badge. Neither value is secret: `network_runtime` states in as many words
+#: that a JWT `sub` is a public claim and that nothing is authorised by knowing
+#: it.
+DIAG_LINE_BADGE = "Badge {}"
+#: `fleet` / `per_badge` / `?`. THE S0.8 ROLLOUT QUESTION -- "has this badge been
+#: re-provisioned yet?" -- which nothing on the wire could answer, because the
+#: rollout deliberately runs new firmware on OLD per-badge tokens as its safety
+#: step and a fleet half-way through was indistinguishable from one that had not
+#: started.
+DIAG_LINE_TOKEN = "Token {}"
+#: The first 8 hex of the boot session. Two serial rows or two server rows
+#: sharing it came from one uninterrupted run, which is how an operator tells a
+#: badge that has been resetting from one that has not.
+DIAG_LINE_BOOT = "Boot {}"
+#: `os.uname().version`, over its own bands for `DIAG_LABEL_ERROR`'s reason: a
+#: build string is long, and a build string with its tail cut off cannot be
+#: matched against the payload somebody installed.
+DIAG_LABEL_BUILD = "Build"
+#: **THE SETTINGS HALF OF A PROMISE MADE IN A DOCSTRING AND NEVER KEPT.**
+#: `network_runtime.provisioning_fault` says the badge "says why on serial and
+#: in Settings"; only the serial half was ever written. This is the one state in
+#: which the badge refuses to network FOR THE LIFE OF THE FIRMWARE -- `poll`
+#: returns DISCONNECTED above every path that opens or arms a socket -- and
+#: until now it said nothing about it on any screen. It is drawn in WARN ink for
+#: exactly that reason: nothing but re-provisioning moves it.
+DIAG_FAULT_SHARED_SUB = "This badge is the fleet's id"
+#: The runtime cannot answer the identity question at all: no network controller
+#: on this badge, or one older than `NetworkService.identity`. The mirror of
+#: `DIAG_NO_PUSH` and `DIAG_NO_CLOCK`, and deliberately not the same sentence --
+#: telling an operator the wrong one is missing sends them to the wrong step.
+DIAG_NO_ID = "No badge details on this badge"
 
 #: `PushPolicy.policy_source` -> what it means, and THIS IS THE LINE THE SCREEN
 #: WAS BUILT FOR. It is also the ONE field here that is translated rather than
@@ -836,22 +1159,347 @@ DIAG_LINE_WORST = "Worst frame {} ms"
 #: quantity and a large one.
 DIAG_LINE_WORST_NONE = "Worst frame not measured yet"
 
+# -- WHY THE SCORES ARE NOT GOING UP: diagnostics page 5 (2026-08-29) ---------
+#
+# **THE INCIDENT IS RECORDED IN THE RUNTIME'S OWN COMMENT AND IT IS EXACTLY THIS
+# SCREEN'S SHAPE.** `network_runtime._pump_scores`: *"five real scores sat on
+# the owner's badge for a whole boot while the heartbeat and the settings read
+# kept working, and nothing anywhere said the drain had stopped."* Every guard
+# in that method used to `return None` in silence, because it runs on EVERY
+# RENDERED FRAME and a per-frame print is unaffordable.
+#
+# `_score_stalled` fixed the SERIAL half on 2026-08-29 by latching the word, so
+# it prints once per transition. **THAT LEAVES THE PULL HALF UNBUILT, AND THE
+# RUNTIME SAYS SO IN SO MANY WORDS:** *"`score_stalled` is emitted on the
+# TRANSITION, so an operator who attaches serial afterwards sees nothing at
+# all; these two are the pull-based form of the same answer."* The two are
+# `snapshot()["scores_pending"]` and `snapshot()["scores_stalled"]`, and until
+# this page NOTHING READ EITHER. On 2026-10-02 nobody attaches serial at all,
+# so the transition print reaches no one and the latch is the only copy of the
+# answer there is.
+#
+# ⚠ **NOT ONE OF THESE SENTENCES IS A VERDICT ABOUT THE SERVER OR THE
+# LEADERBOARD.** They restate the drain's own closed word in the wearer's
+# language and nothing more, which is `NET_WIFI_REASON_LINES`' rule applied to
+# a second closed vocabulary. A word from a `/system/lib` newer than this app is
+# drawn RAW by `DIAG_SCORES_STATE` -- "no invented states" cuts both ways here
+# too.
+
+#: How many game slots are waiting to be posted. SLOTS AND NOT SUBMISSIONS:
+#: `scorebox.pending` counts at most one per game since the 2026-08-26 rewrite,
+#: so a wearer who played snake ten times offline reads `1`, which is the truth
+#: about how many rows are waiting. Bounded by `DIAG_COUNT_MAX` like every other
+#: counter in this tile, though `scorebox.MAX_SLOTS` is 16 and it cannot get
+#: near it.
+DIAG_LINE_SCORES_WAITING = "Scores waiting {}"
+#: PAST EVERY GUARD: `_score_stall` is `None` and there is something to send, so
+#: the drain is claiming its chore budget a record at a time. NOT "sent" --
+#: nothing here waits for the acknowledgement, and a wearer told their score was
+#: sent when the post is still in flight has been told the one thing that later
+#: turns out wrong.
+DIAG_SCORES_SENDING = "Sending them now"
+#: `_score_stall is None` AND nothing pending. The healthy idle badge, said out
+#: loud rather than left blank for `DIAG_NO_PUSH`'s reason: a blank band reads
+#: as a line that failed to draw.
+DIAG_SCORES_IDLE = "Nothing waiting to be sent"
+#: `NetworkService.snapshot()` could not be asked at all -- no network
+#: controller on this badge, or a `/system/lib` older than the accessor. The
+#: mirror of `DIAG_NO_PUSH`, `DIAG_NO_CLOCK` and `DIAG_NO_ID`, and deliberately
+#: its own sentence: telling an operator the wrong thing is missing sends them
+#: to the wrong step.
+DIAG_NO_SCORES = "No score details on this badge"
+
+#: `_pump_scores`' SEVEN REFUSALS -> a sentence. **THE VOCABULARY IS CLOSED AND
+#: IT IS THE RUNTIME'S**, keyed on the literals `_score_stalled` is called with,
+#: and `settings/tests/test_settings_seam.py` is the drift detector that keeps
+#: this table and that method the same seven words.
+#:
+#: THE ORDER BELOW IS `_pump_scores`' OWN GUARD ORDER, so a reader following the
+#: source finds them in the sequence the badge actually walks: the in-flight
+#: latch, then eligibility, then the operator's lever, then identity, then
+#: storage.
+DIAG_SCORES_STALL_LINES = {
+    # The post went out and no answer came back yet. ORDINARY between frames --
+    # this is the one word here that a healthy badge shows -- which is why it
+    # says "waiting" and not anything that reads as a fault.
+    "inflight": "Waiting for the server",
+    # No socket. The commonest word by far, and the one that sends a reader to
+    # the Network screen rather than to the scores.
+    "offline": "Not connected yet",
+    # `fleet_settings.scores_enabled`, the operator's leaderboard lever. "For
+    # now" is exact and it is `PUSH_LINE_BLOCKED`'s word for the same shape of
+    # fact: the flag is the server's, the spool is durable, and every round the
+    # wearer plays is still being kept.
+    "fleet_disabled": "The event turned scores off for now",
+    # `hardware_uid()` answered None. A badge that cannot name itself must not
+    # write a row that says it is somebody else, so the score STAYS -- which is
+    # the half of this the sentence has to carry.
+    "no_badge_id": "This badge cannot name itself",
+    # The `scorebox` import failed. `scorebox_unavailable` already carries the
+    # import error itself, once per boot; this is the consequence in the
+    # drain's own terms.
+    "no_scorebox": "The score store is missing",
+    # Scanned, and there is genuinely nothing. Distinct from `DIAG_SCORES_IDLE`
+    # only in provenance -- this is the drain's word, that one is this page's
+    # reading of a `None` stall -- and they are deliberately the SAME sentence,
+    # because they are the same fact to a person.
+    "spool_empty": "Nothing waiting to be sent",
+    # The read raised. `NetworkService.last_error` holds the exception sentence
+    # and the Network screen's page 4 prints it whole, which is where this word
+    # sends a reader.
+    "spool_unreadable": "The badge could not read them",
+}
+#: A stall word from a `/system/lib` newer than this app. Drawn RAW rather than
+#: smoothed over, for `NET_LINE_STATE`'s reason.
+DIAG_SCORES_STATE = "Scores: {}"
+
+# -- the clock line ----------------------------------------------------------
+#
+# **THE STATE THIS LINE EXISTS FOR IS A FLEET-WIDE BRICK THAT LOOKS EXACTLY LIKE
+# AN IDLE BADGE.** Verified TLS needs a plausible wall clock to check a
+# certificate date. On RP2350 the powman always-on timer is the master and it
+# resets when power is removed, so a badge back from hardware shipping mode
+# wakes holding whatever the battery-backed PCF85063A kept -- a value the owner
+# has been told to ASSUME IS GARBAGE. With no plausible clock,
+# `clock_boot.resync` raises instead of failing soft (there is nothing to fall
+# back to), `DeviceBackend._build_loop` never finishes, no `PollLoop` exists, no
+# doorbell is ever built -- and `push_diagnostics()` answers None, so this
+# screen drew `DIAG_NO_PUSH`: **the same sentence a badge that has simply not
+# tried yet draws.** A venue that blocks UDP/123 makes that every badge in the
+# hall, and at the venue there is NO USB: battery, handed out, and this panel is
+# the only diagnostic channel there is.
+#
+# TWO FIELDS AND NOT THREE, AND THE BAND IS WHY. `Clock ` + the widest flag +
+# two spaces leaves 233 px of the 308 px band, which is 15 `W` at 14.742 px --
+# exactly `DIAG_TEXT_CHARS`, so the reason reuses the bound this screen already
+# applies to every runtime string instead of inventing a second one. A third
+# field (`Clock yes  sync no  ` + 15 W) is 356.7 px and busts it, and the cost of
+# squeezing it in would be an 11-character reason, where `ntp_rejected:
+# before_build_floor` and `ntp_rejected: implausible_shift` both collapse to
+# `ntp_rejecte` and the gate that refused is gone.
+#
+# SO THE SECOND SLOT IS THE MORE SPECIFIC OF THE TWO ANSWERS: the skip reason
+# when there is one, and the sync verdict when there is not. That is exact
+# rather than a compromise -- `clock_boot.resync` returns `reason: "synced"` on
+# success and a skip reason otherwise, so a reason in that slot ALREADY means
+# the sync did not land.
+DIAG_LINE_CLOCK = "Clock {}  {}"
+#: A sync landed this boot: the clock has been checked against a server, so it
+#: is verified and not merely plausible. `clock_boot.resync`'s own `reason` here
+#: is the literal `synced`, which is a protocol word for the one field on this
+#: screen whose reading is "nothing to explain" -- so it is the one clock value
+#: that is translated, exactly as `policy_source` is and for the same reason.
+DIAG_CLOCK_SYNCED = "sync yes"
+#: No sync has landed and the runtime published no reason: nothing has tried
+#: yet. The ordinary state of a badge with the radio off, which is a state a
+#: wearer can be in for a whole conference.
+DIAG_CLOCK_NO_SYNC = "sync no"
+#: The `synced` key itself absent -- a `/system/lib` that publishes a clock
+#: record this build does not fully know. `?` and never `no`, for the same
+#: reason `_flag` has three answers: a zero is a measurement nobody took.
+DIAG_CLOCK_UNKNOWN = "sync ?"
+#: The runtime cannot answer the clock question at all: no network controller on
+#: this badge, or one older than `NetworkService.clock_diagnostics`. The mirror
+#: of `DIAG_NO_PUSH`, and NOT the same sentence -- a badge can have a doorbell
+#: and no clock accessor, or the reverse, and telling an operator the wrong one
+#: is missing sends them to the wrong install step.
+DIAG_NO_CLOCK = "No clock details on this badge"
+
+
+# -- setting the clock by hand -----------------------------------------------
+#
+# THE ONE REPAIR SCREEN IN THIS TILE, and the only one whose copy has to work for
+# a wearer standing in a hall with no laptop, no USB and a badge that cannot
+# reach the network at all. Verified TLS needs a plausible wall clock; a venue
+# that blocks UDP/123 leaves the badge unable to get one from a server, and
+# `settings_model.CLOCK` carries the owner ruling this sits against and why it is
+# built anyway.
+#
+# **IT IS THE SECOND DECLARED EXCEPTION TO THE COPY RULING**, and a much smaller
+# one than Diagnostics': every sentence here is the wearer's, except the two
+# FRAME LABELS -- **PDT** and **UTC** -- which are unavoidable and which are the
+# whole shape of this screen since the owner's 2026-08-28 words:
+#
+#     "having the UTC time visible is kinda cool but maybe it should be smaller,
+#     like more of a sanity check for anyone looking at it ... the user
+#     interface, user experience should be PST time, the local time zone. The UI
+#     should just say PST and that would be the main focus of what they're
+#     updating."
+#
+# So the WEARER'S frame is event-local and the badge's frame is UTC, and both are
+# on the panel with the wearer's on top. Neither label can be dropped:
+#
+# * the badge's clock contract is UTC end to end -- `clock_boot.resync` sets it
+#   from `gmtime` and the PCF holds that verbatim (VAL-041-BLR measured a sync
+#   moving a badge's local 22:05 to 04:06, the Mountain offset of the machine
+#   running the probe) -- so the value that is WRITTEN is a UTC one and the
+#   read-out that proves it has to say so;
+# * and `schedule` renders every clock through `event.utc_offset_min` and prints
+#   `PDT` beside it, so a Clock screen labelling the same instant anything else
+#   would be one badge disagreeing with itself on two screens.
+#
+# ⚠ **THE LABEL IS `PDT` AND NOT `PST`.** The owner says "PST" colloquially, the
+# way most people do; 2026-10-02 is inside daylight time, and
+# `schedule/badge/schedule/schedule.json` records `"timezone": "PDT"` with
+# `"utc_offset_min": -420`. `CLOCK_LOCAL_SUFFIX` below is pinned against that
+# field by `test_settings_clock.EventSeedTests`, so "fixing" it to PST is a red
+# test rather than a badge whose two screens are an hour apart.
+
+ROW_CLOCK_LABEL = "Clock"
+CLOCK_TITLE = "Set the clock"
+#: **THE HINT, WHICH IS NO LONGER THE CURSOR.** This line named the selected
+#: field because the panel had no way to mark one: `settings_view` drew each body
+#: line as ONE point-form string in ONE ink. Since 2026-08-28 the highlight IS
+#: the cursor -- a reverse-video block on the field itself -- and this line is
+#: kept as what a marker cannot do, which is teach the control: it says which
+#: KEYS move the value, on a screen where four of the five buttons now do
+#: something.
+#:
+#: DRAWN ONLY ON A VALUE FIELD. On Save or Cancel there is no value to change and
+#: the bar's own B label is already the instruction, so the line is absent rather
+#: than reworded -- the same "only when there is one" discipline the refusal line
+#: and the diagnostics error line follow.
+CLOCK_FIELD_LINE = "Up and down change the {}"
+CLOCK_FIELD_NAMES = ("year", "month", "day", "hour", "minute")
+#: Appended to the stamp the wearer is EDITING, on the editor and on the note
+#: after a commit. It is the whole answer to "which time am I typing?", and it
+#: replaced the sentence `Use UTC, not your local time`, which stopped being true
+#: the moment the fields became event-local (owner request, 2026-08-28).
+#:
+#: A LABEL RATHER THAN A SENTENCE, because it has to sit on the value it
+#: describes. The frame is a property of those digits, not an instruction beside
+#: them, and putting it on the line means the panel never has to spend a band
+#: saying which of two stamps is which.
+#:
+#: ⚠ `PDT`, NOT `PST` -- see the block above. Pinned against the shipped agenda's
+#: `event.timezone` by `test_settings_clock.EventSeedTests`.
+CLOCK_LOCAL_SUFFIX = " PDT"
+# -- the editor's bar, and the two buttons that are ON the panel --------------
+#
+# **THE 2026-08-28 REDESIGN'S COPY.** `SET` on B and `NEXT` on C are retired.
+# `NEXT` was honest for a five-field walk with no horizontal axis; the screen now
+# HAS one -- two rows of fields with two buttons to their right -- and the owner
+# asked for a terminal/BIOS interaction over it, so the keys name directions.
+#
+# **A SAYS `LEFT` OR `BACK` AND THE BAR IS WHERE THE DIFFERENCE LIVES (§I5: a
+# live key's meaning is on screen the whole time).** A moves the highlight left,
+# except at the leftmost stop of a row, where it leaves the screen committing
+# nothing (§I2's five-A test). Without the changing label that would be a key
+# that silently changes meaning under the wearer's thumb; with it, the wearer at
+# the leftmost field can SEE that the next press is the way out.
+#
+# `LEFT` AND `RIGHT` ARE NOT VERBS, WHICH THE REST OF THIS BAR IS. That is a
+# deliberate exception rather than an oversight: the layout is spatial now, and
+# what a wearer needs from these two keys is which way the green block moves. An
+# arrow glyph would have said it in less ink and is what a terminal would use;
+# words are chosen because this bar is uppercase words everywhere else and a lone
+# 8.9 px `<` beside `CANCEL` reads as debris rather than as a control.
+CLOCK_LEFT = "LEFT"
+CLOCK_RIGHT = "RIGHT"
+#: B on a value field: the OTHER row. Two labels rather than one toggle word,
+#: because a bare `ROW` would not say which one the press goes to -- and the
+#: wearer can already see both rows, so naming the destination is free.
+CLOCK_ROW_DATE_LABEL = "DATE"
+CLOCK_ROW_TIME_LABEL = "TIME"
+#: B on the two buttons. `SAVE` is the verb the chip beside it carries, so the
+#: bar needs no translation; `CANCEL` at 62.69 px of the 68 px box is once again
+#: this app's widest label, the seat `DECLINE` and the pair flow's own `CANCEL`
+#: held until the Phone row was deleted earlier the same day.
+CLOCK_SAVE = "SAVE"
+CLOCK_CANCEL = "CANCEL"
+
+#: The two buttons AS THEY ARE DRAWN ON THE PANEL, in the body, beside the time.
+#:
+#: **BRACKETS, AND THEY ARE SAFE HERE FOR A MEASURED REASON.** `settings_view`
+#: draws every body line in POINT form, which parses no markup at all, and
+#: `docs/engineering-findings.md` § "What a `[` in wearer text ACTUALLY does"
+#: measured the rest: a lone `[` and an unknown name like `[ Save ]` render as
+#: written in BOTH forms, and only a KNOWN renderer name reached with unusable
+#: parameters (`[sprite:x]`, `[pen:1]`) raises. `measure_text` parses nothing
+#: either, so the width priced by the fit lane is the width drawn. **They must
+#: never be put in a SOFTKEY label**, which is the one rect-form draw left in the
+#: app.
+#:
+#: WHY DRAW THEM AT ALL, when the highlight already shows which stop the cursor
+#: is on: unhighlighted, two bare words floating beside a timestamp read as copy.
+#: Bracketed they read as buttons before anything is selected, which is what
+#: tells a wearer the row continues rightward at all.
+#:
+#: Title case rather than the bar's uppercase, because they are BODY text drawn
+#: at the body size in the body's own voice -- and because that is how the owner
+#: drew them.
+CLOCK_SAVE_CHIP = "[ Save ]"
+CLOCK_CANCEL_CHIP = "[ Cancel ]"
+#: The gap between the local stamp and the first button, and between the two
+#: buttons. SPACES RATHER THAN A COLUMN THE VIEW COMPUTES, so the whole line is
+#: one string the fit lane can price and one string the highlight can index into.
+#: The time block is fixed width (`{:02d}:{:02d}` plus a fixed suffix), so the
+#: buttons never move under a press.
+CLOCK_CHIP_GAP = "      "
+CLOCK_CHIP_SPACE = "  "
+
+#: `clock_set`'s three results, spelled here for the reason every other mirrored
+#: literal in this tile is: the model routes on them, and a screen may only draw
+#: strings this build knows about. `settings/tests/test_settings_clock.py` pins
+#: them against the real module.
+CLOCK_RESULT_SET = "set"
+CLOCK_RESULT_VOLATILE = "volatile"
+CLOCK_RESULT_FAILED = "failed"
+
+#: Appended to the SECONDARY stamp -- the badge's own frame, on both the editor
+#: and the note. It used to be the note's only frame label, on the note's only
+#: stamp; since 2026-08-28 there are two stamps on both screens and the label is
+#: what tells them apart.
+#:
+#: THE TWO STAMPS ARE THE SAME FIXED WIDTH ON PURPOSE (`clock_stamp`), so drawn
+#: at the same margin one under the other their digits line up column for column
+#: and the conversion is checkable at a glance -- which is the entire job the
+#: owner gave this line ("more of a sanity check for anyone looking at it").
+#: That is also why it carries the DATE and not just the time: at -420 every
+#: event-local hour from 17:00 rolls UTC into the next day, and a bare `00:00
+#: UTC` under `2026-10-02  17:00 PDT` would look like a badge set to the wrong
+#: day rather than a correct conversion.
+CLOCK_UTC_SUFFIX = " UTC"
+CLOCK_DONE_TITLE = "Clock set"
+#: THE PROMISE THE PCF WRITE BUYS, and the whole reason both clocks are written:
+#: the RP2350 always-on timer resets when power is removed, so a system-only
+#: write means every wearer sets the clock twice.
+CLOCK_DONE_KEPT = "The badge keeps this without power"
+#: The half-write. The system clock took it, the external chip did not, so it is
+#: true for this session and gone with the battery. Saying "kept" here would be
+#: wrong in the one direction nothing later corrects.
+CLOCK_VOLATILE_TITLE = "Set for now"
+CLOCK_DONE_VOLATILE = "It is lost if the battery goes flat"
+#: SAID ON BOTH NOTES, because it is the honest limit of a hand-set clock and the
+#: owner's 2026-08-24 doctrine in the wearer's words: this is a claim, and the
+#: badge prefers a server's answer the moment it can get one.
+CLOCK_DONE_REPLACED = "A server replaces it when it can"
+
+#: `clock_boot.evaluate_ntp`'s refusal literals -> what a wearer can act on,
+#: keyed on the RUNTIME's words exactly as `DIAG_POLICY_LINES` is. The floor date
+#: is composed by the model from `CLOCK_FLOOR_EPOCH` rather than written out
+#: here, so moving the floor moves the sentence with it.
+CLOCK_TOO_EARLY = "Too early. Nothing before {}"
+CLOCK_TOO_LATE = "Too late. Nothing after {}"
+#: The NTP era-rollover band. A wearer cannot reach it by the mechanism it exists
+#: for, only by typing a date in one week of 2036 -- and `clock_boot.resync`
+#: treats a clock in there as NO clock, so accepting it would tell them the badge
+#: was fixed while every handshake went on failing.
+CLOCK_BAD_DATE = "The badge cannot use that date"
+#: The write itself refused. Retryable in place: the wearer stays on the editor
+#: with the value they typed and B is still SET.
+CLOCK_NOT_WRITTEN = "The badge could not set the clock"
+#: A refusal literal from a `clock_boot` this build has never heard of. Named
+#: rather than drawn blank, for `NET_LINE_STATE`'s reason.
+CLOCK_REJECT_UNKNOWN = "That date cannot be used"
+
 
 # -- what the view draws that no view-model supplies -------------------------
-
-#: The no-encoder path: honest, legible and typeable, and never a fake QR — a
-#: rendered placeholder a phone cannot scan is the one failure a bystander
-#: reads as working.
-NO_ENCODER = "This badge cannot draw a QR code."
-NO_ENCODER_OPEN = "Open this link on your phone:"
-
-#: A payload past the measured 152-character ECC-medium boundary. A real
-#: product fault, so it is named rather than drawn as an empty square.
-PAYLOAD_TOO_LONG = "That link is too long to show."
-
-#: The typeable fallback beside the claim QR. An instruction, not a noun: the
-#: wearer types these eight characters into the page the QR would have opened.
-MANUAL_PROMPT = "Or type"
+#
+# EMPTY SINCE 2026-08-28, AND WORTH A LINE RATHER THAN A DELETED HEADING. Four
+# strings lived here -- the two no-encoder lines, the too-long-payload fault and
+# the `Or type` caption -- and all four belonged to the claim QR, which went with
+# the Phone row. `settings_view` now draws nothing it was not handed in a model.
 
 
 def every_string():
@@ -859,18 +1507,15 @@ def every_string():
 
     Composed rather than listed: the tables above are the source, so a copy
     change cannot land without its own fit check. The worst cases are included
-    on purpose — a 64-character owner hint (``pairstate.MAX_OWNER_HINT``) is
-    what the server is allowed to send, not what a fixture usually sends.
+    on purpose -- a runtime literal from a `/system/lib` newer than this build is
+    clipped by `settings_model.diag_text` and priced HERE at that clip, not at
+    the example value a fixture happens to show.
     """
     out = set()
-    out.update(PAIR_TITLES.values())
-    out.update(PAIR_LINES.values())
-    out.update(BUTTON_WORDS.values())
     out.add(BACK)
     out.add(OPEN)
     out.add(START)
     out.add(STOP)
-    out.add(ROW_PAIR_LABEL)
     out.add(ROW_NETWORK_LABEL)
     out.add(ROW_PUSH_LABEL)
     out.add(ROW_SLEEP_LABEL)
@@ -909,29 +1554,103 @@ def every_string():
     # panel unpriced -- the exact shape of the `TURN...` and `ECLIN` defects.
     out.update(PUSH_WAS_LINES.values())
     out.update((
-        PAIR_VALUE_UNAVAILABLE, PAIR_VALUE_REVOKED, PAIR_VALUE_LINKED,
-        PAIR_VALUE_UNLINKED, NET_NOT_INSTALLED, NET_LINE_CONNECTED,
+        VALUE_UNAVAILABLE, NET_NOT_INSTALLED, NET_LINE_CONNECTED,
         NET_LINE_CONNECTING, NET_LINE_UNREACHABLE, NET_LINE_STOPPED,
         NET_LINE_STOPPED_WHY, NET_LINE_OFF, NET_LINE_NO_SESSION,
-        NET_LINE_UNLINKED, NET_LINE_REBOOT, NO_ENCODER, NO_ENCODER_OPEN,
-        PAYLOAD_TOO_LONG, MANUAL_PROMPT,
+        NET_LINE_REBOOT, NET_LINE_JOINING, NET_LINE_NO_WIFI,
         PUSH_TITLE, PUSH_QUESTION, PUSH_LINE_ON, PUSH_LINE_TRYING,
         PUSH_LINE_NORMAL, PUSH_LINE_DEMOTED, PUSH_LINE_BLOCKED, PUSH_LINE_OFF,
     ))
+    # THE FOUR-PAGE NETWORK SCREEN AND THE FOUR-PAGE DIAGNOSTICS SCREEN, priced
+    # from the tables rather than listed, so a copy change cannot land without
+    # its own fit check. EVERY runtime slot is filled with the WIDEST value its
+    # own clip permits, never with an example: `_WIDEST` for a prefixed line,
+    # `_WIDEST_CHUNK` for a bare one, and the two are different numbers.
+    out.update((
+        NET_NO_RADIO, NET_NO_LINK, NET_DNS_NONE, NET_NO_ERROR,
+        NET_LABEL_WHY, NET_LABEL_ERROR, NET_LABEL_LINK_ERROR,
+        DIAG_NO_ERROR, DIAG_NO_ID, DIAG_LABEL_ERROR, DIAG_LABEL_BUILD,
+        DIAG_FAULT_SHARED_SUB,
+    ))
+    # EVERY WI-FI REASON SENTENCE. The map is closed and the model falls back to
+    # a RAW line for anything outside it, so both halves are priced.
+    out.update(NET_WIFI_REASON_LINES.values())
+    for stage in NET_STAGE_WORDS + (DIAG_MISSING,):
+        out.add(NET_LINE_STAGE.format(stage))
+    # A NEGATIVE CYW43 STATUS AT BOTH SIGNS AND AT THE CLIP. `status_-3` is the
+    # spurious one the 2026-08-13 report recorded on CORRECT credentials, and it
+    # is on this screen as a raw word for exactly that reason.
+    for value in ("status_-3", "status_-2", _WIDEST):
+        out.add(NET_LINE_WIFI_STATUS.format(value))
+    for value in ("connection_lost", _WIDEST):
+        out.add(NET_LINE_WIFI_REASON.format(value))
+    for literal in ("off", "connecting", "online", "backoff", DIAG_MISSING,
+                    _WIDEST):
+        out.add(NET_LINE_RADIO.format(literal))
+    for literal in ("connected", "connecting", "disconnected", "backoff",
+                    "stopped", "revoked", DIAG_MISSING, _WIDEST):
+        out.add(NET_LINE_LINK_STATE.format(literal))
+    for value in ("opened", "LinkStalled", "LinkError", "LinkRevoked",
+                  DIAG_MISSING, _WIDEST):
+        out.add(NET_LINE_OUTCOME.format(value))
+    # TEST-NET-2 exercises a normal dotted address without embedding a private
+    # operator-network literal in the bytecode shipped to every badge.
+    for address in ("198.51.100.1", "255.255.255.255", DIAG_MISSING):
+        out.add(NET_LINE_RESOLVER.format(address))
+    for count in ("0", "3", _WIDEST_COUNT, DIAG_MISSING):
+        out.add(NET_LINE_TRIES.format(count, count))
+        out.add(NET_LINE_DNS_COUNTS.format(count, count))
+        out.add(NET_LINE_OPENS.format(count, count))
+        out.add(NET_LINE_SPLIT.format(count, count))
+        out.add(NET_LINE_HELD.format(count))
+        out.add(NET_LINE_STALL.format(count))
+    for region in ("US", "GB", DIAG_MISSING, _WIDEST):
+        out.add(NET_LINE_REGION.format(region))
+    # THE VENUE'S NETWORK NAME, AT ITS OWN BOUND AND NOT AT `_WIDEST`. This is
+    # the one prefixed line in the tile with a bound of its own -- 16 rather
+    # than 15 -- so pricing it from `_WIDEST` would leave the widest string it
+    # can actually draw unmeasured by exactly the character that bound was
+    # bought for. `DIAG_MISSING` is deliberately NOT here: the model draws no
+    # band at all when there is no name, so `Network ?` is not a string this
+    # app can produce.
+    for ssid in ("badge-venue", "SupabaseLaunchWeek", _WIDEST_SSID):
+        out.add(NET_LINE_SSID.format(ssid))
+    for value in ("fleet", "per_badge", DIAG_MISSING, _WIDEST):
+        out.add(DIAG_LINE_TOKEN.format(value))
+    for value in ("0123456789abcdef", _WIDEST_UID, DIAG_MISSING):
+        out.add(DIAG_LINE_BADGE.format(value))
+    for value in ("0123abcd", DIAG_MISSING):
+        out.add(DIAG_LINE_BOOT.format(value))
+    for cause in tuple(PUSH_CAUSE_LINES) + (DIAG_MISSING, _WIDEST):
+        out.add(DIAG_LINE_CAUSE.format(cause))
+        out.add(DIAG_LINE_WAS.format(cause))
+    # THE BARE CHUNK, ONCE. Every chunked line on both screens -- the Wi-Fi
+    # reason, both network errors, the push error and the firmware build -- is
+    # the same worst case, because `diag_chunks` cuts every one of them to the
+    # same width with the same hard chop.
+    out.add(_WIDEST_CHUNK)
+    # THE PAGED TITLES, AT EVERY ORDINAL BOTH SCREENS CAN PRODUCE. A photograph
+    # of a badge in a hall is the only bug report this event will produce, and
+    # the ordinal is what makes it readable -- so it is priced like any other
+    # drawn string rather than assumed to be short.
+    # DIAGNOSTICS IS FIVE SINCE THE SCORE-DRAIN PAGE LANDED (2026-08-29) and
+    # Network is still four. The counts are spelled here rather than imported,
+    # because `settings_model` imports THIS module and the reverse would be a
+    # cycle -- and `test_settings_fit` walks `settings_model.DIAG_PAGES` and
+    # `NETWORK_PAGES` against the titles the models actually publish, so a count
+    # that drifts out of this loop fails there rather than reaching a panel.
+    for label, pages in ((ROW_NETWORK_LABEL, 4), (DIAG_TITLE, 5)):
+        for index in range(pages):
+            out.add(PAGE_TITLE.format(label, index + 1, pages))
     # Composed rows, exactly as `Settings.menu_label` composes them.
-    for value in (PAIR_VALUE_UNAVAILABLE, PAIR_VALUE_REVOKED,
-                  PAIR_VALUE_LINKED, PAIR_VALUE_UNLINKED):
-        out.add("{}  {}".format(ROW_PAIR_LABEL, value))
     for value in STATUS_WORDS.values():
         out.add("{}  {}".format(ROW_NETWORK_LABEL, value))
     for value in PUSH_WORDS.values():
         out.add("{}  {}".format(ROW_PUSH_LABEL, value))
-    # The two runtime-composed families, at a normal value and at the worst
-    # value the shared modules permit.
-    for hint in ("sam", NET_LINE_LINKED_ANON, "W" * 64,
-                 "a.very.long.address@an.extremely.long.example.domain.test"):
-        out.add(NET_LINE_LINKED.format(hint))
-        out.add("Linked to {}.".format(hint))
+    # The runtime-composed families, at a normal value and at the worst value
+    # the shared modules permit. THE OWNER-HINT FAMILY IS GONE: `Linked to sam.`
+    # and its 64-character worst case were the pair store's, and no screen in
+    # this tile reports an account any more.
     for literal in ("disconnected", "backoff", "connecting", "connected",
                     "stopped", "revoked", "None"):
         out.add(NET_LINE_STATE.format(literal))
@@ -970,16 +1689,89 @@ def every_string():
             out.add(DIAG_LINE_SESSIONS.format(count, count, small, small))
         out.add(DIAG_LINE_BELLS.format(count, count, count))
         out.add(DIAG_LINE_WORST.format(count))
-    out.add(DIAG_LINE_ERROR.format(_WIDEST))
-    # The claim URL, its typeable fragment and the countdown extremes.
-    out.add("https://badge-badgelink.pages.dev/p#ABCD2345")
-    out.add("ABCD2345")
-    out.add("0:00")
-    out.add("9:59")
+    # THE CLOCK LINE, at the widest value of BOTH slots. The reason slot carries
+    # a runtime literal clipped by `settings_model.diag_text`, so `_WIDEST` is
+    # the string that can actually reach the panel -- and it is the binding case
+    # on this line by a long way (296.0 px of 308 in the vector face, against
+    # 152.7 for `Clock yes  sync yes`).
+    out.add(DIAG_NO_CLOCK)
+    for flag in (DIAG_YES, DIAG_NO, DIAG_MISSING):
+        for tail in (DIAG_CLOCK_SYNCED, DIAG_CLOCK_NO_SYNC, DIAG_CLOCK_UNKNOWN,
+                     _WIDEST):
+            out.add(DIAG_LINE_CLOCK.format(flag, tail))
+    # THE SCORE-DRAIN PAGE. Every sentence of the closed stall vocabulary is
+    # priced from the TABLE rather than from a list, so an eighth refusal word
+    # added to `_pump_scores` is measured against the band by the same lane that
+    # refuses to let it be unmapped -- the rule `PUSH_CAUSE_LINES` already sets.
+    out.add(DIAG_NO_SCORES)
+    out.add(DIAG_SCORES_SENDING)
+    out.add(DIAG_SCORES_IDLE)
+    out.update(DIAG_SCORES_STALL_LINES.values())
+    for value in ("offline", "spool_unreadable", DIAG_MISSING, _WIDEST):
+        out.add(DIAG_SCORES_STATE.format(value))
+    for count in ("0", "3", _WIDEST_COUNT, DIAG_MISSING):
+        out.add(DIAG_LINE_SCORES_WAITING.format(count))
+    # THE CLOCK SCREEN. Its stamps are fixed-width by construction, so their
+    # extreme is the widest digits rather than a long string -- and the two
+    # boundary sentences are composed by `settings_model` out of
+    # `CLOCK_FLOOR_EPOCH`, so they are priced HERE at the widest instant that
+    # arithmetic can produce rather than at today's floor.
+    out.add(ROW_CLOCK_LABEL)
+    out.add(CLOCK_TITLE)
+    # THE EDITOR'S FIVE BAR WORDS (2026-08-28). All five are drawn on the same
+    # screen at different moments, so all five are priced -- `CANCEL` is the
+    # widest label the whole app can print, at 62.69 px of the 68 px box.
+    out.add(CLOCK_LEFT)
+    out.add(CLOCK_RIGHT)
+    out.add(CLOCK_SAVE)
+    out.add(CLOCK_CANCEL)
+    out.add(CLOCK_ROW_DATE_LABEL)
+    out.add(CLOCK_ROW_TIME_LABEL)
+    out.add(CLOCK_DONE_TITLE)
+    out.add(CLOCK_VOLATILE_TITLE)
+    out.add(CLOCK_DONE_KEPT)
+    out.add(CLOCK_DONE_VOLATILE)
+    out.add(CLOCK_DONE_REPLACED)
+    out.add(CLOCK_BAD_DATE)
+    out.add(CLOCK_NOT_WRITTEN)
+    out.add(CLOCK_REJECT_UNKNOWN)
+    out.add("{}  {}".format(ROW_CLOCK_LABEL, ""))
+    for name in CLOCK_FIELD_NAMES:
+        out.add(CLOCK_FIELD_LINE.format(name))
+    # BOTH SUFFIXES ON EVERY EXTREME STAMP SINCE 2026-08-28. The editor draws two
+    # stamps now -- the edited event-local one and the UTC read-out under it --
+    # so the LABELLED forms are what reaches the panel and the bare stamp alone
+    # would leave that unmeasured. They are comfortable (163.1 px of 308 at the
+    # widest digits); the binding line on this screen is the refusal below.
+    for stamp in ("2026-08-08  00:00", "8888-88-88  88:88",
+                  "0000-00-00  00:00"):
+        out.add(stamp)
+        out.add(stamp + CLOCK_UTC_SUFFIX)
+    # **THE EDITOR'S OWN TWO ROWS SINCE THE 2026-08-28 REDESIGN.** The wearer's
+    # value is no longer one stamp: it is `HH:MM PDT` with two BUTTONS beside it
+    # over a bare `YYYY-MM-DD`, and the button row is the widest thing this
+    # screen draws that is not the refusal sentence. Priced at the widest digits
+    # the format can produce rather than at a plausible time, because the fields
+    # are handed in by a seam and the stamp is a `{:02d}`. The note after a
+    # commit drops the two buttons, so its shorter form is priced too.
+    for hm in ("00:00", "88:88", "23:59"):
+        out.add(hm + CLOCK_LOCAL_SUFFIX)
+        out.add(hm + CLOCK_LOCAL_SUFFIX + CLOCK_CHIP_GAP + CLOCK_SAVE_CHIP
+                + CLOCK_CHIP_SPACE + CLOCK_CANCEL_CHIP)
+    for date in ("2026-10-02", "8888-88-88", "0000-00-00"):
+        out.add(date)
+    # ⚠ THE BOUNDARY SENTENCES CARRY A WHOLE STAMP SINCE 2026-08-28, not a date:
+    # the bounds are UTC epochs, the panel is event-local, and at -420 neither
+    # bound lands on local midnight -- so `settings_model` names the instant.
+    #
+    # THEY ARE NOW THE BINDING LINE ON THIS SCREEN AND THE FIT IS TIGHT. Today's
+    # floor sentence measures 304.0 px of the 308 px content width in the vector
+    # face, and the widest digits this arithmetic can produce measure 307.7 --
+    # ONE CHARACTER of slack, confirmed by adding one and watching
+    # `test_settings_fit.CopyFitTests` go red. So this loop is not optional
+    # pricing: any further word here, or a floor date with wider digits, wraps.
+    for stamp in ("2026-08-07  17:00", "2099-12-31  16:59",
+                  "8888-88-88  88:88"):
+        out.add(CLOCK_TOO_EARLY.format(stamp))
+        out.add(CLOCK_TOO_LATE.format(stamp))
     return out
-
-
-#: Six-character match codes for the display-face ruler. ``pairstate``'s match
-#: alphabet is ``A-Z0-9``, so the widest possible code is the widest glyph six
-#: times; the fixture code is here too because three lanes print it.
-MATCH_CODE_PROBES = ("K7QW2M", "WWWWWW", "MMMMMM", "000000", "IIIIII")

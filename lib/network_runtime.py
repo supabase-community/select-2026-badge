@@ -48,11 +48,6 @@ REVOKED = "revoked"
 # `badgelink/tests/test_network_runtime.py`. Two of Card FT-B's pumps ask "is
 # there a socket right now" and the answer was a bare string in both.
 CONNECTED = "connected"
-_PULSE_MS = 3000
-# How often a frame may read the wall clock while something is scheduled. ONE
-# SECOND: a moment 800 badges share to the second needs no finer resolution, and
-# `time.time()` every frame would be a syscall per frame for nothing.
-_SCHEDULE_TICK_MS = 1000
 
 # RETIRED SCHEMA-1 PROJECTION CONSTANTS. Production `poll()` no longer reads any
 # of them or calls `_pump_schedule_sync`: Schedule v2 makes one conditional
@@ -99,15 +94,190 @@ SCHEDULE_FIRST_MIN_MS = 60000
 # reproduces the same even spread instead of re-rolling into a fresh clump.
 SCHEDULE_COLD_STAGGER_MS = 60000
 
-# `polltransport.POLICY_REFRESH_MS` and its boot-phase floor, spelled here for the
-# same reason `CONNECTED` is: this module installs to `/system/lib` and runs from
-# `/system/main.py` before any app, so a module-scope import of a sibling a
-# half-refreshed lib might not carry would take the boot down. The service owns
-# the PHASE of the steering read (`arm_policy`) because it outlives every loop it
-# builds; the loop owns the interval. Pinned against the real constants by
-# `badgelink/tests/test_network_runtime.py`.
-POLICY_REFRESH_MS = 300000
-POLICY_FIRST_MIN_MS = 60000
+# HOW OFTEN THE BADGE RE-READS THE FLEET'S SETTINGS, and its boot-phase floor.
+#
+# THIS SERVICE NOW OWNS BOTH THE PHASE AND THE INTERVAL, which is the rebuild's
+# one real simplification here rather than a move. Until 2026-08-29 the steering
+# read was a `polltransport` request KIND with its own due time, and this object
+# armed the PHASE (`arm_policy`) while the loop owned the INTERVAL -- two objects
+# holding one cadence, which is exactly the disagreement CX-8 was opened for and
+# then had to be corrected for a second time on 2026-08-23. The settings read is
+# an ordinary errand now, so there is one due time, in one object, advanced in one
+# place (`_pump_fleet_settings`), and `_mirror_policy_due` is gone with the split
+# it existed to paper over.
+#
+# THE INTERVAL IS THE HERD, NOT A LATENCY PREFERENCE: ~1,000 badges reading one row
+# every five minutes is ~3.3 requests a second, and the operator's lever is worth
+# at most five minutes of lag. The FLOOR is CX-8's fix and it is not a
+# jitter alone: every app exit on this platform is a `machine.reset()`, so "the
+# first fire" is what a wearer switching apps pays over and over, and a pure
+# jitter over five minutes still leaves one badge in a hundred firing inside the
+# boot burst. Spelled here rather than imported for the same reason `CONNECTED`
+# is: this module installs to `/system/lib` and runs from `/system/main.py` before
+# any app, so a module-scope import of a sibling a half-refreshed lib might not
+# carry would take the boot down.
+SETTINGS_REFRESH_MS = 300000
+SETTINGS_FIRST_MIN_MS = 60000
+
+# HOW OFTEN THE BADGE SAYS IT IS ALIVE (`POST /rest/v1/badges`), with the same
+# two-part shape and for the same two reasons.
+#
+# SIXTY SECONDS IS THE OPERATOR'S QUESTION, NOT THE BADGE'S. "Which badges are on
+# the floor right now?" is answered by `badges.last_seen_at`, and an answer that
+# is up to a minute stale is one nobody at the venue can tell from live. Faster
+# buys nothing and costs the herd: ~1,000 badges is ~16.7 requests a second at
+# this interval and twice that at thirty seconds.
+#
+# THE FLOOR IS SHORTER THAN THE SETTINGS ONE, DELIBERATELY. The heartbeat is also
+# the SELF-REGISTRATION -- a badge the server has never seen has no row until this
+# request lands -- so a badge that boots must appear promptly or an operator
+# watching a provisioning run cannot tell "not registered yet" from "broken". Ten
+# seconds is long enough for the socket to be up on a normal boot and short enough
+# that a human waiting on the console does not start debugging.
+HEARTBEAT_MS = 60000
+HEARTBEAT_FIRST_MIN_MS = 10000
+
+# WHAT A REFUSED ERRAND WAITS BEFORE ASKING AGAIN. A full errand queue
+# (`polltransport.MAX_ERRANDS`) is a REFUSAL, not a rejection -- the request was
+# never made -- so the pump must try again; but re-offering on the very next
+# rendered frame would spin a bounded queue at frame rate for as long as the score
+# drain is busy. Five seconds is short against both cadences above and long
+# against a frame.
+ERRAND_RETRY_MS = 5000
+
+# HOW LONG ONE SCORE POST MAY HOLD THE DRAIN'S LATCH WITH NO ANSWER.
+#
+# THE BACKSTOP, NOT THE FIX. `NetworkService._release_score_latch` takes the
+# latch back the moment the transport is not CONNECTED, which is the mechanism
+# that actually failed in the field; this bounds the case nobody has thought of
+# -- a response lost while the socket never once reports anything but connected.
+# Belt and braces, and the braces are the socket.
+#
+# SIXTY SECONDS IS TWO ORDERS OF MAGNITUDE OUTSIDE AN HONEST ROUND TRIP on this
+# lane and there is no tuning in it. An errand is attempted ONCE
+# (`polltransport`'s errand channel), a connect is bounded by `OPEN_BUDGET_MS`
+# (5,000), and the deepest an errand can be queued is `MAX_ERRANDS` (4) at
+# `ERRAND_MIN_GAP_MS` (1,000) apart -- so a post that is still unanswered after a
+# minute is not slow, it is gone. Firing early costs one duplicate REQUEST that
+# the row's natural key `(badge_id, game, play_number, score)` absorbs server-side
+# with `on conflict do nothing`, and no duplicate row at all; firing late costs
+# the wearer their score for the rest of the boot, which is the bug this exists
+# for. It is also
+# the heartbeat's own interval, so an operator watching serial sees at most one
+# of these between two beats.
+SCORE_INFLIGHT_MAX_MS = 60000
+
+# HOW LONG ONE SCHEDULE REQUEST MAY HOLD ITS LATCH WITH NO ANSWER.
+#
+# THE SAME DEFECT AND THE SAME BACKSTOP AS `SCORE_INFLIGHT_MAX_MS`, one lane
+# over. `_schedule_v2_inflight` and `_schedule_inflight` were both set before
+# their errand was handed over and cleared in exactly two places -- the queue
+# refusing it, and the response sink -- so one response that never came back
+# stopped that consumer for the rest of the boot. The socket check in
+# `_release_schedule_latch` is the mechanism that matters; this bounds the case
+# nobody has thought of, a response lost while the transport never once reports
+# anything other than CONNECTED.
+#
+# THE NUMBER IS THE SCORE LANE'S, DELIBERATELY, and it is a SEPARATE NAME rather
+# than a reuse so the two can move apart if a measurement ever asks them to.
+# Both ride one errand channel with one set of bounds -- `OPEN_BUDGET_MS`
+# (5,000), `MAX_ERRANDS` (4) at `ERRAND_MIN_GAP_MS` (1,000) apart -- so the
+# argument for sixty seconds is word for word the one above it, and a schedule
+# GET that is still unanswered after a minute is gone rather than slow.
+#
+# FIRING EARLY COSTS ONE REPEATED READ AND NOTHING ELSE, which is what makes the
+# blunt release safe here too: every request on this lane is a GET
+# (`RPC_SCHEDULE_CURRENT_V2`, `RPC_SCHEDULE_VERSION`, the paged
+# `schedule_events` read), so asking twice writes nothing anywhere and the
+# second answer simply replaces the first. Firing late costs the wearer the
+# agenda they opened the app to read.
+SCHEDULE_INFLIGHT_MAX_MS = 60000
+
+# -- the broadcast lane's four bounds ----------------------------------------
+#
+# HOW MANY VALIDATED ACTIONS MAY WAIT FOR A FRAME. FOUR, and the number is the
+# WS drain rather than a guess: `pushlink.FLEET_DRAIN_MAX` services four frames
+# per rendered frame, so four is exactly the most one frame can hand over, and a
+# fifth arriving in the same frame is a publisher doing something this design
+# did not anticipate. Overflow drops the NEWEST and counts it, which is the
+# opposite of the usual choice and is deliberate: the ones already queued are
+# older, so they are closer to the moment they describe, and a light show that
+# arrives late is worse than one that never arrives.
+BROADCAST_ACTION_MAX = 4
+
+# W18 keeps app switching as INTERNAL plumbing for one wearer-visible verb.
+# Naming the target here keeps the protocol payload from becoming an app slug
+# again: every valid ``show_notice`` opens Nametag and nothing else.
+NOTICE_APP_SLUG = "nametag"
+
+# HOW MANY ACTION IDS THE EXACTLY-ONCE GUARD REMEMBERS. Eight, i.e. two full
+# drains, and it is a LIST rather than a set because MicroPython's set costs more
+# than a linear scan of eight strings and because the eviction order has to be
+# insertion order. The window only has to outlive DUPLICATE ARRIVAL of one
+# publish -- measured in frames, not minutes -- so eight is generous. It is not a
+# replay defence and cannot be one: a badge that reboots mid-event has an empty
+# list, and re-playing one show after a reset is the same residual `_on_command`
+# documented and accepted.
+ACTION_MEMORY = 8
+
+# HOW MANY RECEIPTS MAY WAIT OUT THEIR JITTER AT ONCE. Four, matching the action
+# queue, because a receipt exists per applied action and the errand channel's own
+# `MAX_ERRANDS` is four -- a deeper queue here would only push the refusal one
+# layer down. Overflow drops the newest and counts it. THAT IS ALLOWED TO HAPPEN:
+# a dropped receipt is a missing row in an audit table, not a missing show.
+RECEIPT_MAX_PENDING = 4
+
+# THE RECEIPT STAMPEDE WINDOW. One broadcast reaches ~1,000 badges inside one
+# fan-out window and every one of them wants to POST a row about it; unspread,
+# that is the entire fleet writing in the same second, which is the same herd
+# arithmetic the ring jitter was drawn for. Five seconds costs ordinary shows
+# nothing. Sleep and radio-off deliberately wait for their own attempt before
+# destroying the channel, so this jitter is also their bounded observability
+# delay; see :data:`POWER_ACTION_RECEIPT_MS`.
+#
+# THE DRAW ITSELF IS `pushlink.ring_delay_ms`'s, made per ring and passed in.
+# Re-drawing it here would be a second opinion about one number, which is CX-8's
+# lesson exactly; this constant is the CLAMP the service falls back to when the
+# link hands over a delay it cannot use.
+RECEIPT_JITTER_MAX_MS = 5000
+
+# HOW MANY FRAMES A DUE RECEIPT MAY SPEND TRYING TO GET INTO THE ERRAND QUEUE,
+# and the re-arm between them. The errand channel holds four slots
+# (`polltransport.MAX_ERRANDS`) and the heartbeat, the settings read and the
+# score drain all want them, so a full queue right after a fleet show is
+# foreseeable rather than exotic -- but the retry is bounded HARD, because an
+# unbounded one is the fleet-wide write storm again with extra steps. Three
+# tries a second apart, then the row is dropped and counted.
+RECEIPT_QUEUE_TRIES = 3
+RECEIPT_RETRY_MS = 1000
+
+#: THE LONGEST A BROADCAST POWER ACTION WAITS FOR ITS RECEIPT ATTEMPT.
+#:
+#: This is NOT an acknowledgement and expiry does NOT cancel the action. The
+#: receipt is the console's only proof that a badge accepted/armed sleep or
+#: radio-off, but either action destroys the channel that must post it. Waiting
+#: for the attempt's terminal callback makes a healthy receipt land first; 30 s
+#: covers the 5 s fleet jitter, four one-second-spaced errand slots and a bounded
+#: failed exchange. A dead link still acts at expiry, because an audit outage may
+#: cost observability but may not veto an accepted one-shot fleet instruction.
+POWER_ACTION_RECEIPT_MS = 30000
+
+# THE TWO WORDS A RECEIPT'S `result` MAY CARRY, and they are a CROSS-LANE
+# CONTRACT rather than a local choice. `badgelink/web/src/lib/fleet-broadcast.ts`
+# reads this column as badge-authored text and treats it as an acknowledgement
+# unless it is one of the refusal words it knows -- "failed", "error",
+# "refused", "unsupported" -- so RECEIPT_FAILED must stay inside that set or a
+# badge reporting a refusal is counted by the console as a success. RECEIPT_OK
+# is deliberately NOT in that set and is shown verbatim.
+#
+# A STRING AND NOT THE APPLIER'S RESULT DICT. The applier answers a rich object
+# (`{"effect": "play_effect", "kind": ..., "id": ...}`) and it is tempting to
+# post it, but the console's column is text and every reader of it -- the
+# responder table, the failure tally, the sort -- is written against a word. One
+# word per badge per action is also the right size for a table an operator scans
+# during a show.
+RECEIPT_OK = "applied"
+RECEIPT_FAILED = "failed"
 
 # HOW MANY FETCHED SCHEDULE ROWS ONE FRAME NORMALISES, and this number exists
 # because Card FT-B's F21 gate failed on it. The sink used to sanitize a WHOLE
@@ -504,6 +674,154 @@ PUSH_DIAGNOSTIC_CLIENT_KEYS = (
     "binary_frames_ignored",
 )
 
+#: THE WALL-CLOCK FACTS A PANEL MAY READ. Same projection discipline as
+#: :data:`PUSH_DIAGNOSTIC_KEYS` -- every value here is one this module ALREADY
+#: computes, and the defect being closed is that none of them reached a screen.
+#:
+#: **THE FAILURE THIS EXISTS FOR IS A FLEET-WIDE BRICK THAT LOOKS LIKE AN IDLE
+#: BADGE.** On RP2350 the powman always-on timer is the master clock and it
+#: RESETS when power is removed (`clock_boot.resync`'s docstring has the
+#: mechanism and `ports/rp2/mphalport.c:186-189` the source), so a badge coming
+#: back from hardware shipping mode wakes holding whatever the battery-backed
+#: PCF85063A kept -- a value nothing has checked. With no plausible clock,
+#: verified TLS cannot validate a certificate date, `clock_boot.resync` RAISES
+#: rather than failing soft, and `DeviceBackend._build_loop` never finishes. No
+#: loop means no `poll_loop()`, which means `_service_push` never builds a
+#: doorbell, which means :meth:`push_diagnostics` answers `None` and the panel
+#: reads "No push details on this badge" -- **the same screen a badge that has
+#: simply not tried yet draws.** A venue that blocks UDP/123 (common) turns that
+#: into every badge in the hall, and the operator holding one has no USB, no
+#: serial and no way to tell the two apart.
+#:
+#: * `plausible` -- does this badge have a clock verified TLS can work from at
+#:   all? `NetworkService._epoch()`'s existing `clock_boot.evaluate_ntp` gate,
+#:   which is the SAME gate the transport applies before opening a socket, so
+#:   the panel and the socket cannot disagree. **This is the brick bit.**
+#: * `synced` -- has an NTP sync actually LANDED this boot? Already latched as
+#:   `DeviceBackend._clock_verified`, because `clock_boot.resync`'s shift bound
+#:   is armed by it. It is the difference between a clock that is merely
+#:   plausible (PCF-restored, or hand-set on the Clock screen) and one that has
+#:   been checked against a server.
+#: * `reason` -- `clock_boot.resync`'s own last word, verbatim. `_build_loop`
+#:   already emits it as `clock_resync_skipped(reason=)`, onto serial.
+#:
+#: NARROWED AND FLAT, for `PUSH_DIAGNOSTIC_KEYS`' reasons: a reviewer can read
+#: this list against the failure above, and a panel keeps one shape to read.
+CLOCK_DIAGNOSTIC_KEYS = (
+    "plausible",
+    "synced",
+    "reason",
+)
+
+#: THE RADIO'S OWN FACTS A PANEL MAY READ, from :meth:`NetworkService.wifi_diagnostics`.
+#: Same projection discipline as :data:`CLOCK_DIAGNOSTIC_KEYS`: every value here
+#: is one `ResilientWiFi` already computes on every frame, and the defect being
+#: closed is that not one of them reached a screen.
+#:
+#: **THE FAILURE THIS EXISTS FOR IS A BADGE THAT NEVER ASSOCIATES AND SAYS
+#: NOTHING AT ALL.** `ResilientWiFi.snapshot()`'s only consumers were two
+#: EDGE-GATED serial emitters, so a radio that never reached ONLINE never
+#: produced an edge and therefore never printed a line -- while
+#: :meth:`NetworkService.state` answered CONNECTING (it does that whenever
+#: `_backend is None`) and the panel drew "Connecting to the server" over a
+#: radio that had not found an access point. On 2026-10-02 there is no cable and
+#: nothing attached to the serial port, so the panel is the only channel there
+#: is.
+#:
+#: * `radio` -- the RAW `off`/`connecting`/`online`/`backoff` literal.
+#: * `reason` -- the closed failure vocabulary, RAW and never translated into a
+#:   verdict. A negative CYW43 status is a retry signal, not proof of a wrong
+#:   password (`benchmark/results/reports/2026-08-13-v3.0.1-network-authenticated.md`
+#:   records a spurious `-3` on CORRECT credentials).
+#: * `attempts` / `failures` -- how hard it tried. Zero and zero on a badge that
+#:   never started is the honest reading, and it is the only thing that
+#:   separates "never tried" from "tried forty times".
+#: * `online` -- `DeviceBackend._was_online`, the same flag the radio gate reads,
+#:   so the sentence on the panel and the connect decision cannot disagree.
+#: * `connected_s` -- how long the CURRENT association has held, in seconds.
+#: * `region` -- the two-letter regulatory domain the radio was started in.
+#:
+#: **THERE IS NO SSID KEY AND THAT IS STRUCTURAL.** The owner's instruction
+#: names the network name a secret; putting it on ~1,000 screens in a public hall
+#: is a product decision, not an engineering one. Omitting the key outright is
+#: what makes it unable to reach a view at all, rather than a rule a future
+#: caller could forget.
+WIFI_DIAGNOSTIC_KEYS = (
+    "radio",
+    "reason",
+    "attempts",
+    "failures",
+    "online",
+    "connected_s",
+    "region",
+)
+
+#: THE PATH TO THE SERVER, from :meth:`NetworkService.link_diagnostics`. Same
+#: discipline again, and the same defect: `DeviceLink.open_phases` has split
+#: every connect into dns / connect+TLS / handshake / headers / body WITH AN
+#: OUTCOME WORD since Lane J, `BoundedResolver` has counted its queries and
+#: known the DHCP resolver's address all along, and `PollLoop` has counted its
+#: opens -- and no view read any of it.
+#:
+#: * `transport` -- the RAW `polltransport` literal, before the fold that turns
+#:   both `disconnected` and `backoff` into one "Can't reach the server" line.
+#: * `opens` / `open_failures` -- the loop's own counters.
+#: * `outcome` -- `opened`, or the exception class name the open ended in.
+#: * `dns_ms` / `connect_ms` -- **the split that separates "DNS is dead" from
+#:   "TLS is dead" numerically**, which is the question nothing on the badge
+#:   could answer.
+#: * `stall_ms` -- how long the last open went without hearing the peer.
+#: * `resolver` -- the address `bounded_dns` would ask, or `None`, which is the
+#:   documented grey zone: DHCP offered no option 6 and the gateway is unusable.
+#: * `lookups` / `lookup_failures` -- the resolver's counters.
+#: * `service_error` and `link_error` -- **TWO KEYS AND NEVER MERGED.** The first
+#:   is :attr:`NetworkService.last_error`, which holds the `CredentialError`
+#:   sentence a malformed BadgeLink value raises inside the factory containment
+#:   handler and which is read by no view today; the second is
+#:   `PollLoop.last_error`. They are different repairs by different people.
+LINK_DIAGNOSTIC_KEYS = (
+    "transport",
+    "opens",
+    "open_failures",
+    "outcome",
+    "dns_ms",
+    "connect_ms",
+    "stall_ms",
+    "resolver",
+    "lookups",
+    "lookup_failures",
+    "service_error",
+    "link_error",
+)
+
+#: WHO THIS BADGE IS, from :meth:`NetworkService.identity`. Every one of these is
+#: posted to the server on every heartbeat and NONE of them can be read off the
+#: badge in the hand -- which is the wrong way round for the one day when the
+#: server is what nobody can reach.
+#:
+#: * `uid` -- :func:`hardware_uid`, the PHYSICAL badge id. Not the JWT `sub`: on
+#:   the shared-token fleet every badge ships a byte-identical `/secrets.py`, so
+#:   `sub` is the same value on all ~1,000 and names the fleet rather than a badge.
+#: * `token` -- :func:`credential_tier`, which answers the S0.8 rollout question
+#:   ("has this badge been re-provisioned yet?") that nothing on the wire could.
+#: * `boot` -- the first 8 hex of `_boot_session()`: two rows sharing it came
+#:   from one uninterrupted run.
+#: * `build` -- `os.uname().version`.
+#: * `fault` -- `DeviceBackend.provisioning_fault`, whose own docstring promises
+#:   the badge "says why on serial and in Settings" and whose Settings half was
+#:   never written.
+#:
+#: NEITHER `uid` NOR `token` IS SECRET, and the argument is already in this file:
+#: a JWT `sub` is a public claim and nothing is authorised by knowing it (see
+#: :data:`SHARED_SUB`).
+IDENTITY_KEYS = (
+    "uid",
+    "token",
+    "boot",
+    "build",
+    "fault",
+)
+
 
 def _ticks_ms():
     function = getattr(time, "ticks_ms", None)
@@ -522,6 +840,85 @@ def _ticks_diff(left, right):
 
 def _error_text(exc):
     return "{}: {}".format(exc.__class__.__name__, str(exc))[:160]
+
+
+# -- THE DIAGNOSTIC PROJECTION HELPERS -----------------------------------------
+#
+# Four one-liners rather than the same four guards repeated at thirty call
+# sites, and the reason is not tidiness. Every one of them is a layer whose
+# ABSENCE is invisible until a badge resets in a loop at the venue: the accessors
+# below are read by `settings_model` on a DRAW path, where an exception reaches
+# `fatal_error` and `machine.reset()`s the badge -- every badge, every frame, for
+# ever. Spelling the rule once is what makes "did this call site guard?" a
+# question nobody has to ask.
+
+
+def _text(value):
+    """A non-empty ``str``, or ``None`` meaning "cannot tell you".
+
+    THE TWO WAYS A RUNTIME STRING RUINS A 308 px BAND, closed together: a
+    stand-in answering a formatted repr, and a field answering ``""``. The
+    second is the nastier one -- an empty string draws as a blank line that
+    looks like a measurement that came back zero, when nothing was measured at
+    all. The builders draw the absence in words instead.
+    """
+
+    return value if isinstance(value, str) and value else None
+
+
+def _whole(value):
+    """A non-negative, non-``bool`` ``int``, or ``None``.  See :func:`_text`.
+
+    ``bool`` IS EXCLUDED FIRST because it is a subclass of ``int`` in both
+    runtimes, so a flag forwarded where a counter was expected would sail
+    through an `isinstance(value, int)` check and draw as `Tries 1  fails 0` --
+    a count nobody took, which is the one thing these projections may never
+    produce.
+    """
+
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _call(target, name):
+    """One no-argument read off a duck-typed object, or ``None``.
+
+    THREE FAIL-SOFT LAYERS AND EACH ONE IS A REAL BADGE.
+
+    1. `getattr`, because `/system/lib` and the apps that read it are installed
+       by SEPARATE steps, so a runtime older than an accessor genuinely has no
+       such method and a bare call is an AttributeError on the draw path.
+    2. `callable`, because a stand-in may carry the name as data -- the
+       fixtures, the kill-test and the browser lane all pass their own objects
+       through the backend factory.
+    3. `try`, because these reads walk a backend and touch native calls
+       (`ifconfig`, `uname`). A diagnostic may not be the thing that crashes the
+       badge it is diagnosing.
+    """
+
+    reader = getattr(target, name, None)
+    if not callable(reader):
+        return None
+    try:
+        return reader()
+    except Exception:  # noqa: BLE001 - a reset is the alternative
+        return None
+
+
+def _call_dict(target, name):
+    """:func:`_call`, narrowed to a ``dict``.
+
+    The type check is the same layer for the same reason `push_diagnostics`
+    carries one: a stand-in answering a list would otherwise reach `.get()` and
+    raise on a draw path. NOT FOLDED INTO `_call`, because `identity` genuinely
+    wants a string back from `badge_id` -- a helper that took the expected type
+    as an argument would make strictness a caller's decision, which is exactly
+    the layer whose absence is invisible.
+    """
+
+    record = _call(target, name)
+    return record if isinstance(record, dict) else None
 
 
 # THE `wipe_scores` SCOPES, FROZEN (owner ruling, 2026-08-27). Two of them, and
@@ -552,10 +949,9 @@ WIPE_SCOPES = (WIPE_SCOPE_SPOOL, WIPE_SCOPE_ALL)
 def _wipe_scope(payload):
     """The scope a ``wipe_scores`` payload asks for.  Raises on anything else.
 
-    AN ABSENT OR EMPTY PAYLOAD IS THE DEFAULT SCOPE. `badge_commands.payload` is
-    nullable and a hand-queued row is routinely `{}`, so requiring the key would
-    fail the most ordinary way to send this command, for a reason nobody could
-    read off the ack. Naming the scope explicitly is still the documented shape.
+    AN ABSENT OR EMPTY PAYLOAD IS THE DEFAULT SCOPE. Requiring the key would
+    reject the smallest valid broadcast for a reason nobody could read off its
+    receipt. Naming the scope explicitly is still the documented shape.
     """
 
     if payload is None:
@@ -575,6 +971,268 @@ def _wipe_scope(payload):
         raise ValueError("wipe_scores scope must be one of {}".format(
             ", ".join(WIPE_SCOPES)))
     return scope
+
+
+# -- the battery levers (fleet battery management, 2026-08-28) ---------------
+#
+# THE MEASURED PROBLEM. A badge lasts ~7 h 36 m under conference-like load
+# (owner-reported, 2026-08-28), and a conference day is longer than that. These
+# two verbs are the admin-side levers for the difference, and they are ranked by
+# what they actually save: `sleep` turns EVERYTHING off, `set_networking` turns
+# the radio off. Only the first is a step change; the second shaves a component.
+#
+# A THIRD VERB WAS CUT BEFORE IT SHIPPED, and the reason is a rule rather than a
+# detail (owner ruling, 2026-08-28). `set_push` would have closed the WebSocket
+# doorbell for ~1% of a day's battery: the doorbell's traffic is ~77 B/s measured
+# and the cost of a radio is STANDING CURRENT, which polling keeps powered
+# anyway. It also duplicated a control that already exists and is fully
+# reversible -- `badge_transport_policy.push_enabled`, RAM-only on the badge and
+# failing open. Every verb here is pinned across firmware `_apply` and the
+# broadcast schema, so a 1% verb is not worth the surface. Use the policy row
+# instead.
+#
+# THE OWNER'S FRAME, verbatim (2026-08-28): *"we're not breaking the device or
+# anything. A user can easily hit reset, but we're just creating the experience
+# we want for the users. If they want to go against that, fine."* Every bound
+# below exists to keep that true -- RESET must always be a real escape, and no
+# admin mistake may cost more than one talk.
+
+#: THE LONGEST REMOTE SLEEP, IN MINUTES, and the number is a CEILING on the
+#: damage a malformed or hostile row can do rather than a product feature.
+#:
+#: 60 because the use case is "sleep the fleet for a talk that does not need
+#: badges" and a conference talk is 20-60 minutes; a keynote block is the outlier
+#: and it can be sent as two commands. The cost of guessing high is what makes
+#: this a ceiling: `sleep(n)` arms the ALARM ALONE (device-measured 2026-08-21,
+#: report §6), so for the whole duration the five face buttons are dead and RESET
+#: is the only escape. A `minutes` of 1440 typo'd into a console would put ~800
+#: badges down for a day, and every wearer who did not think to press RESET would
+#: read it as a dead badge. One talk is a mistake somebody laughs about.
+SLEEP_MAX_MINUTES = 60
+
+#: HOW LONG THE PRE-SLEEP NOTE STAYS ON THE PANEL, and it is a READING time.
+#:
+#: LONGER THAN SETTINGS' OWN 1000 ms (`settings_model.SLEEP_NOTE_MS`) ON PURPOSE.
+#: That note follows a button the wearer just pressed, so they are already
+#: looking at the screen; this one interrupts somebody who asked for nothing, so
+#: the first part of the second is spent noticing that the screen changed at all.
+#: Nothing can cancel it either way -- see `_pump_power_action`, which repaints
+#: rather than reads keys.
+SLEEP_NOTE_MS = 1500
+
+#: HOW LONG A DEFERRED POWER ACTION WAITS FOR ITS ACK BEFORE GIVING UP.
+#:
+#: An ack is URGENT on the wire (`PollLoop.queue_ack` pulls the next exchange to
+#: now), so the healthy case is one exchange -- well under a second. 30 s buys a
+#: couple of failed exchanges and a reconnect without holding a pending sleep
+#: into the talk it was meant to cover. ON EXPIRY THE ACTION IS ABANDONED, NEVER
+#: PERFORMED: see `_pump_power_action` for why that direction is the only safe
+#: one.
+POWER_ACTION_ACK_MS = 30000
+
+#: The pre-sleep note's words. THE COPY RULES ARE `settings_copy`'s AND THEY ARE
+#: LOAD-BEARING FOR THE SAME REASON: there is nothing on screen afterwards to
+#: correct a lie, and this time the wearer did not ask for the screen.
+#:
+#: THE TWO FORMS SAY DIFFERENT THINGS ABOUT WAKING BECAUSE THE HARDWARE DOES.
+#: Measured on device 2026-08-21 (`benchmark/results/reports/2026-08-21-device-
+#: session.md` §6): `sleep()` reaches `powman.sleep()` and arms A/B/C/UP/DOWN;
+#: `sleep(n)` reaches `goto_dormant_for` and arms **the alarm alone** -- the five
+#: buttons are ignored until it expires. HOME is not a wake source either way.
+#: So the timed note may not offer a button, and the indefinite note must name
+#: HOME as the exception rather than promise "any button".
+SLEEP_TITLE = "SLEEPING"
+SLEEP_LINE_WAKE = "A B C UP DOWN WAKE"
+SLEEP_LINE_HOME = "HOME DOES NOT WAKE"
+SLEEP_LINE_BUTTONS = "BUTTONS DO NOT WAKE"
+SLEEP_LINE_RESET = "RESET WAKES SOONER"
+SLEEP_LINE_RESTART = "RESTARTS ON WAKE"
+
+
+def sleep_note_lines(seconds):
+    """The lines to draw before dormancy, for a duration in seconds.
+
+    PURE, so the copy is testable without a panel -- which is the only way the
+    wake claim above can be gated, because the claim is a sentence rather than a
+    pixel.
+
+    A DURATION, NEVER A WALL-CLOCK WAKE TIME, and the owner's "back at 2:30" was
+    considered and rejected on evidence. Two facts decide it. (1) A duration is
+    monotonic: `badge.sleep(n)` runs off the POWMAN always-on timer, measured to
+    keep counting through dormancy and not be re-seeded, so it is immune to a
+    wrong or hand-set clock. (2) The badge has no local time to render one with:
+    a paired badge's clock reads UTC (`ntptime.settime()` sets it from `gmtime`;
+    VAL-041-BLR) and nothing in this library carries the event's UTC offset --
+    `schedule_store` rule 7 records that gap as still open. "Back at 2:30" drawn
+    seven hours out is worse than no time at all, because a wearer can disprove
+    it and will then distrust the rest of the note.
+    """
+
+    if seconds is None:
+        return (SLEEP_TITLE, SLEEP_LINE_WAKE, SLEEP_LINE_HOME,
+                SLEEP_LINE_RESTART)
+    minutes = seconds // 60
+    return (SLEEP_TITLE,
+            "WAKES IN {} MIN".format(minutes),
+            SLEEP_LINE_BUTTONS,
+            SLEEP_LINE_RESET)
+
+
+def _networking_intent(payload):
+    """``(on, persist)`` for a ``set_networking`` payload, or a raise.
+
+    PURE, so every delivery path applies the same strict payload rules. Same
+    reason `_wipe_scope` is a function.
+    """
+
+    if not isinstance(payload, dict):
+        raise ValueError("set_networking payload must be an object")
+    keys = set(payload.keys())
+    if "on" not in keys or not keys <= set(("on", "persist")):
+        raise ValueError("set_networking payload requires on and at most persist")
+    on = payload["on"]
+    if not isinstance(on, bool):
+        raise ValueError("set_networking on must be a boolean")
+    persist = payload.get("persist", False)
+    if not isinstance(persist, bool):
+        raise ValueError("set_networking persist must be a boolean")
+    return on, persist
+
+
+def _backlight_intent(payload):
+    """``(level, persist)`` for one fleet backlight moment, or a raise.
+
+    Transient control may reach the fleet command's 10 percent safety floor.
+    Persistence has a 20 percent floor because Settings' durable wearer ladder
+    cannot represent anything lower; accepting 10 percent there would make the
+    panel jump on the next reset while a successful receipt claimed otherwise.
+    """
+
+    if not isinstance(payload, dict):
+        raise ValueError("set_backlight payload must be an object")
+    keys = set(payload.keys())
+    if "level" not in keys or not keys <= set(("level", "persist")):
+        raise ValueError("set_backlight payload requires level and at most persist")
+    level = payload["level"]
+    if isinstance(level, bool) or not isinstance(level, (int, float)):
+        raise ValueError("set_backlight level must be a number")
+    if level != level or level * 0 != 0:
+        raise ValueError("set_backlight level must be finite")
+    persist = payload.get("persist", False)
+    if not isinstance(persist, bool):
+        raise ValueError("set_backlight persist must be a boolean")
+    floor = 0.2 if persist else 0.1
+    if level < floor or level > 1:
+        if persist:
+            raise ValueError("persistent set_backlight level must be 0.2..1")
+        raise ValueError("set_backlight level must be 0.1..1")
+    return level, persist
+
+
+def _sleep_seconds(payload):
+    """Dormancy in SECONDS for a ``sleep`` payload, or ``None`` for indefinite.
+
+    ZERO, NEGATIVE, FRACTIONAL AND OVER-BOUND ARE ALL REFUSED RATHER THAN
+    COERCED, and the reasons differ. An ABSENT ``minutes`` is not an error --
+    ``{}`` is the indefinite broadcast form. A ``minutes`` of 0 or less
+    is a MALFORMED row: coercing it to the indefinite form would silently turn a
+    typo into a different command than the operator sent, and this module's rule
+    (see the ``wipe_scores`` scopes) is that frozen firmware fail-acks what it
+    does not understand rather than guessing, because nobody finds out about a
+    guess. A float is refused because ``goto_dormant_for`` takes whole seconds
+    and 2.5 minutes is a row nobody meant. The ceiling is
+    :data:`SLEEP_MAX_MINUTES` and its reasoning is at the constant.
+    """
+
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise ValueError("sleep payload must be an object")
+    keys = tuple(payload.keys())
+    if not keys:
+        return None
+    if keys != ("minutes",):
+        raise ValueError("sleep takes at most one minutes key")
+    minutes = payload["minutes"]
+    # `isinstance(True, int)` again: a bare int check reads `True` as one minute.
+    if isinstance(minutes, bool) or not isinstance(minutes, int):
+        raise ValueError("sleep minutes must be a whole number")
+    if minutes < 1:
+        raise ValueError("sleep minutes must be at least 1")
+    if minutes > SLEEP_MAX_MINUTES:
+        raise ValueError(
+            "sleep minutes must be at most {}".format(SLEEP_MAX_MINUTES))
+    return minutes * 60
+
+
+def _draw_sleep_note(lines):
+    """Paint the note over whatever app owns the frame.  Never raises.
+
+    BARE NAMES, NOT `getattr(builtins, ...)`, and this is the trap
+    `install_system_lib` and `docs/engineering-findings.md` both record: the
+    pinned runtime's injected globals participate in normal name resolution but
+    are NOT visible through the `builtins` module object, so `getattr` here would
+    answer `None` on a badge where the panel exists. A missing name raises
+    `NameError`, which is why every one of them is inside the try.
+    Host tests install module-global recorders for these three names. Hardware
+    still falls through to Badgeware's injected globals, so the geometry can be
+    gated without changing the device lookup rule.
+    ⚠ AND IT IS THE ONE PLACE THIS MODULE DRAWS AT ALL. `install()` is handed
+    `display_api` for `set_backlight` and nothing else, so a screen handle would
+    have meant a new argument in the generated `/system/main.py` block -- which
+    is a REINSTALL, and a badge that is never reinstalled would silently lose the
+    note. Reading the injected name costs no boot-block change and degrades to
+    "no note, still sleeps".
+    ⚠ POINT FORM ONLY. `screen.text(s, x, y, scale)` never parses `[...]` glyph markup;
+    the rect form does, and an unknown renderer name raises inside `update()`,
+    which is the traceback modal and a reset (`settings_view` rule 1). These
+    strings are constants today, and point form means they can never become the
+    crash class even if a future one carries a name.
+
+    A FAILURE HERE MAY NOT COST THE SLEEP. The caller has already decided to go
+    dormant and has already told the server so; a panel that would not paint is a
+    worse note, not a worse decision.
+    """
+
+    try:
+        width = screen.width                     # noqa: F821 - injected builtin
+        height = screen.height                   # noqa: F821
+        # Badgeware's two production panels are 160x120 and 320x240. Keeping
+        # one LORES geometry and scaling it makes this interrupt readable over
+        # either an identity app or a game without switching the app's mode.
+        unit = 2 if width >= 240 else 1
+        background = color.rgb(5, 18, 16)        # noqa: F821
+        phosphor = color.rgb(62, 207, 142)        # noqa: F821
+        white = color.rgb(255, 255, 255)          # noqa: F821
+        warning = color.rgb(255, 176, 72)         # noqa: F821
+
+        screen.pen = background                  # noqa: F821
+        screen.clear()                           # noqa: F821
+
+        # The rail and crescent make this read as an intentional power-state
+        # card, not a crash message, using only ROM primitives immediately
+        # before dormancy (no font.load, asset read or retained buffer).
+        screen.pen = phosphor                    # noqa: F821
+        screen.rectangle(12 * unit, 12 * unit,   # noqa: F821
+                         3 * unit, height - 24 * unit)
+        screen.circle(137 * unit, 22 * unit, 10 * unit)  # noqa: F821
+        screen.pen = background                  # noqa: F821
+        screen.circle(141 * unit, 18 * unit, 10 * unit)  # noqa: F821
+
+        screen.font = font.badgewaremax           # noqa: F821
+        screen.pen = phosphor                    # noqa: F821
+        screen.text(lines[0], 23 * unit, 15 * unit, unit)  # noqa: F821
+
+        screen.font = font.sins                  # noqa: F821
+        for index in range(1, len(lines)):
+            # Amber is reserved for the last thing the wearer must remember:
+            # the escape/restart consequence once the panel goes dark.
+            screen.pen = warning if index == len(lines) - 1 else white  # noqa: F821
+            screen.text(lines[index], 23 * unit,             # noqa: F821
+                        (55 + (index - 1) * 17) * unit, unit)
+        return True
+    except Exception:  # noqa: BLE001 - see the docstring: no note beats no sleep
+        return False
 
 
 def _default_rand01():
@@ -673,10 +1331,10 @@ def provisioning_fault():
     there is no UID scan and there never will be -- so the firmware's own boot
     check is the ONLY thing standing between a one-in-a-quintillion draw and a
     fleet whose kill switch is wired to a physical badge. If `SHARED_SUB` were
-    some badge's `machine.unique_id()`, that badge's `badge_state` row, its
-    command queue and the floor's would be the same row: revoking the fleet grant
-    would revoke that badge's own tier, and its `_self` writes would collide with
-    the floor identity the claim RPCs are required to refuse.
+    some badge's `machine.unique_id()`, that badge's `badge_state` row and the
+    floor identity would collide: revoking the fleet grant would revoke that
+    badge's own tier, and its `_self` writes would collide with the identity the
+    claim RPCs are required to refuse.
 
     NEVER BRICKS, NEVER SILENT -- the two halves of the ruling. It returns a WORD
     rather than raising, because this runs on the launch path where an exception
@@ -1072,6 +1730,24 @@ class NetworkService:
     # writes them before use; the class values are immutable zero/False.
     _radio_generation = 0
     _push_nb_contract_validated = False
+    # TRANSIENT EFFECT SLOTS ARE CLASS-SAFE because device probes construct a
+    # skeletal service through `__new__`. A stop/error path must still be total
+    # on that object; AttributeError while trying to contain another failure
+    # would turn a recoverable transport teardown into a reset.
+    _effect = None
+    _effect_queue = None
+    _live_candidate = None
+    _live_pending = None
+    # Skeletal probes share the same frame writer; unknown means try the real
+    # four-argument form once before deciding a host shim is scalar-only.
+    _caselights_variadic = None
+    # A DURABLE FIRE INSTALLS THROUGH THE REAL APPLIER, which already performs
+    # the operator-visible first write. The steady pump follows in the same
+    # rendered poll, so it needs the installed object's identity to avoid a
+    # second step at the same instant. Class defaults keep skeletal probe
+    # services total; the pump consumes each marker on its first call.
+    _lights_stepped_frame = None
+    _effect_stepped_frame = None
     #: THE PANEL LEVEL A GLYPH EFFECT RETURNS THE BACKLIGHT TO, or ``None`` for
     #: "nobody has told us one, so do not touch the panel". A CLASS DEFAULT for
     #: the same reason `DeviceBackend.provisioning_fault` is one: probes and
@@ -1116,11 +1792,11 @@ class NetworkService:
                  ledger_path=command_ledger.DEFAULT_PATH, caselights=None,
                  event_sink=None, push_factory=None,
                  card_state_path=None, card_refresh_path=None,
-                 open_app_path=None, listdir=None, getcwd=None,
+                 open_app_path=None, notice_path=None, listdir=None, getcwd=None,
                  backlight=None, badge_api=None, schedule_path=None,
                  epoch_clock=None, score_path=None,
                  schedule_cache_path=None, reset=None, rand01=None,
-                 ticks_ms=None):
+                 ticks_ms=None, sleep_note=None):
         if not callable(backend_factory):
             raise ValueError("backend_factory must be callable")
         if push_factory is not None and not callable(push_factory):
@@ -1132,6 +1808,7 @@ class NetworkService:
         self._card_state_path = card_state_path
         self._card_refresh_path = card_refresh_path
         self._open_app_path = open_app_path
+        self._notice_path = notice_path
         # Injected so the fixtures can be a real filesystem-free roster and a
         # real "which app is open" answer. None means the device's own os.
         self._listdir = listdir
@@ -1145,52 +1822,154 @@ class NetworkService:
         self._rand01 = rand01 or _default_rand01
         # The running light program, or None. Held in RAM ONLY, deliberately: a
         # light show is a MOMENT, and a moment that survived a reset would replay
-        # itself minutes later to a wearer who had forgotten it. `open_app` is
-        # durable for the opposite reason -- it is an instruction, not a moment.
+        # itself minutes later to a wearer who had forgotten it. The internal
+        # notice->Nametag handoff is durable only long enough to cross its forced
+        # reset; the notice itself is consumed once and never becomes campaign
+        # state.
         self._lights = None
         self._lights_started = 0
+        self._lights_stepped_frame = None
         # The running FLEET EFFECT, in its own slot for the reason
         # `effect_library.EffectPlayer` gives: it drives two channels and answers
         # a bool, where a `Program` drives one and answers a level, so sharing the
         # slot above would put a type switch in the frame pump. RAM-only for the
         # same reason as the lights program -- a show is a moment.
         self._effect = None
+        # THE REST OF THE RECEIVED ARRAY, pre-built before frame zero. Keeping
+        # it on the badge is what lets a flaky connection lose the socket after
+        # delivery without stranding half a show; validating every player first
+        # also prevents a malformed later cue from starting a partial show.
+        self._effect_queue = None
         self._effect_started = 0
+        self._effect_stepped_frame = None
+        # RESERVED NOW SO EVERY STOP EDGE HAS ONE TOTAL CLEANUP PATH BEFORE
+        # Live lands. The socket callback will eventually capture an unvalidated
+        # candidate and the frame pump will hold one validated cue; neither may
+        # survive OFF, revocation or a backend rebuild while an older Reliable
+        # effect is correctly restored. Keeping the two RAM-only slots beside the
+        # player makes that lifecycle true before transport code can depend on it.
+        self._live_candidate = None
+        self._live_pending = None
+        # -- THE BROADCAST LANE (2026-08-29) --------------------------------
+        #
+        # VALIDATED ACTIONS WAITING FOR A FRAME. `pushlink` calls the sink from
+        # inside layer 2's drain loop, which is inside a RENDERED FRAME and which
+        # drains up to `FLEET_DRAIN_MAX` WS frames per call -- so applying in the
+        # sink would put four appliers on one frame and hand CX-10's one-chore
+        # budget to whichever arrived first. The sink therefore only ENQUEUES;
+        # `_pump_broadcast_actions` applies exactly one per frame, under the
+        # chore budget, like every other expensive thing this class does.
+        #
+        # RAM-ONLY AND BOUNDED, and both are one argument: a moment queued for
+        # longer than a few frames is a light show that already looks wrong, so
+        # there is nothing here worth surviving a reset and nothing worth a deep
+        # queue. See :data:`BROADCAST_ACTION_MAX`.
+        self._actions = []
+        # ACTION IDS ALREADY ACCEPTED THIS BOOT, newest last, capped at
+        # :data:`ACTION_MEMORY`. THE EXACTLY-ONCE GUARD, and it replaces
+        # `command_ledger`'s -- which was durable because an unacked command was
+        # REDELIVERED across boots. A broadcast is never redelivered, so there is
+        # nothing for a durable ledger to protect against and a flash write per
+        # show would be pure cost. What DOES happen is duplicate ARRIVAL: one
+        # publish can be drained more than once inside one frame, and without
+        # this a single fleet show plays twice on one badge and once on its
+        # neighbour.
+        self._action_ids = []
+        # RECEIPTS WAITING OUT THEIR JITTER: `[due_tick, action_id, result,
+        # tries]`, oldest first. The delay is held HERE rather than in the
+        # transport because `polltransport.queue_errand` has no notion of one and
+        # must not grow one for this: an errand queue that can hold work back is
+        # a queue that can starve the heartbeat.
+        self._receipts = []
+        # Report material for a lane whose entire failure mode is silence.
+        self.actions_applied = 0
+        self.actions_failed = 0
+        self.actions_dropped = 0
+        #: DUPLICATE ARRIVALS CORRECTLY SUPPRESSED -- a HEALTH number, not an
+        #: error one. A shared fleet topic delivers the same publish more than
+        #: once by construction, so a nonzero value here is the de-duplication
+        #: working. It is a counter rather than a line because the ordinary case
+        #: runs up to four times per RENDERED frame; see `_on_broadcast_action`.
+        self.actions_duplicate = 0
+        #: One serial line per boot for the whole broadcast lane, then silence.
+        self._action_anomaly_noted = False
+        self.receipts_queued = 0
+        self.receipts_dropped = 0
         self._backlight = backlight
         # The `badge` object, for the battery gauge `report_state` samples. The
         # caselights callable stays a separate argument because Card PW's
         # fixtures inject it directly and nothing may break that.
         self._badge_api = badge_api
+        #: THE DEFERRED POWER ACTION, or None.  RAM-only and one at a time; see
+        #: `_arm_power_action` for why it may never be durable.
+        self._power = None
+        #: The note painter, injectable so the host suite can gate the ORDER and
+        #: the COPY without a panel.  See `_draw_sleep_note`.
+        self._sleep_note = sleep_note or _draw_sleep_note
         self._boot_session_id = None
-        self._schedule_path = schedule_path
         self._epoch_clock = epoch_clock
-        # DURABLE, unlike the light program: a moment somebody planned has to
-        # survive the reset that a HOME press causes on the way to it.
-        self._schedule = self._load_schedule(schedule_path)
-        self._schedule_checked = None
+        # `schedule_path` remains an accepted no-op argument for old host probes.
+        # The command table and its future-fire contract were deleted in the
+        # rebuild, so reading that file would revive offline catch-up that the
+        # owner explicitly cut. Production never passes this compatibility seam.
+        _ = schedule_path
         self._score_path = score_path
         self._scorebox = None
         self._score_inflight = None
-        # THE FAILURE COUNT IS ONE PAIR, NOT A MAP, and that is a leak fix rather
-        # than a simplification. Only the HEAD of the spool is ever drained, so a
-        # map is never larger than one entry in the healthy case -- but a key
-        # could linger in it forever: the head fails twice, the spool fills, and
-        # `record`'s FIFO compaction drops that very entry, leaving nothing to pop
-        # its counter. One pair cannot leak, because a head change resets it.
-        #
-        # Per BOOT and in RAM either way: see scorebox.MAX_ATTEMPTS for why
-        # persisting it would buy a file write per failure and nothing else.
-        self._score_attempt_key = None
-        self._score_attempts = 0
+        #: WHEN THAT LATCH WAS ARMED, so it cannot outlive the errand it names.
+        #: The latch is set BEFORE the request is handed over and was cleared by
+        #: the response sink alone, so one lost response stopped the drain for
+        #: the whole boot; :data:`SCORE_INFLIGHT_MAX_MS` and the socket check in
+        #: `_release_score_latch` are the two ways it comes back.
+        self._score_inflight_at = None
+        #: WHY THE DRAIN IS NOT DRAINING, latched so the answer is printed on the
+        #: TRANSITION rather than on every rendered frame. ``None`` means "not
+        #: stalled", and every other value is one word from `_pump_scores`'s own
+        #: closed set. See `_score_stalled`.
+        self._score_stall = None
+        #: THE OPERATOR'S LEADERBOARD LEVER (`fleet_settings.scores_enabled`).
+        #: DEFAULTS TO TRUE AND FAILS OPEN for the reason `parse_policy_row`
+        #: argues at length: a badge that has not managed to read the row, or
+        #: read one this firmware could not parse, must behave like a badge at an
+        #: event with the lever ON. It gates the DRAIN only -- `scorebox.record`
+        #: never consults it -- so an operator's switch can delay a wearer's
+        #: score but can never lose it. See `_apply_settings_scores`.
+        self._scores_enabled = True
+        #: WHETHER THE SERVER IS CURRENTLY REFUSING POSTS, latched so the line is
+        #: printed on the transition rather than once per refused round trip. It
+        #: is a BOOLEAN and not a count: nothing is discarded at any number, so
+        #: there is nothing for a counter to decide. It replaced
+        #: `_score_attempt_key`/`_score_attempts`, which existed only to reach
+        #: `scorebox.MAX_ATTEMPTS` and DELETE a wearer's score.
+        #: See `_on_score_posted`.
+        self._score_refused = False
         # A DELIVERED SCORE IS RETIRED ON A LATER FRAME. The sink that hears
-        # "posted" only remembers the key; the whole-file read and the atomic
-        # swap that retiring costs are this service's one expensive sub-task for
-        # some later frame. See `_pump_scores`.
+        # "posted" only remembers the `(game, play_number, score)` triple; the
+        # whole-file read and the atomic swap that retiring costs are this
+        # service's one expensive sub-task for some later frame. See
+        # `_pump_scores`.
         self._score_retire = None
-        self._score_retire_posted = False
+        #: THE WEARER'S NAME AS OF THIS BOOT, reported UP on every heartbeat
+        #: (owner ruling 2026-08-28: the badge owns its name; nobody owns its
+        #: skin). ``False`` means "not read yet" and ``""`` means "read, and there
+        #: is none" -- the two are different because a frame that could not claim
+        #: the budget must WAIT rather than report an unattributed one.
+        #: See `_wearer_name`.
+        self._wearer_name_cached = False
         self._schedule_cache_path = schedule_cache_path
         self._schedule_box = None
         self._schedule_inflight = False
+        #: WHEN THAT LATCH WAS ARMED, so it cannot outlive the errand it names.
+        #: Same defect, same shape and same fix as `_score_inflight_at`; see
+        #: :data:`SCHEDULE_INFLIGHT_MAX_MS` and `_release_schedule_latch`.
+        self._schedule_inflight_at = None
+        #: WHICH REQUEST THE LATCH IS ABOUT, bumped by every release. Once a
+        #: latch can be taken back, two version checks or two page reads can be
+        #: outstanding at once, and a sink that assumed it was the only one would
+        #: let an abandoned page append its rows a SECOND time or abandon a fetch
+        #: it does not belong to. Each sink carries the generation it was queued
+        #: under and drops a response that does not match. See `_on_schedule_page`.
+        self._schedule_gen = 0
         self._schedule_due = None
         self._schedule_version = None
         # THE CACHED VERSION LIVES IN RAM once it has been read, because the
@@ -1213,6 +1992,17 @@ class NetworkService:
         # app exit resets the badge; no timer or Realtime path can re-arm it.
         self._schedule_v2_requested = False
         self._schedule_v2_inflight = False
+        #: WHEN THE SNAPSHOT'S LATCH WAS ARMED. The app parks ONE sink and
+        #: `_on_schedule_v2` sets ``done`` whatever the answer, so a latch that
+        #: outlives its errand costs the wearer the whole refresh for that app
+        #: open with nothing on screen to say so. See `_release_schedule_latch`.
+        self._schedule_v2_inflight_at = None
+        #: WHICH SNAPSHOT REQUEST THE LATCH IS ABOUT, bumped by every release.
+        #: A released request can still answer -- `_safe_close` leaves the errand
+        #: in `polltransport`'s queue -- and the one thing that response must not
+        #: be allowed to do is retire the app's single parked sink on behalf of a
+        #: request the service has already re-offered. See `_on_schedule_v2`.
+        self._schedule_v2_gen = 0
         self._schedule_v2_done = False
         self._schedule_v2_have = None
         self._schedule_v2_sink = None
@@ -1270,30 +2060,45 @@ class NetworkService:
         self._preference_path = preference_path
         self._ledger_path = ledger_path
         self._caselights = caselights or (lambda _level: None)
+        # Badgeware accepts either one shared brightness or four logical case
+        # channels.  Host shims written before spatial shows often accept only
+        # one; latch that discovery so a compatibility TypeError is paid once,
+        # not on every light frame.
+        self._caselights_variadic = None
         self._event_sink = event_sink
         # ONE READ FOR BOTH SWITCHES (CX-10 sub-claim 1). This used to be
         # `load()` then `load_push()`, and each of those calls `load_record`, so
         # the preference file was opened and DECODED TWICE before the launcher's
         # first frame -- two of the constructor's three decodes for one 45-byte
-        # record. The two flags still default the opposite ways (OFF for the
-        # radio, ON for push: see `network_preference`'s module note) and
-        # `enabled_from`/`push_from` keep that asymmetry where it belongs.
+        # record. An ABSENT production record defaults both radio and push ON;
+        # only a PRESENT-BUT-UNUSABLE record splits radio OFF from push ON. The
+        # distinction lives in `enabled_from`/`push_from`, not at this seam.
         preference = network_preference.load_record(preference_path)
         self._enabled = network_preference.enabled_from(preference)
         # DEFAULT ON, with automatic demotion (owner scope addition 2026-08-21).
         self._push_enabled = network_preference.push_from(preference)
         self._push_control = None
         self._policy = None
-        #: WHEN THE STEERING READ IS NEXT DUE, owned HERE and not on the loop
-        #: (CX-8). This object outlives every backend and every `PollLoop` it
-        #: builds, so a wearer toggling networking off and on -- or a backend
-        #: rebuilt after a fault -- cannot restart a 5-minute interval that was
-        #: served thirty seconds ago. `None` means "not phased yet"; the first
-        #: backend build draws the phase and arms the loop through
-        #: `DeviceBackend.set_policy_due`. RAM-only, like the loop's own copy: a
-        #: cadence is not a thing to carry across a reset (nothing durable could
-        #: tell a boot the interval was served, which is exactly CX-8's finding).
-        self._policy_due = None
+        #: WHEN THE FLEET-SETTINGS READ AND THE HEARTBEAT ARE NEXT DUE. Both are
+        #: owned HERE and in exactly one place, which is CX-8's lesson learned
+        #: twice: the steering read used to keep a due time on the `PollLoop` and
+        #: a mirror of it here, and the two disagreed the moment a read FAILED.
+        #:
+        #: `None` MEANS "NOT PHASED YET" AND IS RE-ARMED ON EVERY DISCONNECT, so a
+        #: badge that spent ten minutes off the air comes back owing ONE of each
+        #: rather than ten -- and pays the per-badge phase again, which is what
+        #: keeps ~1,000 badges reconnecting after an AP blip from arriving together.
+        #: RAM-only: a cadence is not a thing to carry across a reset, since
+        #: nothing durable could tell a boot the interval had been served.
+        self._settings_due = None
+        self._heartbeat_due = None
+        #: THE LAST VALUE THIS BADGE ACTED ON, PER LEVER -- the whole of the
+        #: idempotence rule in `_apply_settings`. The settings read is a CATCH-UP
+        #: mechanism, so it re-delivers the same answer every five minutes for the
+        #: length of the event; without this, that is ~96 backlight writes and ~96
+        #: sleeps per badge per day. RAM-only, deliberately: a durable copy would
+        #: survive the reboot that waking IS.
+        self._settings_applied = {}
         self._backend = None
         self._defer_once = self._enabled
         self._revoked = False
@@ -1327,7 +2132,6 @@ class NetworkService:
         self._ledger_retries = 0
         self._ledger_retry_at = None
         self._ledger_diagnosed = False
-        self._pulse_until = None
         self._retry_at = None
         self._failures = 0
         self.last_error = None
@@ -1352,6 +2156,24 @@ class NetworkService:
         #: there too. Every arithmetic on it goes through `_ticks_add`/
         #: `_ticks_diff`, so it is wrap-safe on the device's 30-bit tick.
         self._ticks_ms = ticks_ms or _ticks_ms
+
+    # THE GENERIC OUTBOUND PIPE (`telemetry.py`) WAS DELETED ON 2026-08-29, and
+    # the reason is worth one paragraph because the feature was a good idea.
+    #
+    # It existed so the badge's outbound vocabulary would stop being frozen: a
+    # row was `{kind, payload}`, so the next thing anyone wanted a badge to
+    # report was SQL rather than a firmware change on a gang-cloned image. What
+    # killed it is that its RLS was `badge_id = grants.whoami()` -- the JWT
+    # subject -- which under one shared fleet token names the FLEET and not a
+    # badge, so every row it ever sent was misattributed. The rebuild drops
+    # `public.telemetry` outright, and a pump aimed at a dropped table is not a
+    # dead feature, it is a live one that burns an errand slot every frame and
+    # answers PGRST205 for ever.
+    #
+    # ITS ONE PRODUCER WAS `_report_boot` (a wake-reason row from the
+    # constructor) and its one genuinely valuable piece was the wearer-name
+    # reader, which is HARVESTED rather than deleted: see `_wearer_name` below,
+    # now feeding `POST /rest/v1/badges` instead of a diagnostic row.
 
     @property
     def enabled(self):
@@ -1382,40 +2204,77 @@ class NetworkService:
             return self._enabled
         if enabled == self._enabled:
             return self._enabled
+        if not enabled:
+            # THE DURABLE HALF IS THE `save` ABOVE; everything the radio itself
+            # has to be told is `_go_offline`, which the TRANSIENT
+            # `set_networking` lever reuses without the save.
+            self._go_offline("preference")
+        else:
+            self._clear_cause_latch()
+            self._enabled = enabled
+            self._emit("preference", enabled=enabled)
+            if not self._revoked:
+                # The Settings frame showing CONNECTING must reach the panel
+                # before any DNS/TLS work begins.  The wrapper consumes this one
+                # deferral.
+                self._defer_once = True
+        return self._enabled
+
+    def _go_offline(self, event):
+        """Radio DOWN NOW, with no opinion about flash.  The teardown half.
+
+        EXTRACTED FROM `set_enabled` IN 2026-08-28 AND BYTE-FOR-BYTE THE SAME
+        SEQUENCE, because the fleet-battery lever needs a networking-off that is
+        NOT written to `/state`. `set_enabled` always persists -- boot reads the
+        preference back through `network_preference.load_record` -- and the owner
+        asked for temporary and permanent to be different commands, with
+        temporary the default. Temporary can only mean "never written in the
+        first place": a badge with its radio down is not polling, so a
+        re-enable command can never arrive, and scheduling one for later would be
+        a promise this transport cannot keep.
+
+        ``event`` NAMES THE CAUSE ON THE WIRE-LOG, and the two words mean
+        different things to an operator reading serial: ``preference`` is the
+        durable wearer/admin switch, ``network_suspended`` is the transient one
+        that ends at the next reset. They are deliberately not the same word.
+
+        THE ORDER IS UNCHANGED AND EACH STEP KEEPS ITS ORIGINAL REASON.
+        """
+
+        if not self._enabled:
+            # Already down. Every step below is idempotent, but re-emitting the
+            # event would tell an operator the radio went off twice.
+            return False
         # BEFORE THE FLAG FLIPS, because the flip is what makes the cause
         # unknowable: `push_cause` reads `_enabled` first and answers None from
         # here on, and `poll` stops reaching `_note_push_cause` entirely. This is
         # the last instant the answer exists. See `_latch_cause_at_switch`.
-        if not enabled:
-            self._latch_cause_at_switch()
-        else:
-            self._clear_cause_latch()
-        self._enabled = enabled
-        self._emit("preference", enabled=enabled)
-        if not enabled:
-            self._retry_at = None
-            self._failures = 0
-            self._stop_backend()   # closes the doorbell's socket with it
-            self._caselights(0)
-            self._pulse_until = None
-            # A RUNNING SHOW STOPS WITH THE RADIO. `_pump_effect` runs before the
-            # `_enabled` check in `poll`, so a light program left set here would
-            # keep driving the LEDs after the wearer switched networking off --
-            # the one effect in this module that outlives its own cause.
-            self._lights = None
-            # AND A DELIVERED SCORE IS RETIRED BEFORE THE RADIO GOES, because its
-            # retire is a DEFERRED sub-task and `poll` returns before the drain
-            # once networking is off. Left pending, the row would be reposted on
-            # the next boot -- harmless (the RPC is idempotent) and still wrong.
-            # Not a frame: this is a wearer or probe action, and it is the same
-            # moment that already writes the preference file.
-            self._chore_spent = False
-            self._retire_score()
-        elif not self._revoked:
-            # The Settings frame showing CONNECTING must reach the panel before
-            # any DNS/TLS work begins.  The wrapper consumes this one deferral.
-            self._defer_once = True
-        return self._enabled
+        self._latch_cause_at_switch()
+        self._enabled = False
+        self._emit(event, enabled=False)
+        self._retry_at = None
+        self._failures = 0
+        # RESTORE BEFORE FINAL DARK. A glyph can finish with lit case LEDs;
+        # if OFF darkened first and interrupt restored second, switching the
+        # radio off could turn those LEDs back on. Backend stop repeats this
+        # total helper harmlessly because it is also a standalone stop edge.
+        self._clear_remote_effects()
+        self._stop_backend()   # closes the doorbell's socket with it
+        # A RUNNING SHOW STOPS WITH THE RADIO. `_pump_effect` runs before the
+        # `_enabled` check in `poll`, so a light program left set here would
+        # keep driving the LEDs after the wearer switched networking off --
+        # the one effect in this module that outlives its own cause.
+        self._lights = None
+        self._caselights(0)
+        # AND A DELIVERED SCORE IS RETIRED BEFORE THE RADIO GOES, because its
+        # retire is a DEFERRED sub-task and `poll` returns before the drain
+        # once networking is off. Left pending, the row would be reposted on
+        # the next boot -- harmless (the RPC is idempotent) and still wrong.
+        # Not a frame: this is a wearer or probe action, and it is the same
+        # moment that already writes the preference file.
+        self._chore_spent = False
+        self._retire_score()
+        return True
 
     @property
     def push(self):
@@ -1651,6 +2510,256 @@ class NetworkService:
                 if key in client:
                     out[key] = client[key]
         return out
+
+    def clock_diagnostics(self):
+        """The wall-clock facts for a panel, as :data:`CLOCK_DIAGNOSTIC_KEYS`.
+
+        THE VALUES ALREADY EXISTED; THE PATH TO A READER DID NOT -- the same
+        sentence :meth:`push_diagnostics` was written under, for a worse defect.
+        See :data:`CLOCK_DIAGNOSTIC_KEYS` for the brick this answers: a badge
+        with no plausible clock cannot finish `_build_loop`, so it never gets a
+        doorbell, so the Diagnostics screen draws the SAME "no push details" a
+        badge that has not tried yet draws. That is the one state at the venue
+        an operator cannot fix without knowing about, and the badge's own panel
+        is the only channel there is (no USB, battery, handed out).
+
+        **IT HANGS OFF THE NETWORK CONTROL AND NOT OFF `_PushControl`, AND THAT
+        IS THE WHOLE POINT.** `push_control()` returns `None` on a badge whose
+        `/system/main.py` installed the polling baseline -- and the failure being
+        reported is precisely "there is no doorbell", so a clock accessor
+        reachable only through the doorbell's face would be unreadable in every
+        case it exists for. Settings is handed this service as its NETWORK
+        control, so this method is directly reachable there.
+
+        NEVER `None`, WHICH IS THE OPPOSITE OF :meth:`push_diagnostics`, and the
+        asymmetry is real rather than an inconsistency: a doorbell may genuinely
+        not exist, but a clock always does -- `_epoch()` reads one and gates it
+        whether or not a radio, a backend or a loop was ever built. "This badge
+        cannot tell you" is therefore a statement about the ACCESSOR being
+        absent (a `/system/lib` older than this method), which the caller's own
+        `getattr` guard already answers; it is not a state this can be in.
+
+        A FRESH DICT PER CALL, so like `push_diagnostics` this belongs on a
+        screen a wearer opens and not on a frame path.
+
+        TOTAL, because the only consumer is a Settings draw path where a raise
+        is `fatal_error` -> `machine.reset()`, every frame, for ever. The backend
+        read is duck-typed for the same reason every other backend read here is:
+        fixtures, probes and the kill-test all pass their own stand-ins.
+        """
+
+        # `_epoch()` IS THE GATE THE TRANSPORT ITSELF USES, reused rather than
+        # re-derived, so the panel cannot say "plausible" about a clock the TLS
+        # path is about to refuse. It answers None both for an implausible clock
+        # and for a clock it could not read at all -- the second is a
+        # `time.time()` that raised, which on this hardware is the powman timer
+        # being unreadable, and reporting that as "no usable clock" is true.
+        record = {"plausible": self._epoch() is not None,
+                  "synced": False, "reason": None}
+        backend = self._backend
+        reader = getattr(backend, "clock_snapshot", None)
+        if not callable(reader):
+            # NO BACKEND YET (cold OFF, or before the first radio start) or one
+            # that predates the latch. The clock question is still answered --
+            # `plausible` above needs nothing but the clock -- and the two sync
+            # fields keep their honest defaults: nothing has synced, and there is
+            # no reason on record because nothing has tried.
+            return record
+        try:
+            snapshot = reader()
+        except Exception:  # noqa: BLE001 - a reset is the alternative
+            return record
+        if not isinstance(snapshot, dict):
+            return record
+        record["synced"] = bool(snapshot.get("synced"))
+        reason = snapshot.get("reason")
+        # A STRING OR NOTHING. `clock_boot`'s reasons are its own literals and a
+        # `_error_text` line; anything else is a stand-in, and a formatted repr
+        # on a 308 px band is the `TURN...` defect in a different coat.
+        record["reason"] = reason if isinstance(reason, str) and reason else None
+        return record
+
+    def wifi_diagnostics(self):
+        """The radio's own facts, as :data:`WIFI_DIAGNOSTIC_KEYS`.
+
+        THE VALUES ALREADY EXISTED; THE PATH TO A READER DID NOT -- the third
+        time this module has been written under that sentence, and this is the
+        layer the other two sat on top of. See :data:`WIFI_DIAGNOSTIC_KEYS` for
+        the incident: a badge that would not join Wi-Fi, on a cable, with root
+        access and a maintainer reading its serial output, and it was STILL
+        impossible to tell a wrong password from an out-of-range AP from a radio
+        fault. It printed one line and went silent into backoff.
+
+        NEVER ``None``, for :meth:`clock_diagnostics`' reason: a doorbell may
+        genuinely not exist, but a radio always does. "This badge cannot tell
+        you" is a statement about the ACCESSOR being absent -- an older
+        `/system/lib` -- which the caller's own `getattr` already answers.
+
+        **`online` DEFAULTS TO ``False``, WHICH IS THE OPPOSITE OF EVERY OTHER
+        RADIO READ IN THIS MODULE.** See :meth:`_radio_online_for_display`; the
+        asymmetry is the whole point rather than an oversight.
+
+        `connected_ms` IS A `ticks_ms` STAMP AND NEVER A DURATION -- it is
+        assigned `now` on the transition to ONLINE and cleared by `_fail`. The
+        conversion happens HERE and not in `resilient_wifi` because this object
+        owns the frame's clock (`self._now`, taken at the top of `poll`) and the
+        pure view model that draws the line owns no clock at all.
+
+        PAGE-SCOPED AND CHEAP ON PURPOSE. One dict plus six field reads and NO
+        native call, because the Settings seam rebuilds its view every frame and
+        the two Network pages that read this are the pages an operator leaves up
+        while a badge retries.
+        """
+
+        record = {"radio": None, "reason": None, "attempts": None,
+                  "failures": None, "online": False, "connected_s": None,
+                  "region": None}
+        backend = self._backend
+        if backend is None:
+            # NO BACKEND: cold OFF, or a boot before the first radio start, or a
+            # `CredentialError` out of the factory. **THIS IS EXACTLY THE STATE
+            # `state` REPORTS AS CONNECTING** (it does that whenever `_backend`
+            # is None), and being able to tell it apart is the whole reason this
+            # accessor exists: `online` stays False, so the panel says the radio
+            # has not joined instead of claiming a server connection is in
+            # progress.
+            return record
+        snapshot = _call_dict(backend, "wifi_snapshot")
+        if snapshot is not None:
+            record["radio"] = _text(snapshot.get("state"))
+            # RAW, AND NEVER TRANSLATED INTO A VERDICT. `status_-3` reaches the
+            # screen as `status_-3`. A negative CYW43 status was recorded
+            # SPURIOUSLY on correct credentials
+            # (`benchmark/results/reports/2026-08-13-v3.0.1-network-authenticated.md`),
+            # and that report rules it "a retry signal and diagnostic fact, not
+            # a safe basis for a permanent user-facing" claim.
+            record["reason"] = _text(snapshot.get("reason"))
+            for key in ("attempts", "failures"):
+                record[key] = _whole(snapshot.get(key))
+            held = snapshot.get("connected_ms")
+            if isinstance(held, int) and not isinstance(held, bool):
+                span = _ticks_diff(self._now, held)
+                # A NEGATIVE SPAN IS FLOORED AT ZERO RATHER THAN DROPPED: the
+                # stamp is taken inside `backend.poll` and `self._now` is the
+                # tick from the TOP of the same frame, so an association that
+                # landed this frame legitimately reads a few ticks in the
+                # future. "0 s" is true; `?` would say the badge cannot tell.
+                record["connected_s"] = span // 1000 if span > 0 else 0
+        record["online"] = self._radio_online_for_display()
+        record["region"] = _text(_call(backend, "wifi_region"))
+        return record
+
+    def link_diagnostics(self):
+        """The path to the server, as :data:`LINK_DIAGNOSTIC_KEYS`.
+
+        NEVER ``None``, for :meth:`wifi_diagnostics`' reason, and `service_error`
+        is filled in ABOVE the backend check on purpose: the fault this key
+        exists for is the one where there IS no backend. A malformed BadgeLink
+        value raises `CredentialError` out of `credentials.load` inside
+        `DeviceBackend.__init__`, the factory's containment handler puts the
+        exact sentence in :attr:`last_error`, `_backend` stays None and
+        `_retry_at` is set -- so `state` answers BACKOFF, the panel folds that
+        onto "Can't reach the server", and the sentence naming the actual field
+        sits in memory with no reader. Returning early before copying it would
+        reproduce that defect inside its own fix.
+
+        **NOT `PollLoop.snapshot()` AND NOT `NetworkService.snapshot()`.** The
+        first builds ~35 keys; the second reaches the FILESYSTEM through
+        `_score_pending` and `_cached_schedule_version`. Neither belongs on a
+        path that runs once per rendered frame. `link_counts` reads the six
+        individual attributes instead.
+
+        PAGE-SCOPED: this is the cost of Network pages 3-4 and of no other
+        frame, which is what makes the resolver's `ifconfig()` affordable at
+        all.
+        """
+
+        record = {"transport": None, "opens": None, "open_failures": None,
+                  "outcome": None, "dns_ms": None, "connect_ms": None,
+                  "stall_ms": None, "resolver": None, "lookups": None,
+                  "lookup_failures": None, "service_error": None,
+                  "link_error": None}
+        # TWO ERROR KEYS, TWO LINES, NEVER MERGED. `service_error` is a fault in
+        # what this badge was PROVISIONED with; `link_error` is a fault in what
+        # the network did. They are different repairs by different people, and a
+        # single "last error" line would send an operator to the wrong one.
+        record["service_error"] = _text(self.last_error)
+        backend = self._backend
+        if backend is None:
+            return record
+        counts = _call_dict(backend, "link_counts")
+        if counts is not None:
+            # THE RAW TRANSPORT LITERAL, before the fold that maps both
+            # `disconnected` and `backoff` onto one unreachable line. That fold
+            # is why "Can't reach the server" cannot today distinguish no-Wi-Fi
+            # from no-Supabase.
+            record["transport"] = _text(counts.get("state"))
+            record["opens"] = _whole(counts.get("opens"))
+            record["open_failures"] = _whole(counts.get("open_failures"))
+            record["link_error"] = _text(counts.get("last_error"))
+            phases = counts.get("phases")
+            if isinstance(phases, dict):
+                record["outcome"] = _text(phases.get("outcome"))
+                # THE ONE SPLIT THAT SEPARATES A DEAD RESOLVER FROM A DEAD TLS
+                # PEER NUMERICALLY. `connect_ms` is TCP+TLS together on this
+                # client; the handshake is not splittable at that seam
+                # (`VAL-031-BLT`), so no third number is invented here.
+                record["dns_ms"] = _whole(phases.get("dns_ms"))
+                record["connect_ms"] = _whole(phases.get("connect_ms"))
+                record["stall_ms"] = _whole(phases.get("open_stall_ms"))
+        dns = _call_dict(backend, "resolver_snapshot")
+        if dns is not None:
+            # `None` HERE IS THE GREY ZONE NAMED, not a missing reading: DHCP
+            # offered no option 6 and the gateway is unusable, which is the
+            # exact condition `bounded_dns` was written for and the one that
+            # used to present as a badge sitting there for 13-14 s per lookup.
+            record["resolver"] = _text(dns.get("server"))
+            record["lookups"] = _whole(dns.get("queries"))
+            record["lookup_failures"] = _whole(dns.get("failures"))
+        return record
+
+    def identity(self):
+        """Who this badge is, as :data:`IDENTITY_KEYS`.
+
+        NEVER ``None``: `uid`, `boot` and `build` need no backend, no radio and
+        no loop, so the badge that can answer least still answers these. Every
+        one of them is posted to the server on every heartbeat and none of them
+        could be read off the badge in the hand -- the wrong way round for the
+        one day when the server is what nobody can reach.
+
+        ⚠ `uid` IS `hardware_uid()` AND NOT THE CREDENTIAL'S SUBJECT. On the
+        shared-token fleet every badge ships a byte-identical `/secrets.py`, so
+        the subject is the same 16-hex value on all ~1,000 and names the FLEET.
+        `token` is what makes the subject useful anyway -- `fleet` or
+        `per_badge` answers the S0.8 rollout question that nothing on the wire
+        could answer before.
+
+        `_boot_session()` GENERATES ONCE AND CACHES, so calling it here is
+        idempotent and costs one `os.urandom(16)` on the first draw of Diag
+        page 4 at worst; the heartbeat generates it anyway.
+
+        PAGE-SCOPED: Diagnostics page 4 alone calls this, which is what makes
+        `_firmware_version`'s `os.uname()` affordable.
+        """
+
+        record = {"uid": None, "token": None, "boot": None, "build": None,
+                  "fault": None}
+        record["uid"] = _text(hardware_uid())
+        backend = self._backend
+        if backend is not None:
+            # THE SUBJECT IS FETCHED AND IMMEDIATELY REDUCED TO A TIER WORD. It
+            # is not secret -- see :data:`SHARED_SUB` -- but it is a
+            # server-shaped string, and no server-shaped string may reach a line
+            # a screen draws from a pre-baked 95-glyph set.
+            record["token"] = _text(credential_tier(_call(backend, "badge_id")))
+            # NOT THROUGH `_call`: this is a plain ATTRIBUTE with a class
+            # default of None, so a probe-built instance answers "no fault"
+            # rather than raising, and there is no method to be older than.
+            record["fault"] = _text(getattr(backend, "provisioning_fault", None))
+        boot = _text(self._boot_session())
+        record["boot"] = boot[:8] if boot is not None else None
+        record["build"] = _text(self._firmware_version())
+        return record
 
     def _note_push_cause(self):
         """Emit the cause ON CHANGE, and never more than that.
@@ -2021,6 +3130,22 @@ class NetworkService:
         # transport. A frame that returns early below has performed no connect,
         # which is what `False` says.
         self._connect_frame = False
+        # THE ARRIVED MOMENT COMES FIRST, above every early return below: a broadcast is
+        # the ONLY delivery path the badge has left, so a pump placed behind the
+        # `_enabled`/`_revoked`/backoff returns would make a fleet light show
+        # depend on the state of an HTTP transport it no longer travels over.
+        # The action is already in RAM; applying it needs no socket at all.
+        #
+        # AHEAD OF `_pump_effect`, which is what lets a freshly installed player
+        # take its frame-zero write here and be SKIPPED by the steady pump below
+        # using the installed-object marker below. There is no durable action
+        # hold now: offline badges deliberately miss broadcast moments.
+        self._pump_broadcast_actions(now)
+        # STEADY ANIMATION IS NOT A CHORE. These three bounded slots must advance
+        # even when the broadcast above, or the ledger below, spent the frame's
+        # flash/network budget. A broadcast applier already emitted its explicit
+        # frame-zero write, so the installed-object marker skips only that
+        # same-poll duplicate; the predecessor cannot write one last stale frame.
         self._pump_effect(now)
         # THE DURABLE ACK'S RETRY RUNS IN EVERY STATE, ABOVE EVERY EARLY RETURN
         # (CX-7, corrected 2026-08-23). It used to sit ~80 lines below, behind the
@@ -2053,6 +3178,24 @@ class NetworkService:
         except Exception as exc:
             self.last_error = _error_text(exc)
             self._emit("ledger_contained", error=self.last_error)
+        # THE DEFERRED POWER ACTION, ABOVE EVERY EARLY RETURN AND OUTSIDE EVERY
+        # TRY, for three separate reasons and each one is load-bearing:
+        #
+        # * ABOVE `_enabled`, because the transient networking-off sets that flag
+        #   False as its own effect, and a pump below the check would be
+        #   unreachable from the frame after it fired -- and because the ABANDON
+        #   path must still run on a badge whose radio the wearer just switched
+        #   off, or the latch would outlive its own deadline for the boot.
+        # * ABOVE `_defer_once` and `_retry_at`, so a badge in backoff still
+        #   reaches its deadline and abandons rather than holding a pending sleep
+        #   for the rest of the session.
+        # * OUTSIDE THE TRY, because the browser's `MachineResetRequested` is how
+        #   a modelled sleep ends the session and `poll`'s handler would swallow
+        #   it into `contained` -- turning a working sleep into a transport
+        #   fault. `_pump_power_action` contains everything else itself.
+        #
+        # It costs one `is None` on every ordinary frame.
+        self._pump_power_action(now)
         if not self._enabled:
             return self.state
         if self._revoked and not self._revoked_reprobe_due(now):
@@ -2105,12 +3248,12 @@ class NetworkService:
                 setter = getattr(self._backend, "set_policy_sink", None)
                 if callable(setter):
                     setter(self._on_policy)
-                # THE STEERING READ'S PHASE, ARMED BEFORE THE FIRST OPEN (CX-8).
-                # Duck-typed exactly like the sink above, so a backend shape that
-                # predates the seam keeps the old session-start behaviour. Armed
-                # here rather than in `__init__` because a badge whose networking
-                # is OFF should not be holding a cadence phase at all.
-                self._arm_policy_phase(now)
+                # NOTHING ARMS A CADENCE PHASE HERE ANY MORE (rebuild,
+                # 2026-08-29). The steering read's phase was pushed DOWN into the
+                # loop from this line until today, which is what made two objects
+                # own one cadence; `_pump_fleet_settings` and `_pump_heartbeat`
+                # phase themselves on the first frame they see a socket, which is
+                # also the frame a badge whose networking is OFF never reaches.
                 self._backend.start(now)
                 self._backend.set_active(self._active)
             if self._nb_connect_enabled:
@@ -2147,11 +3290,6 @@ class NetworkService:
                     exit_frame = self._exit_frame and not self._at_launcher
                     gate(not self._chore_spent and not exit_frame)
             self._backend.poll(now)
-            # MIRROR THE LOOP'S STEERING DUE (CX-8, corrected 2026-08-23). The
-            # loop advanced it if it issued a request or heard steering in the
-            # call above, and this object is the only one that survives the loop
-            # being rebuilt -- so it carries the answer and never invents one.
-            self._mirror_policy_due()
             # PollLoop marks itself active when a command arrives.  The app
             # foreground is the lasting authority; pending acks remain urgent
             # because queue_ack already pulled their deadline to "now".
@@ -2159,6 +3297,12 @@ class NetworkService:
             self._failures = 0
             if getattr(self._backend, "state", None) == REVOKED:
                 self._revoked = True
+                # AUTHORITY LOSS ENDS THE REMOTE MOMENT NOW. The frame pump sits
+                # above the revoked early return, so merely latching the state
+                # would let a 300-second player keep writing for five minutes.
+                # Restore before releasing transport state; this helper also
+                # clears any cue captured just before the refusal arrived.
+                self._clear_remote_effects()
                 # `source=service` NAMES THIS EMITTER, and it is the reason the
                 # field exists (2026-08-24). This line and the loop's own
                 # `revoked` land in the SAME FRAME, 20 ms apart on the device, and
@@ -2242,6 +3386,27 @@ class NetworkService:
             # the chore first, so a frame that writes the ledger does not also
             # retire a score or sync the schedule); what it shed is a barrier that
             # made it unreachable while networking was off.
+            # THE RECEIPT GOES FIRST OF THE THREE, AND IT COSTS THEM NOTHING.
+            # It claims NO chore (a dict and a queue hand-off -- no file, no
+            # parse, no crypto), so unlike the two below it cannot take the
+            # frame's expensive slot away from them; going first only means the
+            # oldest due write-back gets the errand slot before a score does.
+            # That ordering is deliberate: a score is durable on flash and drains
+            # whenever it likes, while a receipt is RAM-only and describes a
+            # moment that has already happened, so the score can wait and the
+            # receipt cannot.
+            #
+            # UNDER THE SAME BARRIER AS THE OTHER TWO, unlike the APPLIER at the
+            # top of `poll`. Applying is local work that must never wait on a
+            # transport; POSTING is a request, and a request stacked onto the
+            # frame a parked open just advanced is the whole-frame overrun this
+            # barrier exists to prevent. Being late here costs a row in an audit
+            # table a few frames of latency and nothing else.
+            try:
+                self._pump_receipts(now)
+            except Exception as exc:
+                self.last_error = _error_text(exc)
+                self._emit("receipt_contained", error=self.last_error)
             try:
                 self._pump_scores()
             except Exception as exc:
@@ -2252,6 +3417,31 @@ class NetworkService:
             except Exception as exc:
                 self.last_error = _error_text(exc)
                 self._emit("schedule_v2_contained", error=self.last_error)
+            # THE TWO PERIODIC REST ERRANDS, AFTER BOTH OF THE ABOVE AND FOR THE
+            # REASON THE ORDER ABOVE ALREADY GIVES. A score is a wearer's
+            # achievement and a schedule is what they came to read; the heartbeat
+            # and the settings read are what an OPERATOR wants, on cadences of a
+            # minute and five minutes, so a frame either of the first two claimed
+            # costs them nothing they can measure. Both are inside the
+            # continuation barrier for the same reason everything here is: a frame
+            # that just decoded a response, or just advanced a parked open, has
+            # already spent itself.
+            #
+            # THE HEARTBEAT FIRST, because it fires five times as often and
+            # because it is also the SELF-REGISTRATION -- a badge with no row on
+            # the server is a badge an operator cannot see at all, which is worse
+            # than a lever that is five minutes stale. Contained separately from
+            # each other so neither can be the reason the other is skipped.
+            try:
+                self._pump_heartbeat(now)
+            except Exception as exc:
+                self.last_error = _error_text(exc)
+                self._emit("heartbeat_contained", error=self.last_error)
+            try:
+                self._pump_fleet_settings(now)
+            except Exception as exc:
+                self.last_error = _error_text(exc)
+                self._emit("settings_contained", error=self.last_error)
         if self._nb_connect_enabled and self._force_open_reset_pending():
             # A force `open_app` applied in `backend.poll` above will `_reset()`
             # in `launch_result` the instant this poll returns (spec §5.3(e)).
@@ -2317,8 +3507,21 @@ class NetworkService:
             # probe reads to learn that `/state` is unwritable.
             "ledger_dirty": self._ledger_dirty,
             "ledger_save_failures": self.ledger_save_failures,
-            "scheduled": len(self._schedule.get("held", ())),
             "scores_pending": self._score_pending(),
+            # WHY THAT NUMBER IS NOT FALLING, for a reader who was not tethered
+            # at the moment it stopped. `score_stalled` is emitted on the
+            # TRANSITION, so an operator who attaches serial afterwards sees
+            # nothing at all; these two are the pull-based form of the same
+            # answer and cost a RAM read each.
+            "scores_enabled": self._scores_enabled,
+            "scores_stalled": self._score_stall,
+            # THE BROADCAST LANE'S QUANTITIES. `actions_duplicate` is the
+            # one an operator reads as HEALTHY: it means the shared topic
+            # delivered a publish twice and this badge played it once.
+            "actions_applied": self.actions_applied,
+            "actions_failed": self.actions_failed,
+            "actions_dropped": self.actions_dropped,
+            "actions_duplicate": self.actions_duplicate,
             "schedule_version": self._cached_schedule_version(),
             # The doorbell pump's session cost, for a probe. The exchange and
             # handshake numbers live on the PollLoop's own snapshot, because that
@@ -2447,6 +3650,27 @@ class NetworkService:
             if callable(wire_unreachable):
                 try:
                     wire_unreachable(self._note_push_unreachable)
+                except Exception as exc:
+                    self.last_error = _error_text(exc)
+                    self._emit("push_contained", error=self.last_error)
+            # THE ACTION SINK, WIRED IN THE SAME FRAME AND FOR STRONGER REASONS
+            # THAN THE ONE ABOVE. The doorbell is the badge's ONLY path for a
+            # remote moment now, so a service whose sink is never wired is a
+            # badge that validates every broadcast correctly and then does
+            # nothing with any of them -- silent, and identical on serial to a
+            # venue nobody published to. It must be in place before the first
+            # session can deliver, which is why it is here rather than per frame.
+            #
+            # Duck-typed for the partial-install lesson `ws_connect`'s `trace=`
+            # guard paid for on a bench: a badge whose `pushlink.mpy` predates
+            # this seam keeps its doorbell instead of losing it to a TypeError.
+            # ⚠ That badge cannot play a fleet effect at all -- `actions_dropped`
+            # on the OTHER side of the seam is the only symptom, so read the
+            # snapshot rather than the serial line that is not there.
+            wire_action = getattr(self._push, "set_action_sink", None)
+            if callable(wire_action):
+                try:
+                    wire_action(self._on_broadcast_action)
                 except Exception as exc:
                     self.last_error = _error_text(exc)
                     self._emit("push_contained", error=self.last_error)
@@ -2800,6 +4024,34 @@ class NetworkService:
             # is the pre-Lane-H behaviour.
             return True
 
+    def _radio_online_for_display(self):
+        """Is the radio ONLINE?  ``False`` when nothing here can say.
+
+        ⚠ **THE DEFAULT IS THE EXACT OPPOSITE OF :meth:`_radio_online`'S, AND
+        THE ASYMMETRY IS THE POINT RATHER THAN AN INCONSISTENCY.** That method
+        fails OPEN because it GATES A CONNECT, where a wrong deny is a badge
+        that never networks at all. This one feeds a SENTENCE, and a wrong
+        "online" is the precise lie the Network screen exists to end: a badge
+        that has never touched its radio drawing "Connecting to the server"
+        while it hunts for an access point it will never find. A gate and a
+        diagnostic want opposite defaults, so they are two methods rather than
+        one with a flag -- a flag is a thing a future caller passes wrongly.
+
+        Identical in every other respect: duck-typed for the fixtures and the
+        browser lane, contained because a raise on a draw path is
+        `machine.reset()`, and reading the same `_was_online` the
+        `wifi_lost`/`wifi_online` edges are emitted from, so the panel and the
+        edge can never disagree.
+        """
+
+        asker = getattr(self._backend, "wifi_online", None)
+        if not callable(asker):
+            return False
+        try:
+            return bool(asker())
+        except Exception:  # noqa: BLE001 - a reset is the alternative
+            return False
+
     def _backend_connect_attempts(self):
         """How many opens the poll transport has ATTEMPTED, or ``None``.
 
@@ -2939,6 +4191,34 @@ class NetworkService:
         self._pending_moment = None
 
     def _stop_backend(self):
+        # A backend rebuild invalidates every transient remote intent even when
+        # the caller did not come through Settings. Total cleanup restores the
+        # two physical channels before sockets and their callbacks disappear.
+        self._clear_remote_effects()
+        # AND THE SCORE DRAIN'S LATCH GOES WITH THE SINK IT NAMES. `_pump_scores`
+        # releases it whenever the transport is not CONNECTED, which covers every
+        # ordinary outage -- but a stop followed by a rebuild can put a FRESH
+        # backend in place inside one frame, and a drain that only ever asks
+        # `state == CONNECTED` would never see the gap. The sink is a callback on
+        # a queue that is about to be garbage: it can no longer fire at all, so
+        # the entry stays spooled and the next connect re-offers it. Nothing is
+        # retired here for the same reason nothing is counted: the row's fate is
+        # unknown, and the natural key `(badge_id, game, play_number, score)`
+        # makes asking again free (`on conflict do nothing`).
+        self._score_inflight = None
+        self._score_inflight_at = None
+        # AND SO DO THE TWO SCHEDULE LATCHES, for word for word the reason above.
+        # A rebuilt loop takes its errand queue and every parked sink to the
+        # collector with it, so these responses cannot arrive however long the
+        # pumps wait -- and the rebuild can install a fresh CONNECTED backend
+        # inside the SAME frame, which is precisely the gap a pump that only ever
+        # asked `state == CONNECTED` would never see. Nothing is consumed on the
+        # way out: no attempt is counted, no `done` is set and the app's parked
+        # sink is left where it is, so the next connect simply asks again.
+        if self._schedule_v2_inflight:
+            self._release_schedule_v2("backend_stopped")
+        if self._schedule_inflight:
+            self._release_schedule_sync("backend_stopped")
         # The doorbell is wired to THIS loop; a new backend gets a new one.
         self._stop_push("backend_stopped")
         backend = self._backend
@@ -2949,6 +4229,391 @@ class NetworkService:
             except Exception as exc:
                 self.last_error = _error_text(exc)
         gc.collect()
+
+    # -- the broadcast lane (2026-08-29) -----------------------------------
+    #
+    # MOMENTS ARE BROADCAST, STATES ARE POLLED, AND THERE IS NO COMMAND QUEUE.
+    # `pushlink` validates an envelope on the shared `event:doorbell` topic and
+    # hands the action here; this is where the badge ACTS on it, and then says
+    # so. Three methods and each owns exactly one of the three things that used
+    # to be tangled together in `_on_command`:
+    #
+    #   `_on_broadcast_action`   accept-or-refuse, on the WS drain's frame
+    #   `_pump_broadcast_actions` apply exactly one, under the chore budget
+    #   `_pump_receipts`          post the write-back, after its jitter
+    #
+    # THE SPLIT IS THE FRAME, and it is not tidiness. `pushlink` calls the sink
+    # from inside layer 2's drain loop, which drains up to four WS frames per
+    # RENDERED frame, so a sink that applied would put up to four appliers --
+    # each of which may light both channels and one of which may launch an app --
+    # on a single frame, and the first of them would take CX-10's one chore and
+    # leave the rest unbudgeted. The sink therefore does nothing expensive at
+    # all: a membership test, a bounds check, an append.
+    #
+    # AND THE RECEIPT IS SPLIT OFF FOR THE OPPOSITE REASON. It must not be able
+    # to affect whether the show played, so it cannot share a failure path with
+    # the applier: the action is applied and counted first, the receipt is armed
+    # afterwards, and every way the receipt can fail (a full errand queue, no
+    # backend, a refused POST) is swallowed and counted here.
+
+    def _on_broadcast_action(self, action_id, action_type, payload,
+                             receipt_delay_ms):
+        """Take one validated broadcast action, or refuse it.  Never raises.
+
+        THE SINK `pushlink.set_action_sink` CALLS, and its whole contract is
+        "cheap and total". It runs inside a rendered frame, inside layer 2's
+        drain loop, in a module that has already contained it once -- so the
+        containment here is the second of two, not the first, and it exists
+        because the counters below have to be right even when something above
+        them is not.
+
+        RETURNS TRUE WHEN THE BADGE OWNS THIS ACTION -- including when it owns it
+        because it has ALREADY seen it. A duplicate is not a loss and must not be
+        counted as one: `pushlink.actions_dropped` is the diagnostic for "the
+        badge understood a broadcast and nothing happened", and folding correct
+        de-duplication into it would make the one number that finds a dead
+        light-show lane read nonzero on a healthy badge.
+        """
+
+        try:
+            if not isinstance(action_id, str) or not action_id:
+                return False
+            if action_id in self._action_ids:
+                # DUPLICATE ARRIVAL, WHICH IS ORDINARY. One publish can be
+                # drained more than once inside one frame; without this the show
+                # plays twice on this badge and once on its neighbour, which is
+                # the failure `command_ledger`'s RAM half used to prevent for the
+                # poll. See `ACTION_MEMORY` for why the RAM half is all that is
+                # needed now.
+                #
+                # *** COUNTED, NOT EMITTED, AND THIS ONE IS MEASURED. *** It
+                # emitted until 2026-08-29 and that was a real per-frame cost on
+                # the RENDERED path: layer 2 drains up to `FLEET_DRAIN_MAX` (4)
+                # frames per rendered frame, `_emit` allocates a dict and
+                # `_print_event` formats a string, and a probe over identical
+                # frame counts measured an idle frame at ~55 B of net heap
+                # against ~1,028 B when four duplicates arrived -- 19x, sustained,
+                # on the frame that paints the UI, on a runtime where the GC pause
+                # IS the freeze. The event NAME also still printed, and a blocked
+                # `print` on this hardware is ~1,000 ms, so the ordinary case was
+                # also the fastest way in the firmware to burn the serial mute
+                # budget and blind a tethered operator mid-show.
+                #
+                # THE RULE IS THE ONE THE OVERFLOW BRANCH BELOW ALREADY QUOTES
+                # and `pushlink`'s no-sink branch already follows: the event name
+                # is the line, the snapshot is the quantity. `_note_first_action_
+                # anomaly` keeps ONE line per boot for diagnosis, which is the
+                # `link_unaddressed` shape -- enough to find it, bounded enough
+                # to be free.
+                self.actions_duplicate += 1
+                self._note_first_action_anomaly("action_duplicate", action_type)
+                return True
+            if len(self._actions) >= BROADCAST_ACTION_MAX:
+                # THE NEWEST IS THE ONE DROPPED. Everything already queued is
+                # closer to the moment it describes, and a moment applied late is
+                # worse than a moment not applied -- the same ruling that makes
+                # catch-up a BUG for moments and free for states.
+                self.actions_dropped += 1
+                # THE EVENT NAME IS THE LINE, THE SNAPSHOT IS THE QUANTITY --
+                # the rule `doorbells_filtered` already follows. A `queued=`
+                # field here would be a new printed field for a number
+                # `actions_dropped` already carries. Same one-shot treatment as
+                # the duplicate above: a publisher storming a full queue would
+                # otherwise repeat this line on every rendered frame.
+                self._note_first_action_anomaly("action_overflow", action_type)
+                return False
+            self._action_ids.append(action_id)
+            if len(self._action_ids) > ACTION_MEMORY:
+                del self._action_ids[0]
+            self._actions.append((action_id, action_type, payload,
+                                  receipt_delay_ms))
+            return True
+        except Exception as exc:
+            # A sink that raises into layer 2 would cost this badge the socket
+            # every later action arrives on.
+            self.last_error = _error_text(exc)
+            self._emit("action_contained", error=self.last_error)
+            return False
+
+    def _note_first_action_anomaly(self, event, action_type):
+        """Emit ONE broadcast-lane anomaly line per boot, then never again.
+
+        THE SHAPE IS `link_unaddressed`'s, and the reason is the same: the fact
+        that it happened AT ALL is worth a serial line, and the number of times
+        it happened is worth a counter, and confusing the two puts an allocation
+        and a `print` on a rendered frame in the ordinary case.
+
+        One line for the whole lane rather than one per event name, because both
+        callers mean the same thing to an operator -- "broadcasts are arriving
+        that this badge did not turn into a show" -- and the counters
+        (`actions_duplicate`, `actions_dropped`) say which and how many. Total:
+        a failure to say so may not cost the action that provoked it.
+        """
+
+        if self._action_anomaly_noted:
+            return
+        self._action_anomaly_noted = True
+        try:
+            self._emit(event, verb=action_type)
+        except Exception as exc:
+            self.last_error = _error_text(exc)
+
+    def _pump_broadcast_actions(self, now):
+        """Apply at most ONE queued broadcast action.  Never raises.
+
+        ONE PER FRAME AND IT SPENDS THE CHORE, which is what makes this safe to
+        call from the frame path at all: `_apply` reaches appliers that light
+        both channels, write `/state`, and in `open_app`'s case launch an app.
+
+        IT DISPATCHES THROUGH `_apply` UNCHANGED, and that is the acceptance
+        requirement rather than a convenience. The frozen `effect_library` runs
+        exactly as it does today because the code that reaches it is exactly the
+        code that reached it before -- same ladder, same appliers, same payload
+        contract, same raise-is-a-failure rule. Only the DELIVERY changed.
+
+        THERE IS NO LATE-JOIN PHASE. A broadcast arrives when it arrives, within
+        one fan-out window of every other connected badge; offline badges miss
+        it. Reintroducing phase correction here would also reintroduce the
+        scheduling/catch-up model the owner deleted.
+
+        AN UNKNOWN VERB IS A RAISE FROM `_apply`'s terminal clause, which lands
+        in the same place a bad payload does: counted, emitted, receipted as
+        failed, and never rendered. That is the "logged and dropped" rule, and it
+        is one branch rather than two on purpose -- a firmware that half-knows a
+        verb is the thing that renders something nobody chose.
+        """
+
+        if not self._actions:
+            return False
+        if not self._claim_chore():
+            return False
+        action_id, action_type, payload, receipt_delay_ms = self._actions.pop(0)
+        # THIS FRAME DID CORRECTNESS WORK. `_service_push` runs later in the same
+        # `poll` and reads this barrier before admitting a WSS establishment, so
+        # a TLS/Upgrade step cannot stack onto the frame that just lit the panel.
+        # The same reason `_on_command` raised it, at the same point in the frame.
+        self._response_continuation = True
+        # REAL APPLIERS WRITE FRAME ZERO IMMEDIATELY, and `_pump_effect` runs
+        # after this in the same `poll`. Remember only a NEWLY installed object so
+        # the steady pump does not step it a second time in this rendered frame;
+        # this marker is the only same-frame arbitration the broadcast needs.
+        lights_before = self._lights
+        effect_before = self._effect
+        power_before = self._power
+        try:
+            # THE APPLIER'S RICH RESULT IS DISCARDED, and that is a real loss
+            # worth naming: `_apply_play_effect` answers a whole-show diagnostic
+            # result, while the receipt column is text (see RECEIPT_OK), so it
+            # cannot carry it. What replaced it is better for the question an
+            # operator actually asks during a show -- "who played it?" -- and the
+            # detail is still on serial in `action_applied`.
+            self._apply({"type": action_type, "payload": payload})
+        except Exception as exc:
+            self.actions_failed += 1
+            self.last_error = _error_text(exc)
+            self._emit("action_failed", verb=action_type,
+                       error=self.last_error)
+            # THE WORD, NOT THE EXCEPTION TEXT. The console's column is text and
+            # its refusal vocabulary is a fixed set; an error string would be
+            # counted as a SUCCESS there ("an unrecognised string is shown
+            # verbatim and counted as an answer"). The detail is already on
+            # serial, in the `action_failed` event above, where an operator
+            # debugging one badge can read it.
+            result = RECEIPT_FAILED
+        else:
+            self.actions_applied += 1
+            self._emit("action_applied", verb=action_type)
+            result = RECEIPT_OK
+        if self._lights is not None and self._lights is not lights_before:
+            self._lights_stepped_frame = self._lights
+        if self._effect is not None and self._effect is not effect_before:
+            self._effect_stepped_frame = self._effect
+        # ARMED AFTER THE APPLIER, OUTSIDE ITS TRY, AND TOTAL. Ordinary shows
+        # have already played and cannot be vetoed. A power applier has only
+        # armed its latch; its own terminal receipt attempt delays teardown but
+        # never decides whether teardown ultimately happens.
+        receipt_armed = self._arm_receipt(
+            now, action_id, result, receipt_delay_ms)
+        if result == RECEIPT_OK and self._power is not power_before:
+            # Sleep/radio-off destroy the very channel this row needs. Bind only
+            # the power latch created by THIS action; a later ordinary broadcast
+            # must never claim an older pending latch's receipt by accident.
+            self._bind_power_receipt(now, action_id, receipt_armed)
+        return True
+
+    def _arm_receipt(self, now, action_id, result, receipt_delay_ms):
+        """Hold one receipt for its jitter. Never raises or vetoes an action.
+
+        THE DELAY COMES FROM THE LINK, NOT FROM HERE. `pushlink.ring_delay_ms`
+        draws it PER RING inside the 0-5 s window and hands it over; re-drawing
+        it in this file would be two objects with two opinions about one number,
+        which is CX-8 exactly. :data:`RECEIPT_JITTER_MAX_MS` is only the clamp
+        for a link that hands over something unusable.
+        """
+
+        try:
+            delay = int(receipt_delay_ms)
+        except Exception:
+            delay = RECEIPT_JITTER_MAX_MS
+        if delay < 0 or delay > RECEIPT_JITTER_MAX_MS:
+            delay = RECEIPT_JITTER_MAX_MS
+        if len(self._receipts) >= RECEIPT_MAX_PENDING:
+            # A MISSING ROW IN AN AUDIT TABLE, NOT A MISSING SHOW. Counted and
+            # dropped, deliberately without a spool: a receipt that outlives the
+            # moment it describes is worth less than the flash write it would
+            # cost, and ~1,000 badges retrying one is the stampede this whole lane
+            # is jittered to avoid, rebuilt at a slower cadence.
+            self.receipts_dropped += 1
+            return False
+        # INSERTED IN DUE ORDER, NOT APPEND ORDER, because `_pump_receipts` reads
+        # only the head and the two orders are NOT the same here: the delay is
+        # drawn fresh per ring, so an action applied later with a 0 ms draw is due
+        # before one applied earlier with a 5,000 ms draw. Appending would let the
+        # first block the second for the whole of its jitter -- harmless in size
+        # (the window is five seconds) but it would make "oldest first" a comment
+        # that is not true, which is the kind of small lie that later gets built
+        # on. `_ticks_diff` rather than `<` because `ticks_ms` WRAPS.
+        due = _ticks_add(now, delay)
+        entry = [due, action_id, result, 0]
+        for index in range(len(self._receipts)):
+            if _ticks_diff(due, self._receipts[index][0]) < 0:
+                self._receipts.insert(index, entry)
+                return True
+        self._receipts.append(entry)
+        return True
+
+    def _bind_power_receipt(self, now, action_id, receipt_armed):
+        """Make a newly armed broadcast power action wait for its own receipt.
+
+        The applier cannot bind this itself because the broadcast envelope owns
+        ``action_id`` and the pure `_apply` ladder deliberately does not. A
+        failed/overflowed receipt is already terminal and therefore does not
+        delay the action; a held receipt gets one hard deadline and no replay.
+        """
+
+        power = self._power
+        if power is None or power.get("needed") != 0:
+            return False
+        if power.get("receipt_action_id") is not None:
+            return False
+        power["receipt_action_id"] = action_id
+        power["receipt_done"] = not bool(receipt_armed)
+        power["receipt_status"] = "unavailable" if not receipt_armed else None
+        power["receipt_deadline"] = _ticks_add(
+            now, POWER_ACTION_RECEIPT_MS)
+        return True
+
+    def _finish_power_receipt(self, action_id, status):
+        """Release only the power latch whose receipt reached a terminal state."""
+
+        power = self._power
+        if power is None or power.get("receipt_action_id") != action_id:
+            return False
+        power["receipt_done"] = True
+        power["receipt_status"] = status
+        return True
+
+    def _receipt_sink(self, action_id):
+        """One keyed callback, because the errand sink receives no request id.
+
+        At most four receipts exist, so this tiny closure is cheaper and safer
+        than a parallel FIFO that assumes transport callbacks can never be
+        reordered while reconnecting. Superseded power latches simply ignore a
+        late callback whose action id no longer matches.
+        """
+
+        def posted(ok, data):
+            self._finish_power_receipt(
+                action_id, "posted" if ok else "failed")
+            return self._on_receipt_posted(ok, data)
+
+        return posted
+
+    def _pump_receipts(self, now):
+        """Queue whatever receipt has waited out its jitter.  Never raises.
+
+        ONE PER FRAME AND NO CHORE CLAIMED. Building this row is a dict and a
+        `_queue_errand` hand-off -- no file, no parse, no crypto -- so taking the
+        frame's one expensive slot for it would starve the score drain and the
+        schedule sync for work that costs neither of them anything. It is the
+        same argument `_pump_effect` makes for its own bounded slots.
+
+        A REFUSED QUEUE IS RE-ARMED A FEW TIMES AND THEN DROPPED. The errand
+        channel holds four slots and the heartbeat, the settings read and the
+        score drain all want them, so a full queue right after a fleet show is
+        foreseeable rather than exotic -- but the retry is bounded hard, because
+        an unbounded one is the fleet-wide write storm again with extra steps.
+        """
+
+        if not self._receipts:
+            return False
+        entry = self._receipts[0]
+        if _ticks_diff(now, entry[0]) < 0:
+            return False
+        badge_id = hardware_uid()
+        if badge_id is None:
+            # NO IDENTITY, NO RECEIPT. `x-badge-id` is the RLS identity and the
+            # row's own `badge_id` column is the same value; a receipt that
+            # cannot name its badge is a row nobody can read anything from.
+            # `link_unaddressed` has already said this once per boot.
+            del self._receipts[0]
+            self.receipts_dropped += 1
+            self._finish_power_receipt(entry[1], "unaddressed")
+            return False
+        import rpc_contract
+
+        # NO `at`. THE SERVER STAMPS IT, and the reason is that the badge cannot
+        # honestly beat it: `_epoch()` is None on any badge that never reached
+        # NTP, so the column needs a `default now()` for those badges REGARDLESS
+        # -- and once the default has to exist, a second clock that disagrees
+        # with it by the receipt's own jitter buys an audit row nobody reads
+        # live a few seconds of precision, at the price of a hand-rolled ISO-8601
+        # formatter on a runtime whose `time.gmtime` epoch is not the Unix one.
+        # That trade is the wrong way round for a one-day event. ⚠ The
+        # `fleet_receipts` DDL must therefore carry `at timestamptz not null
+        # default now()`.
+        queued = self._queue_errand(
+            "table",
+            {"table": rpc_contract.TABLE_FLEET_RECEIPTS, "method": "POST",
+             "row": {"action_id": entry[1], "badge_id": badge_id,
+                     "result": entry[2]},
+             # IDEMPOTENT UNDER `(action_id, badge_id)`. A 409 would land in
+             # `parse_response`'s generic retryable bucket, and a retryable
+             # receipt is the storm again.
+             "prefer": rpc_contract.PREFER_IGNORE_MINIMAL},
+            self._receipt_sink(entry[1]),
+            # NOT COALESCED. `badge_state` coalesces because a stale snapshot
+            # superseded by a fresh one is worth nothing; two receipts describe
+            # two different actions and neither replaces the other.
+        )
+        if queued:
+            del self._receipts[0]
+            self.receipts_queued += 1
+            return True
+        entry[3] += 1
+        if entry[3] >= RECEIPT_QUEUE_TRIES:
+            del self._receipts[0]
+            self.receipts_dropped += 1
+            self._emit("receipt_dropped")
+            self._finish_power_receipt(entry[1], "queue_refused")
+            return False
+        entry[0] = _ticks_add(now, RECEIPT_RETRY_MS)
+        return False
+
+    def _on_receipt_posted(self, ok, _data):
+        """The write-back landed, or it did not.  Either way the show played.
+
+        NO RETRY LADDER HANGS OFF THIS, and that is the design rather than an
+        omission. The errand channel reports `(ok, data)` with no HTTP status, so
+        this cannot tell a transient failure from a refusal -- and a receipt
+        retried until it lands is ~1,000 badges retrying one row, which is the herd
+        the jitter above exists to break up. One counter, one line, done.
+        """
+
+        if ok:
+            return
+        self.receipts_dropped += 1
+        self._emit("receipt_failed")
 
     def _on_command(self, command):
         """One command: effect, then RAM ledger, then flash, then the ack.
@@ -2995,7 +4660,10 @@ class NetworkService:
             self._emit("command_reacked", command=command.get("type"))
             return
         try:
-            result = self._dispatch(command)
+            # The durable command table is gone. Keeping this compatibility
+            # callback total is cheap, but it applies immediately: no hold,
+            # catch-up, or future-fire path may be reconstructed behind it.
+            result = self._apply(command)
             status = "applied"
         except Exception as exc:
             status = "failed"
@@ -3010,7 +4678,13 @@ class NetworkService:
             self._note_ledger_unsaved(exc)
         else:
             self._ledger_dirty = False
-        self._backend.queue_ack(ack)
+        # STEP 4'S RETURN VALUE IS NOW LOAD-BEARING, and only for the deferred
+        # power actions (`sleep`, `set_networking` off). `queue_ack` answers the
+        # DEPTH of the pending-ack FIFO including this one, which is the only
+        # number that turns `PollLoop.acks_sent` into a proof that THIS ack
+        # reached the server -- see `_note_power_ack`. Every other command
+        # ignores it exactly as before.
+        self._note_power_ack(self._backend.queue_ack(ack))
         self._emit("command_" + status, command=command.get("type"))
 
     def _note_ledger_unsaved(self, exc):
@@ -3084,121 +4758,12 @@ class NetworkService:
         self._ledger_retry_at = None
         return True
 
-    def _load_schedule(self, path):
-        """Held commands, or an empty hold.  Contained, like every other lazy
-        /system/lib import in this module: a boot may not fail over a moment.
-
-        Runs from ``__init__`` BEFORE ``last_error`` exists, so the failure is
-        deliberately silent rather than recorded: setting the attribute here
-        would only have it overwritten with ``None`` two lines later, which is a
-        worse lie than saying nothing.
-
-        THE MODULE IS KEPT, because `_pump_scheduled_commands` runs once per
-        rendered frame and an `import` in its body is a `__import__` call and its
-        allocations on every one of them. Same rule as `_score_box` and
-        `_schedule_store`: resolve the lazy import once, then hold it.
-        """
-        self._held_box = None
-        try:
-            import command_schedule
-
-            self._held_box = command_schedule
-            return command_schedule.load(path)
-        except Exception:
-            return {"held": []}
-
-    def _dispatch(self, command):
-        """`execute_at` first, then the applier (Card FT-B item 2).
-
-        THE SPLIT IS HERE rather than inside `_apply` so that every verb gets the
-        same scheduling semantics for free -- which is the whole growth rule: a
-        new command is one CHECK plus one applier, and it inherits `execute_at`
-        without knowing the word.
-        """
-        import command_schedule
-
-        when, verdict = command_schedule.due_at(command, self._epoch())
-        if verdict == "now":
-            return self._apply(command)
-        if verdict == "unreadable":
-            raise ValueError("execute_at is not a timestamp this badge can read")
-        if verdict == "no_clock":
-            # REFUSED, not applied early. A scheduled moment the badge cannot
-            # time is a moment it would get wrong, and the operator can see the
-            # failed ack and re-queue it once the badge has a clock.
-            raise ValueError("this badge has no trusted clock to schedule against")
-        if verdict == "far":
-            raise ValueError(
-                "execute_at is more than {} hours away".format(
-                    command_schedule.MAX_HORIZON_S // 3600))
-        # A FUTURE MOMENT. Validate the payload NOW by asking the applier to
-        # check it, so a malformed scheduled command fails visibly at the moment
-        # it is queued rather than silently minutes later in front of a room.
-        self._precheck(command)
-        command_id = command.get("id")
-        state = command_schedule.hold(
-            self._schedule, command_id, command.get("type"),
-            command.get("payload") or {}, when)
-        command_schedule.save(state, self._schedule_path)
-        self._schedule = state
-        self._emit("command_scheduled", command=command.get("type"))
-        # `applied` because the ack vocabulary has no "accepted, not yet applied"
-        # status (the CHECK accepts exactly applied/failed), so the honest signal
-        # is in the RESULT. FT-W reads `applies`.
-        return {"effect": "scheduled", "applies": "scheduled",
-                "execute_at": command.get("execute_at"), "at_epoch": when,
-                "held": len(state["held"])}
-
-    def _precheck(self, command):
-        """Reject a payload the applier could never accept, without applying it.
-
-        Cheap and deliberately incomplete: it re-runs the pure validators the
-        appliers use and does nothing that touches hardware or the filesystem. A
-        verb with no pure validator is accepted here and adjudicated when it
-        fires -- which is the same answer an unscheduled command gets, just
-        later.
-        """
-        command_type = command.get("type")
-        payload = command.get("payload")
-        if command_type == "set_lights":
-            import caselight_program
-
-            caselight_program.parse(payload)
-            return True
-        if command_type == "set_name":
-            import setup_state
-
-            if (not isinstance(payload, dict)
-                    or tuple(payload.keys()) != ("name",)
-                    or not setup_state.valid_name(payload["name"])):
-                raise ValueError("set_name payload requires exactly one name key")
-            return True
-        if command_type == "set_skin":
-            import setup_state
-
-            if (not isinstance(payload, dict)
-                    or tuple(payload.keys()) != ("skin",)
-                    or setup_state.resolve_skin(payload["skin"]) is None):
-                raise ValueError("set_skin payload requires exactly one skin key")
-            return True
-        if command_type == "report_state":
-            if not isinstance(payload, dict) or payload:
-                raise ValueError("report_state takes no arguments")
-            return True
-        if command_type == "wipe_scores":
-            # PURE, so a scheduled wipe with an unreadable scope fails at QUEUE
-            # time rather than hours later at fire time, where the only record of
-            # it is a serial line nobody is watching.
-            _wipe_scope(payload)
-            return True
-        return True
-
     def _epoch(self):
         """The NTP-synced wall clock, or ``None`` when it is not trustworthy.
 
         `clock_boot`'s build-floor/ceiling gate is the same one the transport
-        already uses before opening a socket, reused here so a badge that never
-        reached NTP HOLDS a scheduled command instead of firing it in 2021.
+        uses before opening a socket. Heartbeats, receipts and schedule-cache
+        freshness must omit a time they cannot defend instead of stamping 2021.
         """
         reader = self._epoch_clock
         try:
@@ -3215,195 +4780,46 @@ class NetworkService:
                 return None
         except Exception:
             # No `clock_boot` on this /system/lib: the raw clock is all there is,
-            # and refusing every scheduled command would be worse than trusting
-            # the same value the TLS handshake already trusts.
+            # so keep the same value the TLS handshake already trusts.
             pass
         return candidate
 
-    def _pump_scheduled_commands(self, now):
-        """Fire whatever is due.  Called once per frame; usually one `if`.
-
-        ALLOCATES NOTHING IN THE STEADY CASE: `next_due` is `held[0]` and the
-        common answer is `None`. The wall clock is read only when something is
-        actually waiting, and then no more often than once a second -- a moment
-        the fleet shares to the second does not need millisecond resolution, and
-        `time.time()` every frame would be a syscall per frame for nothing.
-
-        AND IT RESOLVES NO IMPORT. This body used to open the held-command module
-        itself, which is a `__import__` call plus its allocations on every
-        rendered frame; `_load_schedule` holds the module now (Card FT-B, F21).
-        `test_ft_b_frame_budget` greps this body for the statement, and prose
-        naming it would fire that guard -- the same way FT-S's column guard fired
-        on a comment, which is a feature and not a false positive.
-        """
-        box = self._held_box
-        if box is None:
-            return None
-        entry = box.next_due(self._schedule)
-        if entry is None:
-            return None
-        if self._schedule_checked is not None and _ticks_diff(
-                now, self._schedule_checked) < _SCHEDULE_TICK_MS:
-            return None
-        self._schedule_checked = now
-        epoch = self._epoch()
-        if epoch is None:
-            return None
-        verdict = box.fire_verdict(entry["at"], epoch)
-        if verdict == "wait":
-            return None
-        # The rest of this path drops/saves durable schedule state and may apply
-        # a physical or filesystem effect. It runs before backend polling, so no
-        # response sink can raise the usual barrier for it; raise that same
-        # one-frame exclusion here before any work or error. Otherwise a held
-        # WSS task can stack its 820-903 ms TLS flight onto this save/effect.
-        self._response_continuation = True
-        # DROPPED FROM THE FILE BEFORE THE EFFECT, and for the same reason the
-        # open-app note is: an effect that raises must not be retried on the next
-        # frame forever. The ledger already carries the ack.
-        self._schedule = box.drop(self._schedule, entry["id"])
-        try:
-            box.save(self._schedule, self._schedule_path)
-        except Exception as exc:
-            # THE ENTRY IS STILL ON DISK, so firing now would fire AGAIN after the
-            # next reset -- and this path calls `_apply` directly, so the command
-            # ledger cannot deduplicate it. Not firing is the safe direction: the
-            # RAM drop means this boot does nothing, and the next boot fires it
-            # once or discards it as stale.
-            self.last_error = _error_text(exc)
-            self._emit("command_hold_stuck", command=entry["type"])
-            return "deferred"
-        if verdict == "stale":
-            # The moment passed while the badge was off. Firing a synchronized
-            # light show minutes late is worse than not firing it.
-            self._emit("command_stale", command=entry["type"])
-            return "stale"
-        try:
-            # THE LATENESS IS MEASURED HERE BECAUSE THIS IS THE ONLY PLACE THAT
-            # KNOWS IT. `fire_verdict` has already ruled this inside
-            # `MAX_LATE_S`, so the subtraction is bounded by 120 s and cannot be
-            # negative (a `when > now_epoch` row returned "wait" above). Wall
-            # clock, not ticks: the fleet's shared instant is an epoch second and
-            # `ticks_ms` has no meaning across two badges.
-            self._apply({"id": entry["id"], "type": entry["type"],
-                         "payload": entry["payload"]},
-                        skew_ms=int((epoch - entry["at"]) * 1000))
-            self._emit("command_fired", command=entry["type"])
-            return "fired"
-        except Exception as exc:
-            self.last_error = _error_text(exc)
-            self._emit("command_fire_failed", command=entry["type"],
-                       error=self.last_error)
-            return "failed"
-
-    def _apply(self, command, skew_ms=0):
-        """One command -> one physical effect, or a raise the caller turns into a
-        failed ack.
-
-        ``skew_ms`` IS HOW LATE THIS COMMAND IS, and only the SCHEDULED path can
-        pass a nonzero one. It exists for `play_effect`: a fleet show has to end
-        together even when one badge fired 90 seconds behind the others, so the
-        lateness starts that badge that far INTO the effect rather than running a
-        full-length show alone. Every other applier ignores it, which is why it is
-        a defaulted keyword rather than a required argument -- the immediate path
-        (`_on_command`) has no lateness to report and should not have to say so.
-        """
+    def _apply(self, command):
+        """One broadcast -> one physical effect, or a raise the caller contains."""
 
         command_type = command.get("type")
         payload = command.get("payload")
-        if command_type == "find_badge":
-            self._lights = None       # a running show yields to "where is it?"
-            # AND SO DOES A FLEET EFFECT, for the stronger version of the same
-            # reason: "where is my badge" is a person in a room looking for a
-            # thing, and a light show is decoration. `interrupt` restores the
-            # panel to its base level on the way out, so the effect cannot leave
-            # the backlight parked where its last frame happened to put it.
-            self._preempt_effect()
-            self._caselights(1.0)
-            self._pulse_until = _ticks_add(self._now, _PULSE_MS)
-            return {"effect": "caselight_pulse"}
-        if command_type == "set_caselights":
-            if not isinstance(payload, dict) or not isinstance(payload.get("on"), bool):
-                raise ValueError("set_caselights payload requires boolean on")
-            self._lights = None       # an explicit on/off outranks a program
-            self._preempt_effect()   # and outranks a fleet show
-            self._pulse_until = None
-            self._caselights(1.0 if payload["on"] else 0)
-            return {"effect": "caselights", "on": payload["on"]}
-        if command_type == "set_lights":
-            return self._apply_set_lights(payload)
         if command_type == "set_backlight":
             return self._apply_set_backlight(payload)
         if command_type == "report_state":
             return self._apply_report_state(payload)
-        if command_type == "set_name":
-            return self._apply_set_name(payload)
-        if command_type == "set_skin":
-            return self._apply_set_skin(payload)
-        if command_type == "open_app":
-            return self._apply_open_app(payload)
-        if command_type == "wipe_scores":
-            return self._apply_wipe_scores(payload)
+        if command_type == "show_notice":
+            return self._apply_show_notice(payload)
         if command_type == "play_effect":
-            return self._apply_play_effect(payload, skew_ms=skew_ms)
+            return self._apply_play_effect(payload)
+        if command_type == "set_networking":
+            return self._apply_set_networking(payload)
+        if command_type == "sleep":
+            return self._apply_sleep(payload)
         raise ValueError("unsupported command type: {}".format(command_type))
 
-    # -- the setup appliers (Card FT-B item 1) -------------------------
+    # `set_name` AND `set_skin` WERE DELETED HERE ON 2026-08-29 (owner ruling).
     #
-    # NEXT-OPEN SEMANTICS, which is the owner's 2026-08-22 ruling and not a
-    # limitation of this seam: the write lands now and setup reads it the
-    # next time it opens. A LIVE refresh of a running card is a flagged hook in
-    # `setup_state`, OFF behind the battery gate, with the measured cost of
-    # an unrequested mid-session repaint recorded at the flag.
+    # They were the two verbs that wrote the WEARER'S OWN CARD from the server,
+    # and the ruling that removed them is one sentence: the badge owns its name,
+    # nobody owns its skin. The direction is now the other way -- the badge
+    # REPORTS `wearer_name` up on every heartbeat (`state_report`, sourced from
+    # `scorebox.wearer_name`) instead of being told a `display_name` down.
     #
-    # THE PAYLOAD VALIDATION MIRRORS THE DB CHECK EXACTLY, because the constraint
-    # is the boundary and the applier is the courtesy: a badge that rejected a
-    # payload the constraint accepted would leave a queued row that can never
-    # succeed, and the queue would look healthy.
+    # THEY WERE ALSO UNBROADCASTABLE IN PRINCIPLE, which is the structural half
+    # of the same ruling and the reason they could not simply have been left
+    # alone: a moment goes to EVERY connected badge, so a broadcast `set_name`
+    # renames ~1,000 attendees at once. There is no targeting in the envelope and
+    # deliberately so. `public.fleet_actions`' `kind` CHECK omits both.
     #
-    # NO FLEET SKIN (the ruling). Nothing is enforced here, and that is honest
-    # rather than lax: every `badge_commands` row is addressed to ONE badge_id, so
-    # a badge cannot tell a fleet push from a per-badge one and has nothing to
-    # refuse. The rule lives where the fan-out would be written -- the console.
-
-    def _card_state(self):
-        """Import the state contract LAZILY, per the module docstring's rule.
-
-        `setup_state` installs to /system/lib beside this file, so a
-        module-scope import would make a half-refreshed lib take the BOOT down
-        rather than one command. A missing module is a failed ack.
-        """
-        import setup_state
-
-        return setup_state
-
-    def _apply_set_name(self, payload):
-        # `payload = jsonb_build_object('name', payload -> 'name')` in the CHECK
-        # is an EXACTLY-ONE-KEY test, so an extra key is a rejection here too.
-        if not isinstance(payload, dict) or tuple(payload.keys()) != ("name",):
-            raise ValueError("set_name payload requires exactly one name key")
-        contract = self._card_state()
-        result = contract.set_name(payload["name"], self._card_state_path)
-        contract.live_refresh(path=self._card_refresh_path)
-        record = {"effect": "card_name", "stored": result["stored"],
-                  "applies": "next_open"}
-        if result["truncated"]:
-            # The 64-character constraint bound and setup's 12-character cap
-            # are both real; saying so is better than a silent difference.
-            record["truncated"] = True
-        return record
-
-    def _apply_set_skin(self, payload):
-        # NO PAYLOAD CHECK EXISTS for set_skin (Card FT-S extended the vocabulary
-        # and left this verb's payload to the generic object rules), so this is
-        # the whole boundary rather than a mirror of one.
-        if not isinstance(payload, dict) or tuple(payload.keys()) != ("skin",):
-            raise ValueError("set_skin payload requires exactly one skin key")
-        contract = self._card_state()
-        result = contract.set_skin(payload["skin"], self._card_state_path)
-        contract.live_refresh(path=self._card_refresh_path)
-        return {"effect": "card_skin", "stored": result["stored"],
-                "applies": "next_open"}
+    # `_card_state()` went with them -- they were its only callers. `setup_state`
+    # itself is untouched and still owns the wearer's own local edit path;
+    # `self._card_state_path` survives because `_wearer_name` reads it.
 
     # -- open_app (Card FT-B item 1) ----------------------------------------
     #
@@ -3472,6 +4888,37 @@ class NetworkService:
             return {"effect": "open_app", "app": slug, "applies": "on_reset",
                     "force": True}
         return {"effect": "open_app", "app": slug, "applies": "next_launcher"}
+
+    def _notice_note(self):
+        """Lazy so an older /system/lib loses only the new verb, not boot."""
+
+        import notice_note
+
+        return notice_note
+
+    def _apply_show_notice(self, payload):
+        """Persist one notice, then force the fixed Nametag target."""
+
+        notice = self._notice_note()
+        # Validation happens before the temp write, and rename exposes only a
+        # complete record.  This write precedes the forced reset so Nametag can
+        # never launch from this action without the message it is meant to show.
+        record = notice.write(payload, self._notice_path)
+        try:
+            opened = self._apply_open_app(
+                {"app": NOTICE_APP_SLUG, "force": True})
+        except Exception:
+            # A notice without its force target would appear on some unrelated
+            # later Nametag visit.  Roll it back best-effort and preserve the
+            # original failure for the receipt.
+            try:
+                notice.discard(self._notice_path)
+            except Exception:
+                pass
+            raise
+        return {"effect": "show_notice", "app": NOTICE_APP_SLUG,
+                "duration_s": record["duration_s"],
+                "applies": opened["applies"]}
 
     def launch_result(self, bounded=False):
         """What the frame pump should return in place of ``None``.
@@ -3565,9 +5012,10 @@ class NetworkService:
         import caselight_program
 
         program = caselight_program.program_for(payload)
-        # A light show and find_badge's 3 s pulse are the same four LEDs, so the
-        # newer intent wins outright rather than the two fighting per frame.
-        self._pulse_until = None
+        # A VALID newer one-channel intent retires a two-channel effect first.
+        # `program_for` stays above this edge so malformed replacement input
+        # cannot cancel the good effect already in the wearer's hands.
+        self._preempt_effect()
         self._lights = program
         self._lights_started = self._now
         # ONE WRITE NOW, so an operator pressing the button sees the first frame
@@ -3585,37 +5033,17 @@ class NetworkService:
                 "period_ms": program.period_ms, "count": program.count,
                 "duration_ms": program.total_ms}
 
-    def _apply_play_effect(self, payload, skew_ms=0):
-        """§A's fleet-show primitive: one console press, 800 badges, one instant.
+    def _apply_play_effect(self, payload):
+        """Play one non-empty array locally, in order, after one delivery.
 
-        **THE LIBRARY LANDED WITHOUT THIS APPLIER AND NOTHING NOTICED FOR A DAY.**
-        `effect_library` is complete, tested and frozen -- its own `player_for`
-        docstring says "which is what the applier calls" and describes how
-        `_on_command` turns its raise into a failed ack -- but no dispatch entry
-        existed, so `_apply` fell through to `unsupported command type` and a
-        frozen fleet would have FAIL-ACKED every `play_effect` the backend ever
-        queued. The gap read as done because a design doc described it and a
-        hand-built test service exercised it; the seam between the two lanes is
-        where it fell through. Nothing here is new behaviour -- it is the missing
-        hop between a landed library and a landed queue.
+        THE ARRAY IS THE RELIABILITY BOUNDARY. The whole show arrives in one
+        broadcast and every cue is constructed before frame zero, so losing the
+        socket later cannot strand half the sequence and a malformed later cue
+        cannot start a partial one. There is deliberately no object shortcut:
+        one cue is a one-element array and follows this exact path.
 
-        ALL VALIDATION IS THE LIBRARY'S, deliberately. `parse` mirrors the CHECK
-        constraint clause for clause, including the "test for the KEY before
-        reading it" rule a real Postgres taught `caselight_program`; duplicating
-        any of it here would be a second boundary to keep in step, and the one
-        thing worse than a payload the badge refuses is one the badge and the
-        database disagree about.
-
-        A RAISE IS THE FAIL-ACK, which is the ladder's existing contract and the
-        only safe answer to a fleet fan-out: an unknown kind or an id this
-        firmware does not carry means "half the fleet is on older firmware", and
-        an operator needs to read that off a failed ack rather than watch some
-        badges guess.
-
-        THE PANEL BASE IS READ, NOT ASSUMED. A `kind: "glyph"` effect drives the
-        backlight and must hand it back where the wearer left it, so the player is
-        given the current level rather than a constant -- otherwise a show ends by
-        resetting every badge in the room to full brightness.
+        ALL ITEM VALIDATION IS THE LIBRARY'S. Duplicating kind/id/duration rules
+        here would let the badge and the database disagree at the worst seam.
         """
 
         # IMPORTED IN THE METHOD, exactly as `_apply_set_lights` imports
@@ -3624,50 +5052,58 @@ class NetworkService:
         # a half-refreshed lib might not carry would take the boot down.
         import effect_library
 
-        # PARSED BEFORE THE OLD SHOW IS TOUCHED. `player_for` raises on a bad
-        # payload, and a raise here is a failed ack -- so a malformed command must
-        # not have already stopped a good effect that was running.
-        player = effect_library.player_for(
-            payload, skew_ms=skew_ms, panel_base=self._panel_base)
+        if not isinstance(payload, list) or not payload:
+            raise ValueError("play_effect payload must be a non-empty array")
+        # BUILD THE WHOLE SEQUENCE BEFORE PREEMPTION. Each player is small and
+        # the action row already has a bounded JSON payload; postponing builds
+        # would let cue one play before cue two's invalid id was discovered.
+        players = []
+        total_ms = 0
+        panel = False
+        for item in payload:
+            player = effect_library.player_for(
+                item, panel_base=self._panel_base)
+            players.append(player)
+            total_ms += player.duration_ms
+            if player.panel_active:
+                panel = True
         # ONE SHOW AT A TIME, AND THE OLD ONE IS RETIRED PROPERLY. `interrupt`
         # restores both channels; dropping the reference would leave the panel and
         # the case lights wherever the previous effect's last frame put them.
         self._preempt_effect()
-        self._pulse_until = None   # a show outranks find_badge's 3 s pulse
-        self._lights = None        # and outranks a caselight program
+        self._lights = None
+        self._effect_queue = players[1:] or None
+        player = players[0]
+        # THE FRAME TICK CAN BE 8,852 MS OLD by the time a command sink runs
+        # inside a blocking open. Sample only at the install edge so a five-second
+        # effect cannot be born already finished (2026-08-24 device evidence).
+        self._start_effect_player(player, self._ticks_ms())
+        return {"effect": "play_effect", "count": len(players),
+                "duration_ms": total_ms, "panel": panel}
+
+    def _start_effect_player(self, player, started):
+        """Install one already-validated cue and write frame zero."""
+
         self._effect = player
-        self._effect_started = self._now
-        # ONE WRITE NOW, the same courtesy `_apply_set_lights` pays: an operator
-        # pressing the button sees the first frame rather than waiting for the next
-        # rendered frame. `step(0)` is the frame at the SKEWED phase, because
-        # `player_for` already seated the player that far into the effect.
+        self._effect_started = started
+        # Writing now avoids a one-frame dark gap both at broadcast arrival and
+        # at cue boundaries; the previous cue's restore is overwritten only on
+        # the channels this next cue owns.
         if player.step(0):
             self._write_effect_levels(player)
-        if player.done:
-            # A show whose skew consumed all but the last instant. `player_for`
-            # refuses a skew at or past the duration, so this is the narrow band
-            # just inside it; parking it would leave the pump stepping a finished
-            # player every frame.
-            self._effect = None
-        # THE ACK SHAPE IS THE HARNESS'S, not this file's invention: the
-        # library's contract tests already model these five fields, and a console
-        # reading a different set from a real badge than from the harness would
-        # make the harness worthless as a contract.
-        return {"effect": "play_effect", "kind": player.kind,
-                "id": player.effect_id, "duration_ms": player.duration_ms,
-                "skew_ms": player.skew_ms, "panel": player.panel_active}
 
     def _preempt_effect(self):
         """Stop a running fleet effect and put both channels back. Total.
 
-        Called from the frame pump's neighbours and from two appliers, so it may
-        not raise: `_apply` is reached from `_pump_scheduled_commands`, which runs
-        before backend polling on the frame path.
+        Called from the frame pump's neighbours and from appliers, so it may not
+        raise into Badgeware's frame path.
         """
 
+        pending = self._effect_queue
+        self._effect_queue = None
         player = self._effect
         if player is None:
-            return False
+            return bool(pending)
         self._effect = None
         try:
             if player.interrupt():
@@ -3677,10 +5113,36 @@ class NetworkService:
             self._emit("effect_contained", error=self.last_error)
         return True
 
+    def _clear_remote_effects(self):
+        """Drop not-yet-applied Live state and restore a running effect. Total.
+
+        OFF, revocation and backend teardown are three spellings of the same
+        authority loss. One helper keeps a future cue mailbox from being added to
+        only two of them and leaving a stale cue able to apply after the third.
+        """
+
+        self._live_candidate = None
+        self._live_pending = None
+        return self._preempt_effect()
+
     def _write_effect_levels(self, player):
         """Push whichever of the two channels moved. Nothing else."""
 
-        if player.case_level is not None:
+        levels = player.case_levels
+        if levels is not None:
+            if self._caselights_variadic is False:
+                self._caselights(max(levels))
+            else:
+                try:
+                    self._caselights(*levels)
+                    self._caselights_variadic = True
+                except TypeError:
+                    # Old one-argument test/dev shims must degrade visibly, not
+                    # reset the managed frame pump. Production Badgeware takes
+                    # four args; the latch avoids repeated exception allocation.
+                    self._caselights_variadic = False
+                    self._caselights(max(levels))
+        elif player.case_level is not None:
             self._caselights(player.case_level)
         if player.panel_level is not None:
             setter = self._backlight
@@ -3750,35 +5212,48 @@ class NetworkService:
         return True
 
     def _apply_set_backlight(self, payload):
-        # `payload = jsonb_build_object('level', payload -> 'level')` -- exactly
-        # one key -- plus the 0.1..1 range. The constraint's regex is a CAST
-        # GUARD (its own comment says so), so the RANGE is what is mirrored here;
-        # a badge that additionally demanded three decimal places would reject a
-        # payload the database accepted.
-        if not isinstance(payload, dict) or tuple(payload.keys()) != ("level",):
-            raise ValueError("set_backlight payload requires exactly one level key")
-        level = payload["level"]
-        if isinstance(level, bool) or not isinstance(level, (int, float)):
-            raise ValueError("set_backlight level must be a number")
-        if level != level or level * 0 != 0:
-            raise ValueError("set_backlight level must be finite")
-        # THE 0.1 FLOOR IS THE CONSTRAINT'S AND IT IS NOT AN ACCIDENT: a dark
-        # panel is indistinguishable from a dead badge to its wearer, and this is
-        # a fleet-scope command. A real "screen off" would be a different verb.
-        if level < 0.1 or level > 1:
-            raise ValueError("set_backlight level must be 0.1..1")
+        level, persist = _backlight_intent(payload)
         setter = self._backlight
         if setter is None:
             # No panel handle (a host fixture, or a boot where `display` was not
             # injected): a failed ack, never a pretended one.
             raise ValueError("this badge exposes no backlight control")
-        setter(float(level))
+        level = float(level)
+        stored = None
+        if persist:
+            # THE FLASH WRITE PRECEDES EVERY VISIBLE EDGE. A corrupt/full state
+            # partition is knowable here; moving the panel first would post a
+            # failed receipt after showing a level that reset cannot retain.
+            # setup_state mirrors Settings' one root key without importing an
+            # app tree into this boot-path library.
+            import setup_state
+
+            # RP2350 IS SINGLE-PRECISION: ordinary exact-percent payloads land
+            # just below their integer after scaling (`0.53 * 100` is about
+            # 52.999996), so a naked truncation persists 52 while the console
+            # sent 53. The epsilon is one order above that measured float error
+            # and five orders below a percent; genuine sub-percent values still
+            # truncate (`0.205` remains 20), which is the shared-store rule.
+            percent = int(level * 100 + 0.00001)
+            result = setup_state.set_brightness(
+                percent, path=self._card_state_path)
+            stored = result["stored"]
+            # Settings stores integer percent. Apply that canonical value now,
+            # so 0.205 cannot become 0.20 only after the next reset.
+            level = stored / 100.0
+        # HANDLE AND VALUE VALIDATION BOTH PRECEDE THIS EDGE. A malformed or
+        # unavailable newer control must not cancel a valid two-channel show;
+        # once valid, the explicit panel intent wins and the player restores
+        # before that newer level is written.
+        self._preempt_effect()
+        setter(level)
         # REMEMBERED AS THE PANEL BASE, so a glyph effect hands the backlight back
         # where it was rather than to a constant. A show that ended by setting
         # every badge in the room to full brightness would be worse than one that
         # never played.
-        self._panel_base = float(level)
-        return {"effect": "backlight", "level": float(level)}
+        self._panel_base = level
+        return {"effect": "backlight", "level": level, "persist": persist,
+                "stored": stored}
 
     # -- report_state (Card FT-B item 1) ------------------------------------
     #
@@ -3885,25 +5360,61 @@ class NetworkService:
         except Exception:
             return None
 
-    def state_report(self):
-        """The ``badge_state`` row this badge would post right now.
+    def state_report(self, chore_held=False):
+        """The ``badges`` row this badge would post right now.
 
-        Public because it is the whole payload of ``report_state`` and because a
-        device session needs to be able to print it without queueing anything.
-        Every field except ``badge_id`` is optional and an unreadable one is
-        OMITTED rather than guessed: a null column reads as "not reported", and a
-        fabricated one reads as a measurement.
+        Public because a device session needs to be able to print it without
+        queueing anything. Every field except ``id`` is optional and an unreadable
+        one is OMITTED rather than guessed: a null column reads as "not reported",
+        and a fabricated one reads as a measurement.
+
+        ``chore_held`` is passed through to `_wearer_name` and means "the caller
+        already took this frame's chore for this work". It defaults False so the
+        on-demand callers (a device session, the `report_state` verb) are
+        unchanged; only `_pump_heartbeat` passes True.
+
+        ⚠ ``id`` IS ``hardware_uid()`` AND NOT THE CREDENTIAL'S SUBJECT, AND THAT
+        ONE LINE IS THE WHOLE REASON THIS METHOD CHANGED (rebuild, 2026-08-29).
+        It read `DeviceBackend.badge_id()` -- the JWT `sub` -- until today, which
+        was correct while `badge_state`'s RLS was `badge_id = grants.whoami()` and
+        catastrophic the moment provisioning went gang-clone: all ~1,000 badges ship
+        a byte-identical `/secrets.py`, so every one of them reported the SAME id
+        and the table holds ONE row for the entire fleet. The new `badges` table
+        keys on the physical id and RLS keys on the `x-badge-id` header
+        (`rpc_contract.rpc_headers`), which carries that same value, so the two
+        accessors that deliberately DISAGREED now deliberately AGREE. Nothing on
+        this path may key on the sub again.
+        `_pump_scores` already read the uid for exactly this reason; the two are
+        now the same choice made twice rather than a split.
+
+        RAISING WHEN THERE IS NO UID IS THE HONEST ANSWER and the caller has to
+        expect it. `hardware_uid()` returns None off-device and on a board whose
+        `machine.unique_id()` does not answer sixteen hex characters, and a
+        heartbeat with no id is not a degraded heartbeat -- it is a row that would
+        either be refused by the CHECK or, worse, land unattributed. The pump
+        swallows it; the `link_unaddressed` event emitted once per link build is
+        the symptom to look for, and it is now far more serious than the one line
+        per boot it was priced as -- with `x-badge-id` as the RLS identity, a badge
+        with no uid does not merely miss commands, it cannot WRITE.
         """
-        badge_id = None
-        reader = getattr(self._backend, "badge_id", None)
-        if callable(reader):
-            try:
-                badge_id = reader()
-            except Exception:
-                badge_id = None
+        badge_id = hardware_uid()
         if not isinstance(badge_id, str) or not badge_id:
-            raise ValueError("this badge has no credential to report against")
-        record = {"badge_id": badge_id}
+            raise ValueError("this badge cannot prove its physical identity")
+        record = {"id": badge_id}
+        # THE BADGE REPORTS ITS NAME **UP** (owner ruling, 2026-08-28). It used to
+        # be told a `display_name` DOWN, which meant the console was authoritative
+        # about a string the wearer typed into their own badge. `scorebox`'s reader
+        # is the source because it is the same one that attributes a SCORE, so a
+        # leaderboard row and a heartbeat can never disagree about who this is.
+        #
+        # `None` MEANS "NOT READ YET", NOT "NO NAME": the read is a `/state` open
+        # and it claims the frame's chore, so a frame that spent its budget
+        # elsewhere simply omits the key and the next heartbeat carries it. `""`
+        # (read, and there is none) is omitted too -- the column is nullable and an
+        # empty string would be a name nobody typed.
+        name = self._wearer_name(chore_held=chore_held)
+        if isinstance(name, str) and name:
+            record["wearer_name"] = name
         session = self._boot_session()
         if session is not None:
             record["boot_session"] = session
@@ -3934,31 +5445,121 @@ class NetworkService:
             raise ValueError("report_state takes no arguments")
         return self.post_state_report(reason="command")
 
-    def post_state_report(self, reason="command"):
-        """Build a snapshot and queue it. Raises when it could not be queued."""
+    def post_state_report(self, reason="command", chore_held=False):
+        """Build a snapshot and queue it. Raises when it could not be queued.
+
+        ONE REQUEST IS BOTH THE HEARTBEAT AND THE REGISTRATION, and the `Prefer`
+        header is the whole of that. `resolution=merge-duplicates` makes a POST of
+        a row that already exists an UPDATE, so a badge the server has never seen
+        CREATES its own row on first contact and every later beat refreshes it.
+
+        ⚠ IT WAS A `PATCH ?badge_id=eq.<id>` UNTIL 2026-08-29 AND THAT SHAPE
+        COULD NOT SELF-REGISTER. PATCH against a row that does not exist is a 204
+        affecting zero rows, which `postgrest.parse_response` correctly reads as
+        SUCCESS -- so an unregistered badge heartbeats into nothing, forever,
+        while every event it emits says the post landed. There is no symptom to
+        find, which is why the method is a POST now and why the filter is gone:
+        the id is a COLUMN in the body rather than a query on the URL.
+
+        RAISES rather than returning False, because both callers want that: the
+        `report_state` verb turns it into a failed ack (claiming `applied` for a
+        row that was never queued would be a lie), and the periodic pump treats it
+        as "try again on the next frame".
+        """
         import rpc_contract
 
-        record = self.state_report()
-        field_count = len(record)
-        badge_id = record.pop("badge_id")
+        record = self.state_report(chore_held=chore_held)
         queued = self._queue_errand(
             "table",
-            {"table": rpc_contract.TABLE_BADGE_STATE, "method": "PATCH",
-             "row": record, "prefer": rpc_contract.PREFER_MINIMAL,
-             "query": (("badge_id", "eq." + badge_id),)},
+            {"table": rpc_contract.TABLE_BADGES, "method": "POST",
+             "row": record, "prefer": rpc_contract.PREFER_MERGE_MINIMAL},
             self._on_state_posted,
-            # COALESCED. Two reports in one exchange window would post a stale
-            # snapshot and then a fresh one; only the fresh one is worth sending.
+            # COALESCED, AND IT MATTERS MORE NOW THAN IT DID. Two reports in one
+            # exchange window would post a stale snapshot and then a fresh one;
+            # only the fresh one is worth sending. With a ~60 s beat AND an
+            # on-demand path sharing this key, the coalesce is what stops an
+            # operator hammering `report_state` from filling the errand queue and
+            # starving the score drain.
             key="badge_state",
         )
         if not queued:
             raise ValueError("the badge could not queue a state report")
         self._emit("state_report_queued", reason=reason)
         return {"effect": "state_report", "queued": True,
-                "fields": field_count, "reason": reason}
+                "fields": len(record), "reason": reason}
 
     def _on_state_posted(self, ok, _data):
         self._emit("state_report_posted" if ok else "state_report_failed")
+
+    def _pump_heartbeat(self, now):
+        """Post this badge's liveness row about once a minute.  Never raises.
+
+        THE CADENCE IS ADVANCED ON THE ISSUE, NOT ON THE ANSWER, which is CX-8's
+        rule and the reason this pump owns one due time and nothing else does. A
+        beat that fails is a beat skipped, never a beat retried immediately: the
+        errand's own failure path already tells the operator, and a badge whose
+        socket is unhappy is exactly the badge that must not add requests to it.
+        The one exception is a REFUSAL -- a full errand queue means the request was
+        never made at all, so that re-arms at `ERRAND_RETRY_MS` instead.
+
+        *** THIS PUMP CLAIMS THE FRAME'S CHORE, AND THE COMMENT THAT SAID IT DID
+        NOT WAS WRONG ABOUT ITS OWN MOST EXPENSIVE FIELD. *** It read: "the only
+        expensive thing on the path is the wearer-name read ... everything else
+        in the snapshot is a RAM read or a cwd parse the frame already performs".
+        `state_report` calls `_battery_fields`, which calls
+        `badge_api.battery_level()`, which the firmware derives from
+        `battery_voltage()` -- an ADC read that averages ten samples, as
+        `_battery_fields`' own docstring says two screens down. It also calls
+        `os.uname()` via `_firmware_version`. Neither is a RAM read.
+
+        The cost is small and bounded (once per ~60 s), so this was never a
+        freeze; it is corrected because in this repo the comment IS the register,
+        and a comment that tells the next reader a chore-free heartbeat is free
+        is exactly how the eleventh field gets added to `state_report` on a false
+        premise. CX-10's budget exists to make a frame's worst case predictable,
+        and a frame that does a gauge read plus a `_pump_scores` drain plus a
+        schedule sync is not predictable just because each piece is small.
+
+        THE BEAT IS THE RIGHT THING TO DEFER when the chore is already spent: it
+        has ~60 s of slack, which is more than any other claimant on this ladder,
+        so losing the race costs one frame and never a beat.
+        """
+        backend = self._backend
+        if backend is None or getattr(backend, "state", None) != CONNECTED:
+            # NO SOCKET, AND THE DUE TIME IS LEFT EXACTLY WHERE IT WAS. Clearing
+            # it here would re-phase on every reconnect, which is CX-8's original
+            # defect wearing the other hat: an AP that blips more often than the
+            # phase is long would mean a badge that never beats at all. A badge
+            # that spent ten minutes offline comes back ONE beat overdue, not ten,
+            # because the advance below is absolute rather than cumulative.
+            return None
+        if self._heartbeat_due is None:
+            # FIRST BEAT OF THIS SESSION, PHASED. See `HEARTBEAT_FIRST_MIN_MS`:
+            # prompt enough that a provisioning run sees the badge appear, spread
+            # enough that ~1,000 badges booting into one room do not register in the
+            # same second.
+            self._heartbeat_due = _ticks_add(
+                now, self._jittered_delay_ms(HEARTBEAT_FIRST_MIN_MS,
+                                             HEARTBEAT_MS))
+            return None
+        if _ticks_diff(now, self._heartbeat_due) < 0:
+            return None
+        if not self._claim_chore():
+            # THE DUE TIME IS NOT MOVED. This frame was spent on something else;
+            # the beat is still owed and the next frame offers it again. Re-arming
+            # here would let a busy stretch silently postpone registration.
+            return None
+        try:
+            self.post_state_report(reason="heartbeat", chore_held=True)
+        except Exception as exc:
+            # A snapshot this badge cannot build (no `hardware_uid`) or an errand
+            # channel that refused it. Both are "ask again", and neither may take
+            # down a poll cycle -- the wearer is holding a badge, not a server.
+            self.last_error = _error_text(exc)
+            self._heartbeat_due = _ticks_add(now, ERRAND_RETRY_MS)
+            return False
+        self._heartbeat_due = _ticks_add(now, HEARTBEAT_MS)
+        return True
 
     # -- the score drain (Card FT-B item 3) ---------------------------------
     #
@@ -3966,17 +5567,24 @@ class NetworkService:
     # `scorebox.record(game, score, duration_ms)` and returns to its own frame
     # loop; this is the half that notices a socket exists and posts one row.
     #
-    # ONE IN FLIGHT, OLDEST FIRST, and the per-frame question is an integer
-    # compare: `scorebox.scan_complete()`/`cached_head()` read the count and the
-    # head out of the module both sides share, so a spool that is empty costs
-    # nothing at all. Filling that pair the FIRST time is the cold load, and it
-    # happens ONE bounded record per frame (`scorebox.drain_head`, CX-10).
+    # ONE IN FLIGHT, ROUND-ROBIN OVER THE GAMES, and the per-frame question is an
+    # integer compare: `scorebox.scan_complete()`/`cached_pending()` read the
+    # slot count out of the module both sides share, so a spool that is empty
+    # costs nothing at all. Filling it the FIRST time is the cold load, and it is
+    # now ONE bounded open and ONE decode of a document holding at most one slot
+    # per game (`scorebox.take_slot`, CX-10).
     #
-    # THE HEAD CANNOT BLOCK. An entry is retired after a success AND after
-    # `scorebox.MAX_ATTEMPTS` refusals, because the errand channel reports
-    # (ok, data) with no HTTP status -- it cannot tell a transient failure from
-    # the 403 a badge without a `scores/write` grant gets -- and an entry that
-    # retried forever would silently stop every later score from ever landing.
+    # NOTHING IS EVER DISCARDED (owner ruling, 2026-08-29; ADR-007). `MAX_ATTEMPTS`
+    # -- three refusals and the wearer's score was DELETED -- is gone, and with it
+    # every path in this file that dropped a score on failure. It existed because
+    # the spool was a FIFO whose head could block every later score; there is no
+    # head any more, so a permanently refused snake slot delays snake and nothing
+    # else, and the other four drain past it on the very next frame. The guarantee
+    # a counter used to buy by throwing a score away is now free, and structural.
+    #
+    # EXACTLY ONE THING EMPTIES A SLOT FROM OUTSIDE: `scorebox.retire`, after a
+    # response said the row landed -- and only if the slot has not been superseded
+    # in the meantime. See `_retire_score` for why that return value is checked.
 
     def _score_box(self):
         if self._scorebox is False:
@@ -4009,63 +5617,295 @@ class NetworkService:
         except Exception:
             return 0
 
-    # -- the two cadence phases (CX-8) -------------------------------------
+    # -- the fleet settings read (rebuild, 2026-08-29) ----------------------
     #
-    # NEITHER OF THESE IS A LATENCY DECISION. Both intervals were priced for the
-    # herd (`SCHEDULE_REFRESH_MS`, `polltransport.POLICY_REFRESH_MS`) and both were
-    # honoured perfectly WITHIN a boot; what was wrong was only the FIRST fire, and
-    # every app exit on this platform is a `machine.reset()`, so "the first fire"
-    # is what a wearer switching apps pays over and over. Phasing the first fire
-    # moves every later one with it and costs nothing else.
+    # STATES ARE POLLED. This is the other half of "MOMENTS are broadcast": the
+    # doorbell carries a thing that HAPPENS and this carries what IS. A badge that
+    # missed a ring -- asleep, off, out of range, or one of the 595 in 598 the
+    # exact-key filter silently dropped before the server was fixed -- learns the
+    # current state here and nowhere else, which is why the payload may only ever
+    # carry values that are safe to re-apply. See `_apply_settings`.
+    #
+    # IT REPLACES `RPC_TRANSPORT_POLICY` AND ITS WHOLE CADENCE APPARATUS. The
+    # steering read used to be a `polltransport` request KIND with a due time the
+    # loop owned and a phase this object owned -- two objects, one cadence, which
+    # is the CX-8 defect and then the CX-8 correction. It is an ordinary errand
+    # now: one due time, in this object, advanced where the request is issued.
+    #
+    # THE PHASE IS STILL CX-8'S AND THE ARGUMENT IS UNCHANGED. The interval was
+    # never the problem; the FIRST fire was, because every app exit on this
+    # platform is a `machine.reset()` and a wearer switching apps pays it over and
+    # over. A floor plus a jitter is deterministic where a pure jitter is not: a
+    # jitter alone still leaves one badge in a hundred inside the boot burst, and
+    # one in a hundred is eight badges in a hall of 800 still doing the wrong
+    # thing.
 
-    def _arm_policy_phase(self, now):
-        """Give the loop this badge's steering-read phase. Never raises."""
-        arm = getattr(self._backend, "set_policy_due", None)
-        if not callable(arm):
-            return None
-        if self._policy_due is None:
-            delay = self._jittered_delay_ms(POLICY_FIRST_MIN_MS,
-                                            POLICY_REFRESH_MS)
-            self._policy_due = _ticks_add(now, delay)
-            self._emit("policy_phased", due_ms=delay)
-        try:
-            return arm(self._policy_due)
-        except Exception as exc:
-            self.last_error = _error_text(exc)
-            return None
+    def _pump_fleet_settings(self, now):
+        """Re-read the fleet's settings on a slow cadence.  Never raises.
 
-    def _mirror_policy_due(self):
-        """Copy the loop's steering due into this object. Never raises.
+        ADVANCED ON THE ISSUE, exactly like the heartbeat and for CX-8's reason: a
+        read that FAILS must not leave the due time in the past, or a badge whose
+        socket is unhappy re-issues on every tick that has nothing better to do.
+        One skipped cycle is five minutes of a lever being stale; a re-issue storm
+        is the herd.
 
-        **THIS IS THE CORRECTION TO CX-8's OWN FIX, 2026-08-23.** Ownership of
-        the steering PHASE moved here because this object outlives every loop it
-        builds -- but the loop advances the due time when the request is ISSUED
-        while this object advanced it only in `_on_policy`, when steering
-        ARRIVED. One case makes those two disagree, and a wearer creates it on
-        purpose: a policy read that FAILED. The loop moved its copy five minutes
-        out (correctly -- see `polltransport._begin_next`) and this copy stayed in
-        the past, so the next backend rebuild -- a networking off/on toggle, or a
-        fault the service recovers from with a new backend -- handed that stale
-        past-due straight back down through `arm_policy` and OVERWROTE the loop's
-        good value. The new session then issued poll-then-immediate-policy, which
-        is the CX-8 boot burst reappearing behind a Settings toggle.
-
-        So the loop owns every advance and this is a MIRROR. The read is one
-        duck-typed call per polled frame -- an attribute read and no allocation --
-        and it is duck-typed for the same reason `set_policy_due` is: a backend or
-        fixture shape that predates the seam keeps the behaviour it had.
+        FAIL-OPEN SURVIVES THE MOVE, and it is the whole reason this may be
+        skipped safely: a settings read that never happens is a `_apply_settings`
+        that is never called, and every consumer -- `pushlink.PushPolicy` most of
+        all -- leaves the badge on its own default when it has heard nothing. A
+        kill switch that fails CLOSED makes the switch itself load-bearing.
         """
-        reader = getattr(self._backend, "policy_due", None)
-        if not callable(reader):
+        backend = self._backend
+        if backend is None or getattr(backend, "state", None) != CONNECTED:
+            # LEFT WHERE IT WAS, for the reason `_pump_heartbeat` spells out: the
+            # phase is drawn ONCE, by whoever owns it, and a reconnect may not
+            # re-draw it. It is also why a badge that comes back after an outage
+            # reads the settings promptly -- which is the catch-up this read is
+            # for, and exactly one request rather than one per missed interval.
+            return None
+        if self._settings_due is None:
+            delay = self._jittered_delay_ms(SETTINGS_FIRST_MIN_MS,
+                                            SETTINGS_REFRESH_MS)
+            self._settings_due = _ticks_add(now, delay)
+            self._emit("settings_phased", due_ms=delay)
+            return None
+        if _ticks_diff(now, self._settings_due) < 0:
+            return None
+        import rpc_contract
+
+        queued = self._queue_errand(
+            "table",
+            {"table": rpc_contract.TABLE_FLEET_SETTINGS, "method": "GET",
+             "query": rpc_contract.FLEET_SETTINGS_QUERY},
+            self._on_fleet_settings,
+            # COALESCED for the same reason the heartbeat is: two settings reads
+            # in one window would answer the same question twice, and the second
+            # answer is the only one that matters.
+            key="fleet_settings",
+        )
+        if not queued:
+            self._settings_due = _ticks_add(now, ERRAND_RETRY_MS)
+            return False
+        self._settings_due = _ticks_add(now, SETTINGS_REFRESH_MS)
+        return True
+
+    def _on_fleet_settings(self, ok, data):
+        """Decode one settings response and apply it.  Never raises.
+
+        THE PARSE IS `postgrest.parse_policy_row` AND IT NEEDED NO NEW SHAPE: it
+        already unwrapped a one-element LIST (the RPC returned `returns table`,
+        this returns `?limit=1`), and it already drops every field it cannot read
+        confidently. What it gained is three more keys, which is additive.
+        """
+        self._response_continuation = True
+        if not ok:
+            self._emit("settings_failed")
             return None
         try:
-            due = reader()
+            import postgrest
+
+            fields = postgrest.parse_policy_row(data)
+        except Exception as exc:
+            # A body that is not the shape this badge understands. Dropped whole
+            # rather than half-applied: `parse_policy_row` fails open field by
+            # field, and anything that gets past it is a malformed RESPONSE.
+            self.last_error = _error_text(exc)
+            self._emit("settings_contained", error=self.last_error)
+            return None
+        return self._apply_settings(fields)
+
+    def _apply_settings(self, fields):
+        """Apply the fleet's current state.  IDEMPOTENT.  Never raises.
+
+        W8 KEEPS ROUTINE BUSINESS STEERING HERE: push, score draining and the
+        suggested cadence. Physical acts are broadcasts instead. A table read
+        repeats about 96 times over an eight-hour day; re-reading radio, panel or
+        sleep state would overrule a wearer or repeat an act they already undid.
+
+        AN ABSENT FIELD IS NOT A FALSE ONE. `parse_policy_row` drops what it
+        cannot read, so a truncated body arrives here as an empty dict and every
+        lever keeps the value it had. That is the same fail-open direction
+        `PushPolicy.set_remote` argues for at length. Unknown future business
+        fields are inert until this firmware learns an applier for them.
+        """
+        if not isinstance(fields, dict):
+            return None
+        applied = []
+        # PUSH FIRST, because it is the only lever with a consumer that wants the
+        # WHOLE steering dict rather than one value, and because it is the one
+        # that was already wired: `_on_policy` holds the policy even when no push
+        # object exists yet and forwards it when one appears.
+        if "push_enabled" in fields:
+            self._settings_lever("push_enabled", self._apply_settings_push,
+                                 fields, applied)
+        # THE CADENCE IS THE LOOP'S, NOT THIS OBJECT'S, so it is handed down
+        # rather than held here -- the one piece of steering that still lives in
+        # `polltransport`, where the exchange it paces is decided. Clamped there,
+        # into the band the transport is willing to run at, so nothing the server
+        # can send makes a badge ask faster than its own floor. NOT edge-guarded:
+        # the setter is a plain assignment on the loop and a loop REBUILD is what
+        # would otherwise silently drop the operator's value.
+        cadence = fields.get("next_cadence_ms")
+        if ("next_cadence_ms" in fields
+                and (cadence is None
+                     or (isinstance(cadence, int)
+                         and not isinstance(cadence, bool)))):
+            if self._set_suggested_cadence(cadence):
+                applied.append("next_cadence_ms")
+        # RECORDING IS NEVER GATED. This edge changes only whether the durable
+        # score spool drains, so the operator can delay but not lose a round.
+        if self._settings_edge("scores_enabled", fields):
+            self._settings_lever("scores_enabled", self._apply_settings_scores,
+                                 fields["scores_enabled"], applied)
+        # Legacy wifi/backlight/sleep keys are deliberately unclaimed. W5-W7
+        # deliver those once through `_pump_broadcast_actions`; restoring one
+        # here would turn a moment back into repeated physical state.
+        self._emit("settings_applied", applied=len(applied))
+        return applied
+
+    def _settings_lever(self, name, applier, value, applied):
+        """Pull one lever, alone.  Never raises.
+
+        ONE CONTAINMENT PER LEVER, NOT ONE FOR THE SET, and the difference is the
+        whole reason this helper exists rather than a single `try` around the
+        ladder: current push/scores appliers are total, but a future retained
+        business control may validate or call a fallible seam. Its failure must
+        not stop an independent score or delivery policy below it from applying.
+
+        ⚠ CONTAINED AT ALL. This runs inside `backend.poll`, which runs inside a
+        rendered frame under `launch()`, where an unhandled exception reaches
+        `fatal_error` and resets the badge. A malformed lever is a thing to
+        ignore; it may never be the reason a wearer's badge reboots.
+
+        A LEVER THAT RAISED IS STILL RECORDED AS APPLIED by `_settings_edge`,
+        deliberately: the value did not change, so re-trying it every five minutes
+        for the rest of the event would be ~96 identical failures per badge.
+        """
+        try:
+            result = applier(value)
         except Exception as exc:
             self.last_error = _error_text(exc)
-            return None
-        if due is not None:
-            self._policy_due = due
-        return due
+            self._emit("settings_lever_failed", lever=name,
+                       error=self.last_error)
+            return False
+        if result is False:
+            # A retained control may have nothing to change. That is neither a
+            # failure nor an application, so it stays out of the applied count.
+            return False
+        applied.append(name)
+        return True
+
+    def _settings_edge(self, key, fields):
+        """Whether ``key`` carries a value this badge has not acted on yet.
+
+        THE ABSENT CASE IS NOT AN EDGE and the unchanged case is not either. The
+        remembered value is written HERE rather than in each applier so that no
+        applier can forget to -- a lever that acts without recording is a lever
+        that acts on every read for the rest of the event.
+        """
+        if key not in fields:
+            return False
+        value = fields[key]
+        if key in self._settings_applied and self._settings_applied[key] == value:
+            return False
+        self._settings_applied[key] = value
+        return True
+
+    def _set_suggested_cadence(self, cadence):
+        """Hand the loop the server's suggested exchange cadence.  Duck-typed."""
+        setter = getattr(self._backend, "set_suggested_cadence", None)
+        if not callable(setter):
+            return False
+        try:
+            setter(cadence)
+        except Exception as exc:
+            self.last_error = _error_text(exc)
+            return False
+        return True
+
+    def _apply_settings_push(self, fields):
+        """The doorbell's kill switch, handed to the consumer that owns it.
+
+        NOT EDGE-GUARDED, AND THAT IS THE ONE EXCEPTION TO THE RULE ABOVE.
+        `_on_policy` is an assignment plus a forward into `PushPolicy.set_remote`,
+        which sets a flag; re-applying the same value cannot flicker anything, and
+        the doorbell is REBUILT on every reconnect, so an edge guard would mean a
+        badge that reconnected after the last settings read spent up to five
+        minutes with the operator's kill switch un-applied.
+        """
+        self._on_policy(fields)
+        return True
+
+    def _apply_settings_scores(self, enabled):
+        """The fleet leaderboard lever.  ``False`` stops the DRAIN and nothing else.
+
+        ⚠ **RECORDING IS NEVER GATED, AND THAT ASYMMETRY IS THE WHOLE DESIGN.**
+        `scorebox.record` does not read this flag and must not learn to: a wearer
+        whose round vanished because an operator flipped a switch has lost
+        something the badge cannot get back, while a wearer whose round is merely
+        UPLOADED LATE has lost nothing at all. The spool is durable on flash and
+        survives the `machine.reset()` that every app exit is, so switching the
+        lever back on drains the backlog with no further help.
+
+        ⚠⚠ **AND THIS IS NOT MERELY POLITE -- WITHOUT IT THE LEVER DESTROYS
+        SCORES.** `badgelink.gate_scores()` is a BEFORE INSERT trigger that
+        returns NULL when the lever is off, so the row is discarded and
+        PostgREST still answers 201. The badge reads that as success,
+        `_retire_score` deletes the entry from the spool, and it is gone for good.
+        The server chose the silent discard on purpose -- a 403 used to burn
+        `scorebox.MAX_ATTEMPTS` and delete the spool too. ⚠ THAT SECOND HALF IS
+        NOW HISTORY AND THE FIRST IS NOT: a refusal costs a slot nothing since
+        2026-08-29, but a SILENT SUCCESS is still indistinguishable from a real
+        one and still retires the slot. The only way the lever is safe is for the
+        badge not to post at all, which is this.
+
+        ⚠ **THE RESIDUAL WINDOW IS REAL AND IS NOT CLOSED HERE.** The badge
+        learns the lever off the ~5 minute `fleet_settings` read
+        (`SETTINGS_REFRESH_MS`), so scores posted between the operator's flip and
+        this badge's next read still meet the trigger and are still destroyed.
+        Shortening the cadence is the herd cost that interval exists to price;
+        the real fix is a server that says "dropped" distinguishably, and that is
+        a schema change rather than a firmware one.
+
+        ⚠ **AND IT IS NOT A PRIVACY CONTROL.** Rows already delivered are the
+        backend's; this stops future sends and claims nothing else, exactly as
+        `_apply_wipe_scores` states for the wipe. If the operator's intent is
+        "these scores must not exist", the leaderboard's own cutoff is the tool.
+
+        BOTH DIRECTIONS ARE A REAL APPLICATION. There is no wearer-side switch
+        for score draining, so the fleet's value is the only opinion there is.
+
+        NO EVENT OF ITS OWN, deliberately. `_settings_lever` counts it into
+        `settings_applied`, and the line an operator actually needs is the
+        CONSEQUENCE -- `score_stalled reason=fleet_disabled`, which the drain
+        emits on its own next frame and which is on the printer's whitelist. A
+        second line here would say the same thing one frame earlier in a field
+        (`enabled=`) that `_PRINTED_FIELDS` does not carry.
+        """
+        self._scores_enabled = bool(enabled)
+        return True
+
+    # `_apply_settings_sleep` WAS DELETED HERE ON 2026-08-29 (owner ruling), and
+    # this stub of a comment is the record so nobody writes it back.
+    #
+    # It was the fleet's indefinite-sleep lever: `fleet_settings.sleep_mode`
+    # true -> arm an indefinite `sleep` power action. Its own docstring argued
+    # that re-sleeping on every read was "the lever working, not a loop ... it is
+    # awake for at least a minute every cycle". THE OWNER READ THAT AS THE BUG.
+    # Verbatim: *"I don't think that should be a setting in the Fleet settings...
+    # If I just wanted to set them all to sleep right now... I'll just send a
+    # broadcast message to send them all to sleep once."* A wearer pressing a
+    # button to reclaim their own badge, and getting a minute, is not a lever
+    # working.
+    #
+    # WHAT REPLACED IT IS THE `sleep` BROADCAST, `_apply_sleep`, which fires ONCE
+    # and holds nothing. The two are not a pair and there is no third state: a
+    # badge that was disconnected at fan-out simply stays awake, accepted in the
+    # same ruling (*"I'm not worried if they're not connected"*).
+    #
+    # `fleet_sleep_armed` WENT WITH IT and is not emitted by anything now. The
+    # broadcast lane's line is `action_applied verb=sleep`, followed by
+    # `sleeping seconds=...` from `_sleep_now`.
 
     def _jittered_delay_ms(self, floor_ms, interval_ms):
         """A per-badge delay in ``[floor_ms, interval_ms)``.
@@ -4194,32 +6034,86 @@ class NetworkService:
         self.chores += 1
         return True
 
+    def _release_chore(self):
+        """Hand the frame's budget back after a claim that bought nothing.
+
+        FOR THE RAISE, NEVER FOR A REFUSAL. A pump that claims the budget and
+        then raises has taken the frame's one expensive slot away from every pump
+        behind it while doing none of the expensive work -- and if the raise
+        happens on EVERY frame, the pumps behind it never run at all for the whole
+        boot. That is not hypothetical: on 2026-08-29 the score drain called an
+        API `scorebox` had deleted, claimed the chore, raised, was contained, and
+        `_pump_heartbeat` -- which runs later on the same ladder and needs a chore
+        of its own -- never issued a single beat. A badge that never beats is a
+        badge no operator can see.
+
+        `chores` COMES BACK DOWN WITH IT, because that counter is the frame
+        gate's evidence of what this module made a frame expensive for
+        (`test_ft_b_frame_budget`). A claim that was handed back did not.
+        """
+        if not self._chore_spent:
+            return False
+        self._chore_spent = False
+        self.chores -= 1
+        return True
+
     def _pump_scores(self):
-        """Offer the oldest spooled score, if there is one and a socket exists.
+        """Offer one spooled score, if there is one and a socket exists.
 
         RETIRING COMES FIRST, and it is a whole frame's budget: the delivered
-        entry's key is remembered by the sink and the file work happens here, one
-        frame later, so the frame that received the acknowledgement carries the
-        response decode and nothing else.
+        slot's identity is remembered by the sink and the file work happens here,
+        one frame later, so the frame that received the acknowledgement carries
+        the response decode and nothing else.
 
-        THE ORDER OF THE THREE GUARDS BELOW IS CX-10'S FIX and it is the whole
+        THE ORDER OF THE GUARDS BELOW IS CX-10'S FIX and it is the whole
         of it. This method used to ask ``box.pending()`` FIRST -- eighteen lines
         above `_claim_chore()` and above the socket check -- so a badge with no
         socket at all paid the cold whole-file spool load in its first serviced
         frame, and a frame that had already spent its budget elsewhere paid it
         anyway. Now: eligibility (which costs nothing), then the RAM question,
         then the budget, then the only file touch there is.
+
+        **EVERY REFUSAL BELOW SAYS SO, ONCE (2026-08-29).** Each of these guards
+        used to `return None` in silence -- no line, no event, no `last_error` --
+        and the drain runs on EVERY RENDERED FRAME, so silence was the only
+        affordable choice while the message was unlatched. `_score_stalled`
+        latches it, so the cost is one line per TRANSITION and the owner can read
+        why the spool is not moving instead of inferring it. The bug that forced
+        this: five real scores sat on the owner's badge for a whole boot while
+        the heartbeat and the settings read kept working, and nothing anywhere
+        said the drain had stopped.
         """
         if self._score_retire is not None:
             return self._retire_score()
-        if self._score_inflight is not None:
-            return None
-        # ELIGIBILITY BEFORE STORAGE. Not an error and not worth a log line: the
-        # spool exists precisely because the badge is sometimes offline, and an
-        # offline badge must not read it to discover that it cannot post it.
+        # THE SOCKET QUESTION IS ASKED ABOVE THE LATCH, not below it, and that
+        # ordering IS the fix. `_score_inflight` USED TO BE released by the
+        # response sink and by nothing else, so a response that never arrived --
+        # a loop rebuilt under the errand, a socket lost on one of the paths that
+        # does not reach `polltransport._drop_errands` -- wedged the drain for
+        # the whole remainder of the boot. Reading `backend.state` first costs an
+        # attribute lookup and lets the latch be released on the evidence.
+        # `_release_score_latch` carries the argument in full.
         backend = self._backend
-        if backend is None or getattr(backend, "state", None) != CONNECTED:
-            return None
+        connected = (backend is not None
+                     and getattr(backend, "state", None) == CONNECTED)
+        if self._score_inflight is not None:
+            released = self._release_score_latch(connected)
+            if released is None:
+                return self._score_stalled("inflight")
+        # ELIGIBILITY BEFORE STORAGE. The spool exists precisely because the
+        # badge is sometimes offline, and an offline badge must not read it to
+        # discover that it cannot post it.
+        if not connected:
+            return self._score_stalled("offline")
+        # THE OPERATOR'S LEADERBOARD LEVER, AND IT GATES THE DRAIN ONLY.
+        # `scorebox.record` is never consulted about this flag, so a badge whose
+        # scores are switched off at 2 pm still SPOOLS every round the wearer
+        # plays and posts the lot when the switch comes back. Losing a wearer's
+        # score because an operator flipped a switch would be far worse than
+        # uploading it late, and the spool is durable across the reboot that
+        # every app exit is. See `_apply_settings_scores`.
+        if not self._scores_enabled:
+            return self._score_stalled("fleet_disabled")
         # THE HARDWARE UID, NOT `backend.badge_id()` -- and this is the §0.5
         # implementation trap, stated where the mistake would be made.
         # `DeviceBackend.badge_id` returns the credential's `sub` and MUST keep
@@ -4236,38 +6130,63 @@ class NetworkService:
             # attributed to the fleet. The drain is durable and idempotent, so
             # nothing is lost -- and a badge that cannot name itself must not
             # write a row that says it is somebody else.
-            return None
+            return self._score_stalled("no_badge_id")
         box = self._score_box()
         if box is None:
-            return None
+            # `_score_box` emits `scorebox_unavailable` with the import error,
+            # once per boot, so the CAUSE is already on the log. This says the
+            # consequence in the drain's own vocabulary, which is what a reader
+            # asking "why is the spool not moving" greps for.
+            return self._score_stalled("no_scorebox")
         try:
             # THE FREE QUESTION, and it is the steady frame's whole cost: a spool
-            # the module has already scanned and found empty is an integer
-            # compare, and it does not claim the budget the schedule sync wants.
-            if box.scan_complete() and box.cached_head() is None:
-                return None
+            # the module has already read and found empty is an integer compare,
+            # and it does not claim the budget the schedule sync wants.
+            # `cached_pending() == 0` is the same question the deleted
+            # `cached_head() is None` was asking, minus the second global that
+            # could disagree with the first (see `scorebox.cached_pending`).
+            if box.scan_complete() and box.cached_pending() == 0:
+                return self._score_stalled("spool_empty")
         except Exception as exc:
             self.last_error = _error_text(exc)
-            return None
-        # THE BUDGET IS CLAIMED BEFORE ANY FILE WORK. `drain_head` is either a
-        # RAM read or ONE bounded record of the cold scan; either way it is this
-        # frame's one expensive sub-task and a frame that has spent its budget
-        # elsewhere does not reach it.
+            return self._score_stalled("spool_unreadable")
+        # PAST EVERY GUARD, SO THE LATCH RE-ARMS. Cleared HERE and not at the
+        # bottom because the three refusals below it -- a spent chore, a cold read
+        # that found nothing, a `take_slot` that raised -- are ordinary
+        # frame-to-frame states rather than a drain that has stopped, and latching
+        # a message on them would print on every wearer's badge for no reason.
+        self._score_stall = None
+        # THE BUDGET IS CLAIMED BEFORE ANY FILE WORK. `take_slot` is either a RAM
+        # read or the boot's ONE bounded whole-document load; either way it is
+        # this frame's one expensive sub-task and a frame that has spent its
+        # budget elsewhere does not reach it.
         if not self._claim_chore():
             return None
         try:
-            entry = box.drain_head(self._score_path)
+            slot = box.take_slot(self._score_path)
         except Exception as exc:
+            # THE CHORE GOES BACK, AND THAT IS THE ORDERING FIX (2026-08-29).
+            # This claim is taken BEFORE the call that can raise, and
+            # `_pump_heartbeat` runs later on the same ladder needing a chore of
+            # its own -- so a drain that raised every frame took the frame's one
+            # expensive slot every frame and the heartbeat was NEVER issued. A
+            # badge in that state never registers with the fleet, which is a
+            # badge an operator cannot see at all. Observed for real: the drain
+            # called an API `scorebox` had deleted, so the raise was every frame
+            # of the boot. Handing the budget back costs a frame nothing -- this
+            # path did no file work worth charging for -- and it makes the
+            # starvation impossible rather than unlikely.
+            self._release_chore()
             self.last_error = _error_text(exc)
             return None
-        if entry is None:
-            # The cold scan has not reached a usable record yet, or the spool is
-            # empty. Either way the next frame asks again.
+        if slot is None:
+            # The cold read found an empty spool. The next frame's free guard
+            # answers `spool_empty` from RAM and this costs nothing again.
             return None
         import rpc_contract
 
-        # Keep ``scorebox.row`` as the one mapping from a durable spool entry to
-        # the database vocabulary. The RPC route (never a direct table insert) is
+        # Keep ``scorebox.row`` as the one mapping from a durable slot to the
+        # database vocabulary. The RPC route (never a direct table insert) is
         # what keeps the badge write-only: PostgREST's client-side ON CONFLICT
         # machinery would force SELECT privileges onto ``scores`` and leak the
         # human-only leaderboard read.
@@ -4280,107 +6199,293 @@ class NetworkService:
         # physical id explicitly: self-reported, spoofable, and accepted for the
         # fun tier. This write is on the FLOOR -- never gated behind a claim,
         # never carrying `x-device-token`.
-        row = box.row(badge_id, entry)
+        #
+        # `play_number` REPLACED `idempotency_key` ON THE WIRE (2026-08-29). The
+        # database key is `(badge_id, game, play_number, score)` and the insert is
+        # `on conflict do nothing`, so a re-post of the identical tuple returns
+        # success and creates no second row -- which is the only guarantee the
+        # random handle ever provided. There is no `p_idempotency_key` parameter
+        # left to send one to.
+        row = box.row(badge_id, slot)
         params = rpc_contract.score_submit_self_params(
-            badge_id, row["game"], row["score"], row["idempotency_key"],
+            badge_id, row["game"], row["score"], row["play_number"],
             row["metadata"])
-        self._score_inflight = entry["key"]
+        # THE IDENTITY IS THE TUPLE `retire` CHECKS, not a handle. It is read out
+        # of `row` rather than out of `slot` so that what the sink remembers and
+        # what went on the wire cannot drift: this triple IS the row's natural
+        # key. `take_slot` hands back a snapshot -- `record` builds a new dict
+        # rather than mutating one -- so a better score arriving mid-flight leaves
+        # this describing exactly what was posted, which is what makes `retire`'s
+        # supersede check meaningful.
+        key = (row["game"], row["play_number"], row["score"])
+        self._score_inflight = key
+        # THE DEADLINE IS ARMED FROM A FRESH TICK, not from `self._now`, and the
+        # seam's own docstring is the reason: this runs after `backend.poll`, in
+        # a frame that may have paid a multi-second open, so the frame's opening
+        # tick can be seconds in the past by the time the errand is handed over.
+        self._score_inflight_at = self._ticks_ms()
+
+        # THE SINK CARRIES ITS OWN KEY AND NEVER READS THE LATCH, which is what
+        # makes releasing the latch early SAFE. Before the release existed only
+        # one post could be outstanding, so "the latch" and "the slot this
+        # response is about" were the same thing by construction; they are not
+        # any more. A response abandoned on a lost socket can still arrive after
+        # the drain has re-offered -- and the round robin means the slot it
+        # re-offered is very likely a DIFFERENT GAME, so a sink reading the latch
+        # would retire a slot that was never posted. That is the one way this fix
+        # could lose a score, and this closure is why it cannot.
+        # It costs one function object per POST, on a path already building three
+        # dicts and bounded by `polltransport.ERRAND_MIN_GAP_MS`; it is not a
+        # per-frame allocation.
+        def posted(ok, _data, key=key):
+            self._on_score_posted(key, ok)
+
         queued = self._queue_errand(
             "rpc",
             {"function": rpc_contract.RPC_SCORE_SUBMIT_SELF, "params": params},
-            self._on_score_posted,
+            posted,
         )
         if not queued:
             self._score_inflight = None
+            self._score_inflight_at = None
         return queued
 
-    def _on_score_posted(self, ok, _data):
+    def _release_score_latch(self, connected):
+        """Take a lost score post back, or answer ``None`` to keep waiting.
+
+        **THE PRIMARY HALF OF THE 2026-08-29 WEDGE FIX, and the important one is
+        the socket.** `_score_inflight` was set before the errand was sent and
+        cleared in exactly two places -- the queue refusing it, and the response
+        sink -- so a response that never came back stopped the drain for the
+        REST OF THE BOOT, silently, while the heartbeat and the settings read
+        kept working on the same socket. Five real scores sat on the owner's
+        badge that way. `polltransport._drop_errands` does notify sinks, but only
+        `stop()` and `restart()` reach it: `_abort_parked_open` closes the socket
+        and goes DISCONNECTED without it, and a loop REBUILT under a queued
+        errand takes the sink to the collector with it.
+
+        **RE-OFFERING IS FREE AND THAT IS WHY THIS IS ALLOWED TO BE BLUNT.** The
+        slot is still on flash -- nothing is retired until a response says so --
+        and the row's natural key `(badge_id, game, play_number, score)` is what
+        the server dedupes on (`on conflict do nothing`). The worst case of
+        releasing too eagerly is one duplicate REQUEST and zero duplicate rows;
+        the worst case of releasing too late is the wedge above.
+
+        **NOTHING IS COUNTED AND NOTHING CAN BE DISCARDED.** The obvious
+        implementation -- call the sink with ``(False, None)`` like
+        `_drop_errands` does -- used to run `_count_score_attempt` against
+        `scorebox.MAX_ATTEMPTS` of 3, so a wearer walking in and out of range
+        three times would have their score DELETED. That counter is gone
+        (2026-08-29): a failed post leaves the slot exactly where it is, for ever,
+        so this method has nothing left it could spend.
+
+        THE DEADLINE IS THE BACKSTOP, NOT THE FIX. It exists for the path nobody
+        has thought of: a response lost while the transport never once reports
+        anything other than CONNECTED. See :data:`SCORE_INFLIGHT_MAX_MS`.
+        """
+        if not connected:
+            self._score_inflight = None
+            self._score_inflight_at = None
+            self._emit("score_latch_released", reason="offline")
+            return "offline"
+        started = self._score_inflight_at
+        if started is None:
+            # Armed by something that predates the deadline (a probe, a fixture
+            # writing the latch directly). Adopt this tick so the backstop is
+            # armed from here rather than never.
+            self._score_inflight_at = self._ticks_ms()
+            return None
+        if _ticks_diff(self._ticks_ms(), started) < SCORE_INFLIGHT_MAX_MS:
+            return None
+        self._score_inflight = None
+        self._score_inflight_at = None
+        self._emit("score_latch_released", reason="deadline")
+        return "deadline"
+
+    def _score_stalled(self, reason):
+        """Say WHY the drain is not draining, ONCE per transition.  Never raises.
+
+        LATCHED, BECAUSE THE CALLER IS EVERY RENDERED FRAME. An unconditional
+        line here would be one `print` per frame -- flooding the log the operator
+        is trying to read, and paying `_SINK_SLOW_MS`'s ~1,000 ms per blocked
+        write on a badge whose USB host has gone away. Latching costs one string
+        compare on the steady frame and prints on the EDGE, which is the only
+        place the information is.
+
+        THE WORD IS FROM A CLOSED SET THIS PACKAGE SPELLS, never server text, so
+        it is safe on `reason` -- the same rule `_PRINTED_FIELDS` states for every
+        other word on that whitelist.
+        """
+        if self._score_stall != reason:
+            self._score_stall = reason
+            self._emit("score_stalled", reason=reason)
+        return None
+
+    def _on_score_posted(self, key, ok):
         """The sink, and it CAPTURES rather than works.
 
         The frame that receives an errand response has already paid for the
-        response: `device_link._finish` decoded it. Retiring the entry is a
+        response: `device_link._finish` decoded it. Retiring the slot is a
         whole-file read plus an atomic swap, so it is remembered here and
         performed by `_retire_score` on a later frame.
+
+        ``key`` IS THE POST'S OWN ``(game, play_number, score)`` AND ARRIVES FROM
+        THE CLOSURE, not from `_score_inflight`. `_pump_scores` says why in full;
+        the short form is that the latch is no longer proof of which slot a
+        response is about.
+
+        A RESPONSE THAT LOST ITS RACE IS DROPPED WHOLE. If the latch is already
+        clear, or names a different slot, this response belongs to a post the
+        drain has taken back: the slot it names is either already retired or
+        already re-offered, and acting again could only retire something twice.
+        Dropping is safe in both directions because the spool is the truth and it
+        is durable.
+
+        **A REFUSAL COSTS THE WEARER NOTHING AT ALL.** There is no counter left
+        to strike and no cap to reach: the slot stays exactly where it is and the
+        round robin offers the other four games in the meantime. There is no
+        backlog to drain -- five games, five slots -- so there is nothing to
+        hurry for either. See the section note above for why `MAX_ATTEMPTS` went.
         """
         self._response_continuation = True
-        key = self._score_inflight
+        if self._score_inflight != key:
+            return
         self._score_inflight = None
+        self._score_inflight_at = None
         box = self._score_box()
         if box is None or key is None:
             return
         if ok:
+            self._score_refused = False
             self._score_retire = key
-            self._score_retire_posted = True
             return
-        self._count_score_attempt(key, box)
+        # ONE LINE PER OUTAGE, NOT ONE PER REFUSAL. A slot the server keeps
+        # refusing -- the realistic case is a fleet whose `scores/write` grant is
+        # missing, which refuses all five -- comes back round once per errand gap
+        # for the whole boot, so an unconditional line here is the per-frame flood
+        # `_score_stalled` exists to avoid. Latched instead, and re-armed by the
+        # next success, so the SECOND outage is reported too.
+        if not self._score_refused:
+            self._score_refused = True
+            # NO `game=`. The event NAME is the printed signal; a game slug is a
+            # string this package did not format, and `_PRINTED_FIELDS` carries
+            # only words it spells -- so the field would reach no serial console
+            # and would owe the emitted-field census a written excuse for that.
+            self._emit("score_refused")
 
     def _retire_score(self):
-        """Drop one retired entry.  This frame's one expensive sub-task.
+        """Clear one DELIVERED slot.  This frame's one expensive sub-task.
 
-        Serves both reasons an entry stops being the badge's problem -- delivered
-        and exhausted -- because they are the same operation, which is what
-        `scorebox.retire`'s own docstring says.
+        DELIVERY IS THE ONLY REASON THIS RUNS NOW. It used to serve a delivered
+        slot and an EXHAUSTED one, because retiring was the same operation either
+        way; `MAX_ATTEMPTS` is gone, so nothing is exhausted and nothing is
+        thrown away.
+
+        ⚠ **`scorebox.retire` ANSWERS False AND THAT ANSWER IS LOAD-BEARING.** A
+        round trip takes frames and a player can finish another round inside one,
+        so the slot on flash may no longer be the slot that was posted. `retire`
+        compares BOTH the play number and the score against the FILE and refuses
+        to clear a slot that has been superseded -- which is the guard against
+        the race `40cec1ff` was written for, where a stale OK would have retired
+        a score that was never posted. A drain that ignored the return value
+        would put the better score's fate back in the hands of the response's
+        timing; honouring it means the delivered row is in the database, the
+        better one is still pending, and nothing is duplicated or lost.
         """
         if not self._claim_chore():
             return None
         key = self._score_retire
-        posted = self._score_retire_posted
         self._score_retire = None
         box = self._score_box()
         if box is None or key is None:
             return None
+        game, play, score = key
         try:
-            box.retire(key, self._score_path)
+            cleared = box.retire(game, play, score, self._score_path)
         except Exception as exc:
-            # THE ROW LANDED AND THE SPOOL STILL HOLDS IT, so the next drain
-            # offers the same entry again. The RPC's idempotency key makes
-            # the repost harmless on the server, but nothing would stop it:
-            # the attempt counter only advanced on FAILURE, so a read-only
-            # volume turned "the head cannot block" into a row reposted once
-            # per errand gap for the rest of the boot. A successful post whose
-            # retire failed therefore counts as an attempt too.
-            #
-            # AN EXHAUSTED ENTRY IS NOT COUNTED AGAIN. Its counter was already
-            # cleared and its `score_discarded` already emitted, so the entry
-            # simply stays and the next drain starts its three attempts over --
-            # bounded churn on a volume that is already broken.
+            # THE ROW LANDED AND THE SPOOL STILL HOLDS IT, so the next rotation
+            # offers the same slot again. The natural key makes the repost a
+            # server-side no-op (`on conflict do nothing`), so a read-only volume
+            # costs one duplicate REQUEST per rotation and never a duplicate row
+            # -- and never a deleted score, which is what the attempt counter that
+            # used to be struck here would eventually have done.
             self.last_error = _error_text(exc)
-            if not posted:
-                return False
             self._emit("score_retire_failed", error=self.last_error)
-            self._count_score_attempt(key, box)
             return False
-        self._forget_score_attempts(key)
-        if posted:
-            self._emit("score_posted")
+        if not cleared:
+            # SUPERSEDED WHILE IN FLIGHT. The posted row is in the database and
+            # the slot now holds a BETTER score, still pending. Saying
+            # `score_posted` here would be true about the row and misleading
+            # about the spool, which is the thing an operator is reading this log
+            # to understand.
+            self._emit("score_superseded")
+            return False
+        self._emit("score_posted")
         return True
 
-    def _count_score_attempt(self, key, box):
-        """One more strike against the spool head, and retire it at the cap."""
-        if self._score_attempt_key != key:
-            # A DIFFERENT HEAD, so the previous one's count is history. This is
-            # also what makes the counter leak-proof: nothing survives a change
-            # of head, including an entry FIFO compaction removed.
-            self._score_attempt_key = key
-            self._score_attempts = 0
-        self._score_attempts += 1
-        if self._score_attempts < box.MAX_ATTEMPTS:
-            self._emit("score_retry")
-            return
-        # EXHAUSTED. Retired so the head cannot block every later score -- and
-        # retired through the SAME deferred slot a delivered entry uses, because
-        # the verdict is what belongs in this frame and the file work is not.
-        # The event still fires here: `score_discarded` describes the decision,
-        # and F19's denied leg counts decisions.
-        self._forget_score_attempts(key)
-        self._score_retire = key
-        self._score_retire_posted = False
-        self._emit("score_discarded")
+    # -- the wearer's name ---------------------------------------------------
 
-    def _forget_score_attempts(self, key):
-        if self._score_attempt_key == key:
-            self._score_attempt_key = None
-            self._score_attempts = 0
+    def _wearer_name(self, chore_held=False):
+        """The wearer's typed name, or ``None`` to WAIT.  Never raises.
+
+        ``chore_held`` says THE CALLER ALREADY TOOK THIS FRAME'S CHORE and this
+        read is the work it took it for. It exists because `_pump_heartbeat` now
+        claims the budget for the whole beat, and without it the two claims would
+        collide EVERY time: the beat would take the chore, this read would be
+        refused it, and the name would be omitted from the row on every beat for
+        the whole boot -- a field silently always null, which is indistinguishable
+        from a wearer who never typed one.
+
+        ``""`` MEANS "READ, AND THERE IS NONE"; ``None`` means "not yet, ask
+        again next frame". The two are different because the caller must not
+        report an unattributed name merely because the budget was spent
+        elsewhere.
+
+        ITS CONSUMER IS THE HEARTBEAT NOW (rebuild, 2026-08-29). This was
+        `_telemetry_wearer_name` and it stamped a diagnostic row; the badge
+        reports `wearer_name` UP on `POST /rest/v1/badges` instead of being told a
+        `display_name` DOWN, so this is the reader that feeds it.
+        `scorebox.wearer_name` is the source because it is the same reader that
+        attributes a SCORE -- a leaderboard row and a heartbeat can never disagree
+        about who this badge is.
+
+        THIS IS THE ONLY FILE TOUCH ON THE PATH, IT HAPPENS ONCE PER BOOT, AND IT
+        CLAIMS THE FRAME'S CHORE BEFORE IT HAPPENS. `wearer_name` opens
+        `/state/badgecard.json` and decodes it -- one open, one decode, the exact
+        CX-10 frame allowance -- and caches the answer for the rest of the boot,
+        so every later heartbeat carries a RAM string. It is reached after
+        `_pump_scores` in the poll block, so a frame the score drain already
+        claimed simply defers it by one; nothing is lost, because the next beat is
+        sixty seconds away.
+
+        WHY NOT IN THE CONSTRUCTOR: because
+        `test_cx10_boot_json_cost.ConstructorTests` pins the constructor's opens
+        as an exact SET, and this may not be the thing that adds a boot-path file
+        read. The name is a property of the WEARER rather than of any one report,
+        so reading it lazily loses nothing.
+        """
+        if self._wearer_name_cached is not False:
+            return self._wearer_name_cached
+        box = self._score_box()
+        if box is None:
+            # No `/system/lib` scorebox means no reader for setup's card state.
+            # Recorded as "there is no name" rather than retried: the module is
+            # not going to appear later in this boot.
+            self._wearer_name_cached = ""
+            return self._wearer_name_cached
+        if not (chore_held or self._claim_chore()):
+            return None
+        try:
+            found = box.wearer_name(self._card_state_path)
+        except Exception as exc:
+            # `wearer_name` is total, so this is a `/system/lib` whose scorebox
+            # predates it. Contained and never retried, for the same reason.
+            self.last_error = _error_text(exc)
+            self._emit("wearer_name_contained", error=self.last_error)
+            self._wearer_name_cached = ""
+            return self._wearer_name_cached
+        self._wearer_name_cached = found if isinstance(found, str) else ""
+        return self._wearer_name_cached
 
     def _apply_wipe_scores(self, payload):
         """Discard this badge's UNSENT scores; on ``all``, its high scores too.
@@ -4395,10 +6500,17 @@ class NetworkService:
         THE DRAIN'S RAM STATE IS DELIBERATELY LEFT ALONE. `_score_inflight` names
         an RPC that is already on the wire and cannot be recalled; clearing it
         would only let a second drain start beside it. The retire that follows
-        finds the key gone and `scorebox.retire` returns False without raising,
-        and a stale `_score_attempt_key` cannot outlive a change of head (see
-        `_count_score_attempt`). What DOES have to be reset is the module-level
-        cache, and `scorebox.wipe` owns that.
+        finds the slot gone and `scorebox.retire` returns False without raising,
+        which `_retire_score` already treats as "leave it alone". What DOES have
+        to be reset is the module-level cache, and `scorebox.wipe` owns that.
+
+        ⚠ THAT PARAGRAPH IS SCOPED TO A LIVE SOCKET AND `_release_score_latch`
+        DOES NOT CONTRADICT IT (2026-08-29). The reason not to clear here is that
+        the response IS still coming; the reason to clear there is that it is
+        not. Read together they are one rule -- release the latch exactly when
+        the errand can no longer answer -- and the second drain that argument
+        warns about is now a case the sink itself survives, because it carries
+        its own key rather than reading the latch.
 
         VERSION-SKEW GUARDED. An older `/system/lib` has a `scorebox` with neither
         call, and an `AttributeError` here would ack "failed" with a message that
@@ -4432,15 +6544,548 @@ class NetworkService:
             if wipe_bests is None:
                 raise ValueError("this badge's scorebox predates wipe_scores")
             removed, failed = wipe_bests()
-            # COUNTS RATHER THAN A VERDICT, and the honest signal is in the
-            # RESULT for the reason `_dispatch` already states about "scheduled":
-            # the ack vocabulary has two words and neither of them is "partly".
+            # COUNTS RATHER THAN A VERDICT, because the receipt vocabulary has
+            # two words and neither of them is "partly".
             # A game that was never played is neither removed nor failed, which
             # is normal -- three of the five are off the production roster.
             result["bests_removed"] = removed
             result["bests_failed"] = failed
         self._emit("scores_wiped", scope=scope, discarded=discarded)
         return result
+
+    # -- the battery levers (fleet battery management, 2026-08-28) ----------
+    #
+    # TWO VERBS, ONE MECHANISM, AND THE MECHANISM IS THE HARD PART. BOTH of
+    # them (`sleep`, and `set_networking` with `on: false`) DESTROY THE CHANNEL
+    # THEY ARRIVED ON. Neither acts inline: the applier validates and arms
+    # `self._power`, `_pump_broadcast_actions` binds the keyed receipt after the
+    # applier returns, and `_pump_power_action` acts from a later frame only after
+    # that receipt attempt finishes or its bounded deadline expires. Otherwise
+    # sleep could prevent its own audit row from ever leaving the badge.
+    #
+    # RAM-ONLY IS LOAD-BEARING. A `/state` file saying "sleep when you next boot"
+    # survives the reboot that waking IS and could put a badge straight back to
+    # sleep forever. Missing a moment after a reset is safer than creating a
+    # fleet that needs the RESET pin to recover.
+
+    def _arm_power_action(self, action, needs_ack=True):
+        """Latch one deferred power action.  RAM-only, one at a time.
+
+        ``needs_ack=False`` IS THE PRODUCTION FORM. `_pump_broadcast_actions`
+        binds the resulting receipt after this applier returns, and
+        `_pump_power_action` lets the POST finish (success or failure) before
+        destroying its channel, with a hard timeout that still acts. The True
+        default exists only for the retained compatibility callback and is not
+        reachable from the broadcast lane.
+
+        NEVER DURABLE, for the reboot-loop reason above. A broadcast is never
+        redelivered, so nothing here needs to outlive the boot.
+
+        THE SECOND ONE WINS. Two broadcasts arriving a few frames apart are an
+        operator changing their mind, and the newer moment is the newer intent.
+        Each still receives its accepted receipt attempt; only the newer moment
+        owns the physical latch. The result says `applies: "after_receipt"`
+        rather than pretending the hardware action is already done.
+        """
+
+        self._power = {
+            "action": action["action"],
+            "seconds": action.get("seconds"),
+            "persist": action.get("persist", False),
+            # A persistent radio-off is accepted only after its atomic write
+            # succeeds. Carry the proof so the deferred frame tears down the
+            # radio without repeating a fallible write after the receipt.
+            "preference_saved": action.get("preference_saved", False),
+            "preference_before": action.get("preference_before"),
+            # The broadcast envelope binds these after `_apply` returns, because
+            # the applier deliberately does not know an action id.
+            "receipt_action_id": None,
+            "receipt_done": False,
+            "receipt_status": None,
+            "receipt_deadline": None,
+            # `acks_sent` BEFORE this command's own ack is queued. `_on_command`
+            # queues it a few statements later, in the same synchronous call, so
+            # no exchange can complete in between and this baseline is exact.
+            "sent_at_arm": self._backend_acks_sent(),
+            # `None` MEANS "NOT PROVEN YET" AND `0` MEANS "NOTHING TO PROVE".
+            # `_note_power_ack` fills the first in from `queue_ack`'s FIFO depth;
+            # the second is what a caller with no ack in the first place arms
+            # with, and it is a distinct value rather than a second flag so that
+            # `_pump_power_action` reads one field. See `needs_ack` above.
+            "needed": None if needs_ack else 0,
+            "deadline": _ticks_add(self._ticks_ms(), POWER_ACTION_ACK_MS),
+            "note_until": None,
+        }
+        return self._power
+
+    def _note_power_ack(self, depth):
+        """Record the FIFO depth `queue_ack` reported for the armed action.
+
+        THE ONE NUMBER THAT MAKES DELIVERY PROVABLE. `PollLoop` pops an ack only
+        when its exchange SUCCEEDS (`_pump_inflight`; a `LinkError` leaves it at
+        the head) and increments `acks_sent` on the same line, and the queue is
+        FIFO -- so once `acks_sent` has advanced by the depth this ack was queued
+        at, this ack is one of the ones that went.
+
+        A DEPTH THAT IS NOT A POSITIVE INT MEANS "CANNOT PROVE", AND CANNOT PROVE
+        MEANS NEVER ACT. `DeviceBackend.queue_ack` answers 0 when no `PollLoop`
+        exists yet, and a fixture backend answers None; either way the ack was
+        not handed to a transport that counts, so `needed` stays None and
+        `_pump_power_action` abandons at its deadline rather than sleeping a badge
+        whose server still believes the command failed.
+        """
+
+        power = self._power
+        if power is None or power["needed"] is not None:
+            return None
+        if isinstance(depth, bool) or not isinstance(depth, int) or depth < 1:
+            return None
+        if not isinstance(power["sent_at_arm"], int):
+            return None
+        power["needed"] = depth
+        return depth
+
+    def _backend_acks_sent(self):
+        """`PollLoop.acks_sent`, or None when this badge cannot answer.
+
+        Duck-typed and contained exactly like `_backend_establishment_steps`: a
+        fixture backend, a boot with no loop yet, or a `/system/lib` older than
+        the seam all answer None -- which the caller reads as "cannot prove", the
+        direction that never sleeps.
+        """
+
+        backend = self._backend
+        reader = getattr(backend, "poll_loop", None)
+        if not callable(reader):
+            return None
+        try:
+            loop = reader()
+        except Exception:  # noqa: BLE001 - a diagnostic may not cost a frame
+            return None
+        sent = getattr(loop, "acks_sent", None)
+        if isinstance(sent, bool) or not isinstance(sent, int):
+            return None
+        return sent
+
+    def _pump_power_action(self, now):
+        """Perform a deferred power action after its delivery proof/attempt.
+
+        RUNS AT THE TOP OF A FRAME, OUTSIDE `poll`'s try, AND THAT PLACEMENT IS
+        DELIBERATE. Sleeping or tearing the backend down inside the action sink
+        would destroy the transport while it is still draining the Realtime
+        frame. A later frame owns nothing.
+
+        THREE STAGES, and the note is why there are three rather than two:
+
+        1. **Finish observability.** A broadcast waits for its keyed receipt
+           attempt, then acts whether that POST succeeded, failed or hit its
+           hard timeout. The old callback's ack branch remains compatibility
+           containment only; production never arms it.
+        2. **Show the note**, repainted on every frame for `SLEEP_NOTE_MS`. It
+           has to be repainted: this runs AFTER the foreground app's own
+           `update()` (see `managed_run.managed_update`), so the app clears and
+           redraws the panel every frame and a single paint would survive about
+           one frame. Repainting lands on top of whatever is there and the
+           framework presents it, in the launcher and in any app alike.
+        3. **Act**, which for `sleep` does not return.
+
+        ⚠ THE RECEIPT DEADLINE ACTS. A broadcast is never redelivered, so a
+        missing audit response may not veto the moment; its deadline emits
+        `power_receipt_timeout` and releases the latch. The compatibility ack
+        branch still abandons because it cannot prove delivery.
+
+        ⚠ NEVER RAISES, except for the browser's reset (see `_run_power_action`).
+        `poll` is called from every app's frame pump, and an exception out of
+        here reaches `fatal_error`, which draws a modal and resets the badge --
+        a crash for a command the wearer did not ask for.
+        """
+
+        power = self._power
+        if power is None:
+            return None
+        try:
+            if power["note_until"] is not None:
+                # Repaint first, act second: the last frame that draws is the
+                # frame that sleeps, and the panel keeps the note it was showing
+                # because nothing presents after a call that does not return.
+                self._paint_sleep_note(power)
+                if _ticks_diff(now, power["note_until"]) < 0:
+                    return "note"
+                return self._run_power_action(power)
+            proven = False
+            needed = power["needed"]
+            if needed == 0:
+                # NO ACK TO PROVE. A LIVE BROADCAST IS BOUND TO ITS RECEIPT by
+                # `_pump_broadcast_actions`; direct applier fixtures remain
+                # unbound and keep the original later-frame behavior.
+                receipt_id = power.get("receipt_action_id")
+                if receipt_id is not None and not power.get("receipt_done"):
+                    deadline = power.get("receipt_deadline")
+                    if deadline is None or _ticks_diff(now, deadline) < 0:
+                        return "receipt"
+                    power["receipt_done"] = True
+                    power["receipt_status"] = "timeout"
+                    self._emit("power_receipt_timeout",
+                               action=power["action"])
+                proven = True
+            elif needed is not None:
+                sent = self._backend_acks_sent()
+                if isinstance(sent, int) and not isinstance(sent, bool):
+                    proven = (sent - power["sent_at_arm"]) >= needed
+            if not proven:
+                if _ticks_diff(now, power["deadline"]) < 0:
+                    return "waiting"
+                self._power = None
+                self._emit("power_action_abandoned",
+                           action=power["action"], reason="ack_undelivered")
+                return "abandoned"
+            if power["action"] != "sleep":
+                return self._run_power_action(power)
+            power["note_until"] = _ticks_add(now, SLEEP_NOTE_MS)
+            self._paint_sleep_note(power)
+            return "note"
+        except Exception as exc:  # noqa: BLE001 - see the docstring
+            if type(exc).__name__ == "MachineResetRequested":
+                # THE BROWSER'S REBOOT IS NOT A FAILURE. `settings/__init__._sleep`
+                # found this first: the playground models `powman.sleep()` as an
+                # event plus `machine.reset()`, which raises this type, and
+                # `pg_runtime.step_frame` catches that exact type to end the
+                # session. Matched BY NAME rather than imported, because
+                # `machine.MachineResetRequested` does not exist in the firmware
+                # and importing it would put a browser conditional in shipping
+                # code. Unreachable on hardware: `powman.sleep()` never returns.
+                raise
+            self._power = None
+            self.last_error = _error_text(exc)
+            self._emit("power_action_failed",
+                       action=power["action"], error=self.last_error)
+            return "failed"
+
+    def _paint_sleep_note(self, power):
+        """One note frame.  Contained, because a panel may not cost a sleep."""
+
+        try:
+            self._sleep_note(sleep_note_lines(power["seconds"]))
+        except Exception:  # noqa: BLE001 - see `_draw_sleep_note`
+            pass
+
+    def _run_power_action(self, power):
+        """Do the thing.  The latch is cleared FIRST, always.
+
+        CLEARED BEFORE THE ACT so no failure path can leave it armed: a `sleep`
+        that returned (a fixture, the browser) would otherwise sleep again on
+        every frame for ever, which is `settings_model`'s own ONE-SHOT rule for
+        the same call.
+        """
+
+        self._power = None
+        if power["action"] == "networking_off":
+            if power["persist"]:
+                # THE FLASH WRITE ALREADY SUCCEEDED IN THE APPLIER, before the
+                # accepted receipt. Repeating it here reintroduced a false-
+                # success path: `set_enabled` contains write failures because a
+                # Settings press must not reset the app, then this deferred lane
+                # emitted success anyway. The remaining edge is pure teardown.
+                #
+                # ⚠ THERE IS NO REMOTE ESCAPE. Broadcast moments are not held
+                # for offline badges, and the owner explicitly cut scheduling.
+                # Reintroducing a local delayed-on file would recreate the stale
+                # catch-up model the rebuild removed.
+                #
+                # SO `persist: true` IS ONE-WAY, AND THE ONLY UNDO IS A HUMAN
+                # HOLDING THE BADGE: Settings > Network, on the device, in the
+                # wearer's hand. THE OWNER ACCEPTED THAT KNOWINGLY, verbatim:
+                # *"we know what the implications are, so we would only do that
+                # if we really wanted to or needed to."* It is the end-of-day
+                # fleet shutdown and nothing else.
+                if not power.get("preference_saved"):
+                    raise ValueError("persistent networking action was not saved")
+                self._go_offline("preference")
+            else:
+                self._go_offline("network_suspended")
+            # ONE GREPPABLE LINE FOR BOTH FORMS, carrying the flag that is the
+            # whole difference between them. The two teardown events above are
+            # deliberately different words for an operator watching serial live;
+            # this is the one an incident review searches for afterwards, and a
+            # review that had to know which word to grep would find neither.
+            self._emit("networking_off", persist=power["persist"])
+            return "networking_off"
+        return self._sleep_now(power["seconds"])
+
+    def _sleep_now(self, seconds):
+        """Take the badge dormant.  THE ORDER IS THE WHOLE OF THE SAFETY.
+
+        Lifted from `settings/badge/settings/__init__._sleep`, whose docstring is
+        the specification, with the one deliberate difference noted below.
+
+        * **The service's own `on_exit` first.** Waking is a FULL REBOOT of
+          `main.py` (`docs/design/constraints.md:115`) and nothing survives RAM,
+          so anything that has to be put back has to be put back here or not at
+          all. What this object owns is the two physical channels a remote effect
+          can have taken over, which is exactly `_clear_remote_effects`.
+        * **Then the network DOWN**, because a socket left open across dormancy
+          is a socket the server keeps waiting on. ⚠ THIS IS STRONGER THAN THE
+          SETTINGS ROUTINE, WHICH CALLS `set_active(False)`: that only relaxes
+          the poll CADENCE and leaves the TLS socket open. `_stop_backend` closes
+          it, and the doorbell's with it. The preference file is untouched, so
+          the badge comes back networked -- which is required, or a slept fleet
+          would also be a disconnected one.
+        * **Then the log**, so a tethered operator sees the intent even though
+          the next call does not return.
+        * **Then sleep.**
+
+        THE ARGUMENT IS SECONDS AND THE TWO FORMS ARE DIFFERENT HARDWARE.
+        Measured on device 2026-08-21 (report §6): `sleep()` reaches
+        `powman.sleep()` and arms A/B/C/UP/DOWN; `sleep(n)` reaches
+        `goto_dormant_for(n)` and arms THE ALARM ALONE. HOME is not a wake source
+        either way. So the timed form is a badge whose five face buttons are dead
+        until the alarm expires, and RESET is the only escape -- which is
+        `SLEEP_MAX_MINUTES`' whole job.
+
+        ⚠ **THE TIMED FORM HAS NO BADGE-SIDE TWIN AND THE OWNER IS OWED THAT
+        SENTENCE.** His standing rule is that every admin control has a
+        badge-side equivalent a wearer can undo it with. Settings offers only the
+        INDEFINITE form, and a timed sleep ignores the button a wearer would
+        press, so the wearer's normal wake gesture does nothing. RESET is the
+        twin. That is accepted -- it is what "sleep the fleet for a talk, RESET
+        is the opt-out" means -- but it is an exception to the rule, not an
+        instance of it.
+        """
+
+        api = self._badge_api
+        sleeper = getattr(api, "sleep", None)
+        if not callable(sleeper):
+            # Defensive backstop for a hardware API that changed after the
+            # applier's preflight. Normal absence fails before acceptance.
+            self._emit("sleep_unavailable")
+            return "unavailable"
+        self._clear_remote_effects()
+        self._stop_backend()
+        self._emit("sleeping", seconds=seconds)
+        if seconds is None:
+            sleeper()
+        else:
+            sleeper(seconds)
+        # ONLY REACHED IF THE CALL RETURNED, which on hardware it never does.
+        # The badge carries on; `poll` rebuilds the backend on the next frame
+        # because the preference was never written.
+        self._emit("sleep_failed")
+        return "sleep_failed"
+
+    def _apply_set_networking(self, payload):
+        """Radio off (or on), temporarily by default and durably on request.
+
+        THE PAYLOAD IS WHERE THE DANGER IS LEGIBLE, and that is the owner's
+        requirement rather than a style choice (2026-08-28): *"it should be very
+        obvious when we're doing the destructive one, because Wi-Fi off as a
+        permanent instruction means we're not getting this back unless someone
+        manually goes into the badge and enables it again."* So:
+
+            {"on": false}                  temporary -- back at the next reset
+            {"on": false, "persist": true} permanent -- wearer-only undo
+
+        DEFAULT TEMPORARY, PERSISTENCE SPELLED IN THE ROW. The flag lives in the
+        payload rather than in a console mode so that the `fleet_actions` row
+        itself carries the intent, and the audit trail can be read years later
+        without knowing what UI somebody was looking at.
+
+        TEMPORARY IS FREE ON THIS HARDWARE. Every app exit is a `machine.reset()`
+        (`docs/tufty-architecture.md`), so a transient off ends the moment the
+        wearer opens anything -- which is the semantic the owner asked for, at no
+        cost in state.
+
+        WHAT IT SAVES IS REAL, AND THE CHAIN IS CITED SO NOBODY RE-DERIVES IT:
+        both forms reach `_go_offline` -> `_stop_backend` ->
+        `DeviceBackend.stop()` -> `_wifi.stop(power_down=True)` ->
+        `wlan.active(False)` (`network/badge/resilient_wifi.py:350-351`). The
+        radio is POWERED DOWN, not merely disassociated or idle.
+
+        DEFERRED, NOT IMMEDIATE, for the reason this whole section exists: the
+        effect has to be taken from a later frame, not from inside the transport
+        call stack it is about to tear down. `on: true` is applied inline
+        instead, because bringing the radio UP destroys nothing.
+
+        ⚠ `on: true` IS ALMOST ALWAYS UNDELIVERABLE. A broadcast has no durable
+        hold, and the owner ruled out scheduling. The badge
+        that needs an `on` is by definition the badge that cannot hear it, so
+        `on: true` is only ever useful to CANCEL an off that has not fired yet
+        (below) -- it is not a recovery path, and "queue the off and the on
+        together" is not a thing an operator can do.
+
+        THEREFORE `persist: true` IS ONE-WAY, WEARER-ONLY UNDO, AND ACCEPTED.
+        See `_run_power_action`'s flash-write branch for the owner's words.
+        """
+
+        on, persist = _networking_intent(payload)
+        if on:
+            # AND IT CANCELS AN OFF THAT HAS NOT FIRED YET. Two rows in one poll
+            # response is an operator changing their mind inside three seconds,
+            # and letting an armed off run after an explicit on would take the
+            # radio down moments after being told to bring it up -- with no way
+            # left to say so again. A pending SLEEP is deliberately NOT cancelled:
+            # it is a different intent, and this verb says nothing about it.
+            pending = self._power
+            cancelled = (pending is not None
+                         and pending["action"] == "networking_off")
+            if persist:
+                # Like the off form, a durable claim is accepted only after the
+                # atomic preference write succeeds. This is usually delivered
+                # only while the badge is already online, but the row must still
+                # describe what was actually stored.
+                network_preference.save(True, self._preference_path)
+            elif cancelled and pending.get("preference_saved"):
+                # The superseded off already performed its preflight write.
+                # Restore the value it replaced before cancelling the latch, so
+                # last-write-wins is true after reset as well as in this frame.
+                network_preference.save(
+                    bool(pending.get("preference_before")),
+                    self._preference_path)
+            if cancelled:
+                self._power = None
+            if not self._enabled:
+                # Transient ON must not write the wearer's preference. A badge
+                # already offline cannot normally receive it; this path exists
+                # for a same-response cancellation and deterministic fixtures.
+                self._clear_cause_latch()
+                self._enabled = True
+                self._defer_once = True
+                self._emit("networking_resumed", enabled=True)
+            return {"effect": "networking", "on": True, "persist": persist,
+                    "applies": "immediate", "cancelled_pending_off": cancelled}
+        preference_saved = False
+        preference_before = None
+        if persist:
+            # KNOWABLE BEFORE ACCEPTANCE. A full/read-only state partition must
+            # produce `action_failed`, not an accepted receipt followed by a
+            # radio that stayed up. The deferred frame only tears down transport.
+            preference_before = network_preference.load(self._preference_path)
+            network_preference.save(False, self._preference_path)
+            preference_saved = True
+        # ``needs_ack=False``, FOR WORD FOR WORD THE REASON `_apply_sleep` GIVES
+        # ELEVEN LINES BELOW, AND IT WAS LEFT LIVE ON THIS VERB WHEN SLEEP WAS
+        # FIXED (2026-08-29). Reproduced before the fix: the radio stayed up, the
+        # badge waited out `POWER_ACTION_ACK_MS`, emitted `power_action_abandoned
+        # reason=ack_undelivered`, while the applier had already claimed
+        # `applied` --
+        # a console button that could look successful and do nothing.
+        #
+        # WHY THE GUARD IS SAFE TO DROP, which is the half worth writing down.
+        # Stage 1 of `_pump_power_action` existed to hold back a REDELIVERY LOOP,
+        # and the loop was a property of the COMMAND QUEUE rather than of power:
+        # `powman.sleep()` never returns, so a `badge_commands` row that acted
+        # before its ack was answered stayed unacked, the server redelivered it on
+        # its five-attempt cap, and the badge woke into the same row. A BROADCAST
+        # IS NEVER REDELIVERED -- `public.fleet_actions` fans a moment out ONCE to
+        # whoever is listening, the server holds no open row waiting to be
+        # answered, and `fleet_receipts` is owed to nobody -- so there is no
+        # second delivery for a recovered badge to be handed. This verb is the
+        # milder of the two anyway: the badge keeps running as a name tag and
+        # nothing here fails to return.
+        #
+        # AND THE PROOF WAS ALREADY UNOBTAINABLE, so `needs_ack=True` could only
+        # ever abandon. `_on_command` was the sole caller of `_note_power_ack`,
+        # `queue_ack` now drops what it is handed, and `PollLoop.acks_sent` is
+        # documented "PERMANENTLY 0 SINCE THE REBUILD" -- nothing has advanced it
+        # since. `needed` therefore stayed `None` for ever, which
+        # `_pump_power_action` correctly reads as "cannot prove" and correctly
+        # resolves by abandoning. The pump is right; the arming was wrong.
+        self._arm_power_action({"action": "networking_off", "persist": persist,
+                                "preference_saved": preference_saved,
+                                "preference_before": preference_before},
+                               needs_ack=False)
+        # `persist` IS ECHOED BACK so the console can show what actually
+        # happened rather than what somebody meant to send, and so a row read
+        # back months later still says which of the two commands it was.
+        return {"effect": "networking", "on": False, "persist": persist,
+                "applies": "after_receipt",
+                "undo": "settings" if persist else "reset"}
+
+    def _apply_sleep(self, payload):
+        """Take this badge dormant, from a later frame.
+
+        THE KILLER LEVER, and the only one that is a step change: it turns
+        EVERYTHING off, where `set_networking` only shaves a component. The use
+        case is a talk that does not need badges -- the fleet sleeps for its
+        duration and wakes itself at the end, and anyone who disagrees taps
+        RESET and keeps using their badge at their own battery cost.
+
+            {}                -> indefinite; A/B/C/UP/DOWN wake it (not HOME)
+            {"minutes": 30}   -> timed; the ALARM alone, RESET is the only escape
+
+        THE PAYLOAD RULES ARE `_sleep_seconds`', so every delivery path shares
+        one strict validator. A broadcast fires when it arrives; there is no
+        queue-time or future-fire path.
+
+        MID-APP IS FINE, AND IT IS THE ONE PLACE THIS VERB IS SIMPLER THAN
+        `open_app`. That verb needs a durable note because one boot buys one menu
+        visit plus one app, so an in-app open has no launcher to return to. Sleep
+        needs no launcher: waking is a full reboot into `/system/main.py`, so the
+        wearer lands on the LAUNCHER whatever they were in, and the note says so.
+        What it costs is the running app's unsaved RAM -- which is exactly what a
+        HOME press already costs on this hardware, every time, since every app
+        exit is a `machine.reset()`. Two consequences worth knowing rather than
+        fixing: a game in progress is lost the same way HOME loses it, and a
+        badge inside a non-opted-in app may not have an establishment window at
+        all under OWNER RULING #22, so it simply never receives the command and
+        stays awake.
+        """
+
+        seconds = _sleep_seconds(payload)
+        # A missing hardware API is knowable before acceptance. The old shape
+        # armed cleanly, claimed `applied`, and only later emitted
+        # `sleep_unavailable`; accepted evidence for a badge that cannot sleep
+        # is false evidence.
+        if not callable(getattr(self._badge_api, "sleep", None)):
+            raise ValueError("this badge exposes no sleep control")
+        # ``needs_ack=False``, OR THIS VERB ARMS AND NEVER FIRES. THIS WAS A LIVE
+        # DEFECT, fixed 2026-08-29, and the failure was silent in the worst
+        # direction: the applier returned cleanly, `_pump_broadcast_actions`
+        # counted it applied and armed an `applied` receipt, and the badge then sat
+        # for `POWER_ACTION_ACK_MS` and emitted `power_action_abandoned
+        # reason=ack_undelivered` without ever sleeping. A console button that
+        # reports success to a room and does nothing.
+        #
+        # WHAT THE ACK WAS FOR, so nobody reads this as dropping a safeguard.
+        # Stage 1 of `_pump_power_action` refused to act until `PollLoop.
+        # acks_sent` proved the badge's ack had left, and the hazard it was
+        # holding back was a REDELIVERY LOOP: `powman.sleep()` does not return,
+        # so a `badge_commands` row that slept before its ack was answered stayed
+        # unacked, the server redelivered it on its five-attempt cap, the badge
+        # woke through a full reboot with nothing in RAM, polled, was handed the
+        # same row and slept again -- a fleet nobody can use without finding the
+        # RESET pin.
+        #
+        # A BROADCAST CANNOT PRODUCE THAT LOOP, and that is why the requirement
+        # is gone rather than merely inconvenient. A moment is fanned out ONCE to
+        # whoever is connected (`public.fleet_actions`); the server holds no open
+        # row waiting to be answered, `fleet_receipts` is not an ack owed to a
+        # durable command, and
+        # `_pump_broadcast_actions`' own comment states the shape -- a broadcast
+        # has no durable hold. So there is nothing left for a
+        # woken badge to be handed a second time; waking is just awake.
+        #
+        # AND THE PROOF WAS ALREADY UNOBTAINABLE. The ack lane died with the
+        # command queue: `_on_command` was the only caller of `_note_power_ack`,
+        # `queue_ack` now drops what it is handed, and `PollLoop.acks_sent` is
+        # documented "PERMANENTLY 0 SINCE THE REBUILD". `needed` therefore stayed
+        # `None` for ever, which `_pump_power_action` correctly reads as "cannot
+        # prove" and correctly resolves by abandoning. The pump is right; the
+        # arming was wrong. The broadcast envelope now adds a separate bounded
+        # receipt-before-power gate: it preserves operator observability without
+        # recreating the deleted ack or allowing a receipt failure to veto sleep.
+        self._arm_power_action({"action": "sleep", "seconds": seconds},
+                               needs_ack=False)
+        # `applies: after_receipt` RATHER THAN `applied`, because the honest
+        # answer is accepted/armed: the keyed receipt attempt must finish, then
+        # the note is shown, then hardware acts. `_pump_broadcast_actions`
+        # discards this rich dict (the receipt column is text), but keeping the
+        # field honest prevents a direct diagnostic from reviving the dead ack
+        # model in its interpretation.
+        # `wake` names the ONLY escape for the timed form, so an operator reading
+        # the row later can see what they committed a room to.
+        return {"effect": "sleep", "seconds": seconds,
+                "applies": "after_receipt",
+                "wake": "buttons" if seconds is None else "alarm_or_reset"}
 
     # -- schedule sync (Card FT-B item 4) -----------------------------------
     #
@@ -4472,35 +7117,178 @@ class NetworkService:
     # every stored row to compare one string.
 
     def _pump_schedule_v2(self):
-        """Queue the app-open snapshot RPC once the shared socket is ready."""
+        """Queue the app-open snapshot RPC once the shared socket is ready.
 
-        if (not self._schedule_v2_requested or self._schedule_v2_done
-                or self._schedule_v2_inflight):
+        THE SOCKET QUESTION IS ASKED ABOVE THE LATCH, not below it, and that
+        ordering IS the 2026-08-29 wedge fix -- the same one 40cec1ff applied to
+        the score drain, in the lane that matters most to a wearer. This method
+        used to read `_schedule_v2_inflight` in the very first condition, so a
+        latch that had outlived its errand made the socket question UNREACHABLE:
+        `_on_schedule_v2` was the only thing that ever cleared it, and one
+        response that never came back cost the Schedule app its entire refresh
+        for that app open. There is no cadence behind this request to paper over
+        it -- `request_schedule_refresh` latches exactly ONE -- so what the
+        wearer got was the offline copy, silently, with nothing on screen or on
+        serial to say the badge had stopped asking.
+        """
+
+        if not self._schedule_v2_requested or self._schedule_v2_done:
             return None
         backend = self._backend
-        if backend is None or getattr(backend, "state", None) != CONNECTED:
+        connected = (backend is not None
+                     and getattr(backend, "state", None) == CONNECTED)
+        if self._schedule_v2_inflight:
+            verdict = self._release_schedule_latch(
+                self._schedule_v2_inflight_at, connected)
+            if verdict == "adopt":
+                self._schedule_v2_inflight_at = self._ticks_ms()
+                return None
+            if verdict is None:
+                return None
+            self._release_schedule_v2(verdict)
+        if not connected:
             return None
         import rpc_contract
 
         params = rpc_contract.schedule_current_v2_params(
             self._schedule_v2_have)
+        generation = self._schedule_v2_gen
+
+        # THE SINK CARRIES THE GENERATION IT WAS QUEUED UNDER and never reads the
+        # latch, which is what makes releasing the latch early SAFE. Before the
+        # release existed only one snapshot could be outstanding, so "the latch"
+        # and "the request this response is about" were the same thing by
+        # construction; they are not any more. `polltransport._safe_close` leaves
+        # a queued errand in its list, so an abandoned request can still answer
+        # AFTER the service has re-offered -- and this sink sets `done` and
+        # consumes the app's one parked callback, so a stale `(False, None)`
+        # would retire the refresh the badge is at that moment succeeding at.
+        # One function object per REQUEST, on a path bounded by
+        # `request_schedule_refresh` to one per app open; it is not a per-frame
+        # allocation.
+        def received(ok, data, generation=generation):
+            self._on_schedule_v2(generation, ok, data)
+
         queued = self._queue_errand(
             "rpc",
             {"function": rpc_contract.RPC_SCHEDULE_CURRENT_V2,
              "params": params, "method": "GET"},
-            self._on_schedule_v2,
+            received,
             key="schedule_v2_open",
         )
         if queued:
             self._schedule_v2_inflight = True
+            # ARMED FROM A FRESH TICK, not from a frame tick this method is not
+            # even given: `poll` runs this after `backend.poll`, in a frame that
+            # may have paid a multi-second open. `self._ticks_ms` is the existing
+            # seam (`__init__`'s `ticks_ms` argument), not a new clock.
+            self._schedule_v2_inflight_at = self._ticks_ms()
             self._emit("schedule_v2_queued")
         return queued
 
-    def _on_schedule_v2(self, ok, data):
-        """Stage one decoded response into the app; never parse or write here."""
+    def _release_schedule_v2(self, reason):
+        """Take the app-open snapshot's latch back so the next connect re-asks.
+
+        NOTHING IS CONSUMED HERE, AND THAT IS THE WHOLE CARE IN IT. `done` stays
+        False and `_schedule_v2_sink` stays parked, because the bounded thing on
+        this lane is the REQUEST ITSELF: `request_schedule_refresh` grants one
+        per app open and refuses a second, so a release that let `_on_schedule_v2`
+        run would spend the wearer's only refresh on a socket outage. That was
+        this lane's version of the score drain's `MAX_ATTEMPTS` -- which is itself
+        deleted now, leaving this the only bounded consumable left -- and it is
+        the reason the transport-level fix was rejected: see the module note on
+        `_release_schedule_latch`.
+
+        RE-ASKING IS FREE. The request is a GET with a `p_have_artifact_id` the
+        badge already holds, so a duplicate costs one conditional read that
+        writes nothing anywhere; the coalescing key means a queued-but-unsent
+        errand is REPLACED rather than duplicated, and the generation bump means
+        an abandoned one that answers late is dropped.
+        """
+        self._schedule_v2_inflight = False
+        self._schedule_v2_inflight_at = None
+        self._schedule_v2_gen += 1
+        # ON THE TRANSITION, NEVER PER FRAME. `_pump_schedule_v2` runs on every
+        # rendered frame and the latch is clear the moment this returns, so this
+        # line costs one print per RELEASE -- the edge, which is the only place
+        # the information is. The steady wedged frame printed nothing at all
+        # before this fix and still prints nothing after it.
+        self._emit("schedule_v2_latch_released", reason=reason)
+        return reason
+
+    def _release_schedule_latch(self, started, connected):
+        """Has an in-flight schedule request's latch outlived the errand it names?
+
+        Answers ``None`` to keep waiting, ``"adopt"`` when the caller must arm a
+        deadline this latch never got, and otherwise the RELEASE REASON. It
+        DECIDES ONLY: the two schedule latches own different state and this
+        judgement is the whole of what they share.
+
+        **THE SOCKET IS THE MECHANISM AND THE DEADLINE IS THE BACKSTOP**, exactly
+        as `_release_score_latch` argues for the drain. `polltransport` clears a
+        latch's response on precisely three paths -- `stop()`, `restart()` and
+        `_enter_revoked`'s 403, all via `_drop_errands` -- while
+        `_abort_parked_open` (an OWNER RULING #22 placement deny, driven every
+        frame) and `request_reconnect` (every radio edge, and the boot's loop
+        build) close the socket without notifying anybody, and a REBUILT loop
+        takes its whole queue to the collector.
+
+        ⚠ **AND THE FIX FOR THAT DOES NOT BELONG IN THE TRANSPORT, which was
+        evaluated first and rejected on the evidence (2026-08-29).** Making those
+        two paths call `_drop_errands` would hand `(False, None)` to every sink
+        in the system on paths that today deliver nothing, and three of them act
+        on a false response in a way the badge cannot take back:
+
+        * `_on_schedule_v2` sets ``_schedule_v2_done`` and drops the app's parked
+          sink WHATEVER the answer, and `request_schedule_refresh` refuses to
+          re-arm once ``done`` -- so a placement deny during CONNECTING would
+          retire the Schedule app's only refresh for the whole boot. It would
+          make the very bug this method exists to fix strictly worse.
+        * `_on_score_posted` used to run `_count_score_attempt` against
+          `scorebox.MAX_ATTEMPTS` of 3, so three radio flaps would DISCARD a
+          wearer's score, and 40cec1ff's key guard did not close it: a transport
+          drop fires while the latch still names the same slot. ⚠ THAT COUNTER IS
+          DELETED (2026-08-29) and this bullet is now the WEAKEST of the three --
+          a false `(False, None)` costs one latched `score_refused` line and
+          nothing else. The other two still stand on their own.
+        * `_on_receipt_posted` counts `receipts_dropped` and the entry is already
+          gone from `_receipts`, so the audit row is lost for good -- where today
+          `_safe_close` leaves the errand queued and the next open sends it.
+
+        That last point is the general one: those two paths do NOT drop the
+        errand queue today, they only clear `_inflight`, so a transport "fix"
+        would CANCEL requests that currently succeed on the next open. Per
+        consumer is the safe shape, and it is the shape the score drain already
+        took.
+        """
+        if not connected:
+            return "offline"
+        if started is None:
+            # Armed by something that predates the deadline (a probe, or a
+            # fixture writing the latch directly). Adopt this tick, so the
+            # backstop is armed from here rather than never.
+            return "adopt"
+        if _ticks_diff(self._ticks_ms(), started) < SCHEDULE_INFLIGHT_MAX_MS:
+            return None
+        return "deadline"
+
+    def _on_schedule_v2(self, generation, ok, data):
+        """Stage one decoded response into the app; never parse or write here.
+
+        ``generation`` IS THE REQUEST'S OWN AND ARRIVES FROM THE CLOSURE, not
+        from the latch. A RESPONSE THAT LOST ITS RACE IS DROPPED WHOLE: the
+        service has already taken that request back and re-offered it, so acting
+        on this one could only spend the app's single parked sink on an answer
+        the badge no longer believes -- and on the `(False, None)` case, retire
+        the refresh permanently. `_pump_schedule_v2` says why in full.
+        """
 
         self._response_continuation = True
+        if generation != self._schedule_v2_gen:
+            self._emit("schedule_v2_stale_dropped")
+            return
         self._schedule_v2_inflight = False
+        self._schedule_v2_inflight_at = None
         self._schedule_v2_done = True
         sink = self._schedule_v2_sink
         self._schedule_v2_sink = None
@@ -4559,10 +7347,24 @@ class NetworkService:
             # record a failure differently, which they did.
             self._cached_schedule_version()
             return "cached"
-        if self._schedule_inflight:
-            return None
+        # THE SOCKET QUESTION IS ASKED ABOVE THE LATCH, for the reason
+        # `_pump_schedule_v2` states at length: `_schedule_inflight` used to be
+        # read here FIRST, so a latch that had outlived its errand made the
+        # socket question unreachable and one lost response stopped this sync --
+        # cadence check and paged fetch alike -- for the rest of the boot.
         backend = self._backend
-        if backend is None or getattr(backend, "state", None) != CONNECTED:
+        connected = (backend is not None
+                     and getattr(backend, "state", None) == CONNECTED)
+        if self._schedule_inflight:
+            verdict = self._release_schedule_latch(
+                self._schedule_inflight_at, connected)
+            if verdict == "adopt":
+                self._schedule_inflight_at = self._ticks_ms()
+                return None
+            if verdict is None:
+                return None
+            self._release_schedule_sync(verdict)
+        if not connected:
             return None
         if self._schedule_pages is not None:
             return self._request_schedule_page()
@@ -4584,17 +7386,49 @@ class NetworkService:
         self._schedule_due = _ticks_add(now, SCHEDULE_REFRESH_MS)
         import rpc_contract
 
+        generation = self._schedule_gen
+
+        def answered(ok, data, generation=generation):
+            self._on_schedule_version(generation, ok, data)
+
         self._schedule_inflight = True
+        self._schedule_inflight_at = self._ticks_ms()
         queued = self._queue_errand(
             "rpc",
             {"function": rpc_contract.RPC_SCHEDULE_VERSION,
              "params": {}, "method": "GET"},
-            self._on_schedule_version,
+            answered,
             key="schedule_version",
         )
         if not queued:
             self._schedule_inflight = False
+            self._schedule_inflight_at = None
         return queued
+
+    def _release_schedule_sync(self, reason):
+        """Take the schema-1 sync's latch back so the next frame can ask again.
+
+        NO ATTEMPT AND NO CADENCE IS CONSUMED. `_schedule_due` was advanced by
+        `SCHEDULE_REFRESH_MS` before the request went out -- deliberately, so a
+        reset during a failing errand cannot recreate the herd the CX-8 phase
+        just spread -- and a release does NOT pull it forward for the same
+        reason. What that costs is a version check landing at its next 15-minute
+        tick rather than immediately; what it buys is that a released badge
+        cannot turn a flapping AP into a fleet-wide burst. A paged FETCH does
+        resume at once, because `_schedule_pages` is checked above the cadence
+        and `_schedule_offset` still names the page that was never answered.
+
+        NOTHING IS DISCARDED EITHER: the pages already parsed stay in
+        `_schedule_pages`, the version is not stored until the last page is
+        written, and `_abandon_schedule_fetch` is reached only by a response that
+        genuinely failed. The bump is what keeps that true -- see
+        `_on_schedule_page`.
+        """
+        self._schedule_inflight = False
+        self._schedule_inflight_at = None
+        self._schedule_gen += 1
+        self._emit("schedule_latch_released", reason=reason)
+        return reason
 
     def _schedule_first_delay_ms(self):
         """How long this boot waits before its FIRST schedule-version check.
@@ -4615,10 +7449,20 @@ class NetworkService:
         return self._jittered_delay_ms(SCHEDULE_FIRST_MIN_MS,
                                        SCHEDULE_REFRESH_MS)
 
-    def _on_schedule_version(self, ok, data):
-        """The sink, and it touches NO file: the cached version is in RAM."""
+    def _on_schedule_version(self, generation, ok, data):
+        """The sink, and it touches NO file: the cached version is in RAM.
+
+        ``generation`` IS THE REQUEST'S OWN. A check the sync has already taken
+        back is dropped whole: it would otherwise be free to start a fetch on the
+        strength of a version the badge asked about two outages ago, wiping a
+        fetch already in progress.
+        """
         self._response_continuation = True
+        if generation != self._schedule_gen:
+            self._emit("schedule_stale_dropped")
+            return
         self._schedule_inflight = False
+        self._schedule_inflight_at = None
         box = self._schedule_store()
         if box is None or not ok:
             return
@@ -4644,26 +7488,47 @@ class NetworkService:
             return None
         import rpc_contract
 
+        generation = self._schedule_gen
+
+        def paged(ok, data, generation=generation):
+            self._on_schedule_page(generation, ok, data)
+
         self._schedule_inflight = True
+        self._schedule_inflight_at = self._ticks_ms()
         queued = self._queue_errand(
             "table",
             {"table": rpc_contract.TABLE_SCHEDULE_EVENTS, "method": "GET",
              "query": box.page_query(self._schedule_offset)},
-            self._on_schedule_page,
+            paged,
         )
         if not queued:
             self._schedule_inflight = False
+            self._schedule_inflight_at = None
         return queued
 
-    def _on_schedule_page(self, ok, data):
+    def _on_schedule_page(self, generation, ok, data):
         """The sink, and it CAPTURES the page rather than normalising it.
 
         Everything expensive about a page -- the per-character sanitize, the
         `_raw` decision, the bound on every field -- happens in
         `_schedule_parse_step`, `SCHEDULE_PARSE_ROWS` rows at a time.
+
+        ``generation`` IS THE REQUEST'S OWN, AND THIS IS THE SINK THE RELEASE
+        WOULD HAVE BROKEN. Once a latch can be taken back, the same offset can be
+        re-requested while the abandoned read is still capable of answering --
+        and the two failure modes are both silent corruption of what the wearer
+        reads. An abandoned page that answers OK would stage its rows a SECOND
+        time, duplicating a whole page of the agenda; an abandoned page that
+        answers FAILED would call `_abandon_schedule_fetch` on the fetch that
+        replaced it, throwing away every page already parsed. So a response that
+        does not name the request in hand is dropped before either can happen.
         """
         self._response_continuation = True
+        if generation != self._schedule_gen:
+            self._emit("schedule_stale_dropped")
+            return
         self._schedule_inflight = False
+        self._schedule_inflight_at = None
         box = self._schedule_store()
         if box is None or self._schedule_pages is None:
             # No fetch is in progress, so this is a late or duplicated sink call.
@@ -4779,12 +7644,13 @@ class NetworkService:
             return False
 
     def _pump_effect(self, now):
-        self._pump_scheduled_commands(now)
-        if self._pulse_until is not None and _ticks_diff(now, self._pulse_until) >= 0:
-            self._pulse_until = None
-            self._caselights(0)
+        # ONLY BOUNDED STEADY SLOTS LIVE HERE. None of these calls may claim the
+        # frame's expensive chore or a ledger/cache write would freeze a
+        # 300-second show on every retry frame.
         program = self._lights
-        if program is not None:
+        stepped_program = self._lights_stepped_frame
+        self._lights_stepped_frame = None
+        if program is not None and program is not stepped_program:
             # ONE PROGRAM, ONE CALL, NO ALLOCATION. `step` answers None on a
             # frame whose level has not changed, which is the same duplicate
             # suppression every app applies to badge.caselights.
@@ -4799,7 +7665,9 @@ class NetworkService:
         # a shared slot would put a type switch in a frame pump that runs on every
         # rendered frame of every app.
         player = self._effect
-        if player is not None:
+        stepped_player = self._effect_stepped_frame
+        self._effect_stepped_frame = None
+        if player is not None and player is not stepped_player:
             # `step` is False on every frame where neither channel moved, which is
             # most of them, and True/False are singletons -- so a quiet frame of a
             # 300-second show allocates nothing.
@@ -4807,6 +7675,16 @@ class NetworkService:
                 self._write_effect_levels(player)
             if player.done:
                 self._effect = None
+                queued = self._effect_queue
+                if queued:
+                    # CONTINUE FROM RAM, NOT THE NETWORK. This is the property
+                    # W9 buys: after the one array arrives, every later boundary
+                    # is local and a dropped socket cannot truncate the show.
+                    following = queued.pop(0)
+                    self._effect_queue = queued or None
+                    self._start_effect_player(following, now)
+                else:
+                    self._effect_queue = None
 
     def _emit(self, event, **fields):
         if self._event_sink is None:
@@ -4817,22 +7695,25 @@ class NetworkService:
         self._event_sink(record)
 
     def _on_policy(self, steering):
-        """The server's transport policy, on its way to the doorbell.
+        """The push half of the fleet settings, on its way to the doorbell.
 
-        Held even when there is no push object yet, so a policy that arrived
-        before the first WS session still applies to it. Contained: a malformed
-        policy is a thing to ignore, never a thing to crash a poll cycle over.
+        Held even when there is no push object yet, so a setting that arrived
+        before the first WS session still applies to it (`_service_push` replays
+        `self._policy` when it builds one). Contained: a malformed policy is a
+        thing to ignore, never a thing to crash a poll cycle over.
+
+        ITS PRODUCER CHANGED, ITS CONSUMER DID NOT (rebuild, 2026-08-29). This was
+        fed by the transport-policy RPC's own response; it is fed by
+        `_apply_settings` now, off the five-minute `fleet_settings` GET. The dict
+        shape is unchanged, `PushPolicy.set_remote` reads the same
+        `push_enabled` key with the same fail-open rule, and the extra keys the
+        settings row carries are simply not read here.
+
+        NO DUE TIME IS TOUCHED HERE, which used to need a paragraph of CX-8
+        history to explain and now needs none: there is one cadence, it lives in
+        `_pump_fleet_settings`, and it advances where the request is issued.
         """
         self._policy = steering if isinstance(steering, dict) else None
-        # THE DUE TIME IS NOT TOUCHED HERE ANY MORE (CX-8, corrected 2026-08-23).
-        # This line used to be `self._policy_due = _ticks_add(self._now,
-        # POLICY_REFRESH_MS)`, which made this object the second owner of one
-        # cadence: it advanced on ARRIVAL while the loop advanced on ISSUE, so a
-        # FAILED read left the two disagreeing and a rebuild handed the stale copy
-        # back down. `polltransport._process_steering` now performs this same
-        # advance on the loop -- which is where "whichever exchange carried it"
-        # belongs, since the loop is what reads the poll response -- and
-        # `_mirror_policy_due` brings it back here. See that method.
         if self._push is None:
             return None
         try:
@@ -4914,6 +7795,22 @@ class DeviceBackend:
     #: `__new__` and an `__init__` default would be invisible to all of them.
     _clock_verified = False
 
+    #: `clock_boot.resync`'s LAST WORD, or ``None`` before anything has tried.
+    #:
+    #: LATCHED BECAUSE IT HAD NOWHERE ELSE TO GO. `_build_loop` already emits it
+    #: as `clock_resync_skipped(reason=)` -- onto a serial port that, at the
+    #: venue, has nothing attached to it: the badges are on battery and handed
+    #: out, and the panel is the only channel. This is one string assignment on a
+    #: per-connect path (never per frame), which is the whole cost of making
+    #: `dns_unreachable` distinguishable from `ntp_rejected: before_build_floor`
+    #: on the screen. `NetworkService.clock_diagnostics` is the reader.
+    #:
+    #: A CLASS attribute for `_clock_verified`'s reason, and NOT reset between
+    #: builds: it is the last outcome of the boot, and a field cleared on entry
+    #: to `_build_loop` would read `None` for exactly as long as the frame that
+    #: is failing.
+    _clock_reason = None
+
     def __init__(self, command_sink, event_sink, rtc_device=None):
         import fetch
         import network
@@ -4951,8 +7848,8 @@ class DeviceBackend:
         self._command_sink = command_sink
         self._event_sink = event_sink
         self._policy_sink = None
-        #: The service-owned steering phase, held until a loop exists to take it.
-        self._policy_due = None
+        #: The server's suggested cadence, held until a loop exists to take it.
+        self._suggested_cadence_ms = None
         #: CX-3's shared address cache. Owned here because this is the object
         #: that owns the radio and therefore the WLAN session the cache is scoped
         #: to; reached by the doorbell through `poll_loop().link.addresses`.
@@ -5050,33 +7947,28 @@ class DeviceBackend:
             self._loop._policy_sink = sink
         return sink
 
-    def set_policy_due(self, due_ms):
-        """When the service says the next steering read is due (CX-8).
+    def set_suggested_cadence(self, cadence_ms):
+        """The server's suggested exchange cadence, on its way to the loop.
+
+        THE ONE PIECE OF STEERING THAT IS STILL THE LOOP'S. Everything else the
+        fleet settings carry is applied by `NetworkService`, but the interval
+        between exchanges is decided where the exchanges are, and the loop clamps
+        whatever arrives into the band it is willing to run at -- so nothing the
+        server can send makes a badge ask faster than its own floor.
 
         Same shape as `set_policy_sink` and for the same reason: the service does
-        not reach into the loop, and a backend with no loop yet remembers the
+        not reach into the loop, and a backend with no loop yet REMEMBERS the
         value so the loop built on the first successful association carries it.
-        """
-        self._policy_due = due_ms
-        if self._loop is not None:
-            self._loop.arm_policy(due_ms)
-        return due_ms
 
-    def policy_due(self):
-        """What the LIVE loop says the next steering read is due at, or ``None``.
-
-        The read-back half of `set_policy_due` (CX-8, corrected 2026-08-23). The
-        loop advances its own due time when it ISSUES a request and again when
-        steering ARRIVES; the service used to advance a separate copy only on
-        arrival, so a FAILED read left the two disagreeing and the next rebuild
-        handed the stale past-due back down here. Answering from the loop when
-        there is one -- and from the remembered value when there is not, which is
-        the window between a rebuild and the first successful association --
-        makes the service's copy a mirror instead of a second opinion.
+        ⚠ THIS REPLACED `set_policy_due`/`policy_due` (rebuild, 2026-08-29). Those
+        two existed only because the steering READ was a loop request kind with a
+        due time on both objects; the settings read is an errand on one cadence in
+        one object now, so there is nothing left to mirror.
         """
+        self._suggested_cadence_ms = cadence_ms
         if self._loop is not None:
-            return self._loop.policy_due()
-        return self._policy_due
+            self._loop.set_suggested_cadence(cadence_ms)
+        return cadence_ms
 
     def push_address_ready(self):
         """Whether held WSS can connect without entering name resolution."""
@@ -5108,6 +8000,20 @@ class DeviceBackend:
         reference handed out at construction.
         """
         return self._loop
+
+    def clock_snapshot(self):
+        """What this boot's clock syncs did: ``{"synced", "reason"}``.
+
+        THE PLAUSIBILITY HALF IS NOT HERE ON PURPOSE. This object exists only
+        once the radio has been asked for, and a badge whose loop never built --
+        the brick :data:`CLOCK_DIAGNOSTIC_KEYS` describes -- may have no backend
+        at all. So the answer that must never depend on one lives in
+        :meth:`NetworkService.clock_diagnostics`, and this contributes only the
+        two facts that are genuinely this object's: whether a sync LANDED (the
+        latch `clock_boot.resync`'s shift bound is already armed by) and what
+        `resync` last said. Two field reads; nothing is derived or counted.
+        """
+        return {"synced": self._clock_verified, "reason": self._clock_reason}
 
     def set_active(self, active):
         self._active = bool(active)
@@ -5170,6 +8076,115 @@ class DeviceBackend:
         online and keeps the pre-Lane-H behaviour exactly.
         """
         return self._was_online
+
+    def wifi_snapshot(self):
+        """`ResilientWiFi`'s own record, forwarded unchanged.
+
+        Five field reads into a fresh dict -- `{state, reason, attempts,
+        failures, connected_ms}` -- which is what makes it affordable on the
+        draw path the Network screen's first two pages run on. NOTHING IS
+        DERIVED OR RE-READ HERE, and specifically nothing calls
+        `ResilientWiFi.tick`: that would be a SECOND native `wlan.isconnected()`
+        in a frame that has already paid one, and it could answer differently
+        from the value the frame's own edge decision was made on. Same rule as
+        :meth:`wifi_online`, for the same reason.
+
+        `connected_ms` STAYS A STAMP. Converting it to a held duration needs the
+        frame's clock, and this object does not own one;
+        `NetworkService.wifi_diagnostics` does it.
+
+        **THE SSID IS NOT IN THIS RECORD AND HAS NO KEY.** `ResilientWiFi` holds
+        it, and the owner's instruction names the network name a secret -- ~200
+        screens anyone can wake in a public hall is a product decision, not an
+        engineering one. Omitting the key outright is what makes it structurally
+        unable to reach a view, rather than a rule a future caller could forget.
+        """
+
+        return self._wifi.snapshot()
+
+    def wifi_region(self):
+        """The regulatory domain this radio was started in, or ``None``.
+
+        NOT A SECRET AND NOT CREDENTIAL MATERIAL: it is the two-letter domain
+        :meth:`start` already validates and hands to `network.country()`. It is
+        worth a band because a badge provisioned `GB` and flown to San Francisco
+        cannot see the venue's channels at all, and nothing else on this badge
+        can say so -- the radio simply never associates and every other line
+        reads exactly like an out-of-range access point.
+
+        READ OFF `secrets` RATHER THAN OFF `network.country()`, which is a
+        native call and this runs on a draw path. The validated constant is also
+        the more useful answer: it is what was ASKED for, so a mismatch with the
+        hall is visible without a second reading to compare against.
+        """
+
+        region = getattr(self._secrets, "REGION", "")
+        return region.upper() if isinstance(region, str) and len(region) == 2 else None
+
+    def resolver_snapshot(self):
+        """The bounded resolver's counters PLUS the address it would ask.
+
+        `BoundedResolver.server()` reads `wlan.ifconfig()`, which is a NATIVE
+        CALL, and that is precisely why this is its own accessor rather than
+        three more keys on :meth:`wifi_snapshot`: only Network page 3 asks, so
+        the cost is paid by the page that needs it and by no other frame.
+
+        `resolver_address` already contains its own failure -- a radio that is
+        down or a port whose `ifconfig` is short answers ``None`` -- so the grey
+        zone this exists to NAME arrives as `server: None` rather than as a
+        raise. That state is the whole reason `bounded_dns` replaced
+        `socket.getaddrinfo`: DHCP offered no option 6, the gateway is unusable,
+        and the badge that used to sit there for 13.1-14.0 s per lookup with
+        nothing on any screen now has one line saying so.
+
+        The address is written onto the resolver's OWN fresh record, never into
+        a cached one, so a reader can never catch a half-written dict.
+        """
+
+        record = self._resolver.snapshot()
+        record["server"] = self._resolver.server()
+        return record
+
+    def link_counts(self):
+        """Six field reads off the live ``PollLoop``, or ``None``.
+
+        **DELIBERATELY NOT `PollLoop.snapshot()`.** That builds ~35 keys, and
+        this is read once per rendered frame for as long as an operator holds
+        Network page 3 or 4 up -- which is exactly the badge somebody is staring
+        at because it is retrying. The rule the whole diagnostic design turns
+        on is: on a draw path, read the individual attributes and never a
+        snapshot.
+
+        ``None`` MEANS THERE IS NO LOOP, which is a state and not an error: a
+        badge that never associated, or one whose clock is implausible so
+        `_build_loop` raises before it finishes. The panel draws that in words.
+        It may not draw zeroes -- a zeroed counter is a measurement, and this is
+        the absence of one.
+
+        `open_phases` is forwarded BY REFERENCE and never copied. `DeviceLink`
+        REPLACES that record once per open rather than mutating it in place
+        (`device_link.py`'s `_publish_phases`), so a reader between opens always
+        sees one whole consistent record and a copy here would only be heap.
+        """
+
+        loop = self._loop
+        if loop is None:
+            return None
+        link = getattr(loop, "link", None)
+        return {
+            "state": loop.state,
+            "opens": loop.opens,
+            "open_failures": loop.open_failures,
+            # ⚠ `open_attempts` IS NOT `opens + open_failures` AND THE GAP IS
+            # ITSELF A FINDING: the two halves move only inside `_attempt_open`'s
+            # three classified branches, so an open that raised an unclassified
+            # exception moved neither. Counted on ENTRY, so the answer does not
+            # depend on an exception taxonomy.
+            "open_attempts": loop.open_attempts,
+            "last_error": loop.last_error,
+            "revoked_reason": loop.revoked_reason,
+            "phases": getattr(link, "open_phases", None),
+        }
 
     def connect_attempts(self):
         """Opens this backend's loop has ATTEMPTED, successful or not (Lane H).
@@ -5289,8 +8304,8 @@ class DeviceBackend:
     def poll(self, now):
         # THE §2 BOOT ASSERT'S OTHER HALF: OFFLINE MODE. A badge whose own
         # hardware id IS the fleet's subject cannot safely use the floor -- its
-        # command queue and `badge_state` row would be the floor's, and revoking
-        # the fleet grant would revoke its own tier -- so it does not try. It
+        # `badge_state` identity would be the floor's, and revoking the fleet
+        # grant would revoke its own tier -- so it does not try. It
         # remains a fully working offline nametag, which is what offline-first
         # buys: refusing the radio costs the wearer nothing they can see, and the
         # one line already emitted at construction is what QA reads. Checked
@@ -5647,12 +8662,30 @@ class DeviceBackend:
         prepare_started = _ticks_ms()
         entered = prepare_started
         if self._bound_ntp_host():
-            outcome = self._clock_boot.resync(
-                self._ntptime,
-                self._rtc,
-                read_epoch=lambda: int(time.time()),
-                clock_verified=self._clock_verified,
-            )
+            try:
+                outcome = self._clock_boot.resync(
+                    self._ntptime,
+                    self._rtc,
+                    read_epoch=lambda: int(time.time()),
+                    clock_verified=self._clock_verified,
+                )
+            except Exception as exc:
+                # THE ONE PATH THAT PRODUCES NO OUTCOME DICT, AND IT IS THE
+                # BRICK. `resync` raises only when the badge has NO plausible
+                # clock and the sync did not land -- verified TLS cannot check a
+                # certificate without one, so there is nothing to fail soft to.
+                # The raise propagates unchanged (`poll` retries on a later
+                # frame); latching first is what stops the reason dying with the
+                # frame, because this is the state where NOTHING downstream ever
+                # exists to describe it: no loop, no doorbell, no snapshot.
+                #
+                # `.reason` IS `ClockError`'S OWN FIELD and it is the whole
+                # value here (`ntp_rejected: before_build_floor` is a different
+                # instruction to an operator than `ntp_unreachable: OSError`).
+                # Anything else that escapes gets the module's usual
+                # "ClassName: message", so an unexpected fault is still legible.
+                self._clock_reason = getattr(exc, "reason", None) or _error_text(exc)
+                raise
         else:
             # NO ROUTE TO A RESOLVER, so the pinned `ntptime`'s own two unbounded
             # lookups are exactly the 13-14 s freeze this guard exists to avoid.
@@ -5663,6 +8696,10 @@ class DeviceBackend:
                        "reason": "dns_unreachable"}
         ntp_ms = _ticks_diff(_ticks_ms(), entered)
         current = outcome["epoch"]
+        # THE SAME WORD THE EVENT CARRIES, kept where a screen can reach it.
+        # Both branches below print it and neither retains it, which is why a
+        # badge that skipped the sync could say nothing about why.
+        self._clock_reason = outcome["reason"]
         if outcome["synced"]:
             # THE LATCH IS SET ONLY BY A LANDED SYNC, never by a plausible read.
             # From here the shift bound applies as it always did; before here a
@@ -5840,10 +8877,14 @@ class DeviceBackend:
             # the first attempt; `enable_parked_open` refuses a loop that has
             # already opened. A no-op path in OFF: this line is never reached.
             self._loop.enable_parked_open()
-        if self._policy_due is not None:
-            # CX-8: the service phased this cadence before the radio was up, so
-            # the loop takes the phase rather than arming `now` at its first open.
-            self._loop.arm_policy(self._policy_due)
+        if self._suggested_cadence_ms is not None:
+            # A CADENCE THE SERVER SUGGESTED BEFORE THIS LOOP EXISTED. The fleet
+            # settings are read once every five minutes and a loop is rebuilt on
+            # every fault and every networking toggle, so without this the badge
+            # would fall back to its own default cadence for up to five minutes
+            # after each rebuild -- and an operator who slowed the fleet down
+            # would watch it speed itself back up.
+            self._loop.set_suggested_cadence(self._suggested_cadence_ms)
         durable = self._store.load()
         self._loop.desired_version = durable.get("desired_version", 0)
         self._loop.set_active(self._active)
@@ -6322,7 +9363,32 @@ _PRINTED_FIELDS = ("kind", "ok", "busy_ms", "peak_ms", "span_ms", "steps",
                    "shift_s", "reason", "error", "due_ms", "cached",
                    "attempts", "failures", "source",
                    "scope", "demote_after", "discarded",
-                   "sessions_joined") + _CONNECT_ATTRIBUTION_FIELDS
+                   "sessions_joined",
+                   # THE BATTERY LEVERS (2026-08-28), and all three are the ONLY
+                   # record that survives the thing they describe. `action` and
+                   # `seconds` are the last line a tethered operator gets before
+                   # the badge stops printing entirely -- a dormant badge has no
+                   # serial port, and waking is a full reboot, so an
+                   # unprinted `sleeping` would make a deliberate fleet sleep and
+                   # a fleet crash look identical on a log. `persist` is the
+                   # difference between an off a reset undoes and one only a
+                   # wearer can, which is the single most important thing to be
+                   # able to read back after the fact.
+                   "action", "seconds", "persist",
+                   # THE FLEET SETTINGS (2026-08-29), and the same argument the
+                   # battery levers make. `applied` is the only evidence that a
+                   # five-minute read DID anything -- a `settings_applied` line
+                   # with no number cannot tell an operator whose 2pm lever is not
+                   # working whether the badge is reading the row and ignoring it
+                   # or not reading it at all. `lever` names WHICH one refused,
+                   # which matters because they are contained one at a time so
+                   # that a mistyped brightness cannot disable the radio switch
+                   # below it; without the word, `settings_lever_failed error=...`
+                   # says something is wrong and not what. Both are integers or
+                   # words THIS package spells (`_apply_settings`'s own ladder),
+                   # never server text.
+                   "applied", "lever",
+                   ) + _CONNECT_ATTRIBUTION_FIELDS
 
 #: WHAT REACHES THE SERVICE FROM EVERYTHING BEHIND IT. `_on_backend_event`
 #: filters by key, so a field absent from this tuple is a field no probe and no
@@ -6406,10 +9472,10 @@ _SINK_SLOW_LIMIT = 2
 #: This is a HARDENING FIX AGAINST A MEASURED FAILURE MODE, NOT A PROVEN
 #: EXPLANATION OF THE OWNER'S FIELD SYMPTOM. The effect is measured; no arm has
 #: yet timed a single `print` directly, which is the probe that would settle it.
-#: The evidence README overstates this in two directions -- it says "every badge
-#: in the field runs it", but `apps-roster.json` ships `production.system_lib`
-#: `ship: false`, so the handover payload carries no `/system/lib` at all, and it
-#: omits the DTR precondition above.
+#: The evidence README overstates the DTR half: production now ships this module
+#: under `/system/lib`, but the field claim still needs the connected-versus-
+#: disconnected distinction above. A badge that has never raised DTR may never
+#: enter the measured slow-write path.
 _sink_slow_writes = 0
 _sink_muted = False
 

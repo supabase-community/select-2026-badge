@@ -26,7 +26,7 @@
     "menu": "The launcher. Boots the badge, draws the app grid, dims and opens the nametag when idle, and plays the first-wake ceremony on a cold start.",
     "nametag": "The badge, worn. Full-screen artwork, marks and name, and the resting state the launcher returns to after 30 seconds of nothing.",
     "schedule": "The conference agenda, fully offline. Day tabs, session detail, and an honest clock: it says when it cannot trust the time instead of guessing.",
-    "settings": "The utility tile: backlight, sleep, and the pairing and network status screens. With BadgeLink off it shows Not ready and everything else still works.",
+    "settings": "The utility tile: backlight, sleep, and the pairing and network status screens. The complete /system/lib ships; if that payload is damaged or skewed, network surfaces fail soft to Not ready while local controls still work.",
     "setup": "The wearable name badge and its editor: name, handle, marks and theme, edited on the badge with the QWERTY keyboard and saved to /state.",
     "snake": "Snake, drawn at 160x120 and pixel-doubled, which is the look the games all landed on. A and C steer relative to travel, UP and DOWN are absolute, and the walls wrap."
   },
@@ -35,7 +35,7 @@
     "badge_grid": "Name Badge experiment board, archived 2026-08-18. The badge_* family were experiments FOR setup.",
     "badge_hires": "Name Badge experiment board, archived 2026-08-18.",
     "badge_line": "Name Badge experiment board, archived 2026-08-18.",
-    "badgelink": "Not a tile. BadgeLink's badge modules ship as bytecode in /system/lib (OWNER-DECISIONS #1) and are consumed by the settings tile; the badgelink app directory is its dev surface.",
+    "badgelink": "Not a tile. BadgeLink's badge modules ship as bytecode in /system/lib (OWNER-DECISIONS #1); boot networking/broadcast, schedule refresh, Snake/Flappy score drain and Settings network surfaces consume them.",
     "benchmark_app": "Dev instrument. Also the one app that cannot be pure bytecode (@micropython.native in runner.py), so shipping it would put .py beside .mpy on a production badge.",
     "breakout": "OFF THE PRODUCTION LIST, owner ruling 2026-08-24: minimal distribution for now. [quotation removed].",
     "extend_a_squirrel": "RETIRED AND DELETED, 2026-08-21, by owner ruling: [quotation removed]. Pimoroni's own Snake, admitted 2026-08-20 as an unmodernised comparison specimen so the owner could judge their sprite-per-segment body against our merged tube.",
@@ -81,7 +81,7 @@
     }
   },
   "system_lib": {
-    "note": "Whether `/system/lib` ships at all. It does not: the network runtime is dark in this build. `main.py` keeps its guarded import either way, so the badge boots offline and prints `BADGELINK_NETWORK boot=offline error=ImportError`; `settings` is the only app that guards a `/system/lib` import and it degrades to its \"Not ready\" view.",
+    "note": "Whether `/system/lib` ships at all. It does in this build: BadgeLink's flat modules, the `realtime` and `aiohttp` packages, and CA anchors are built below `/system/lib`. `main.py` imports `network_runtime` through its boot guard, so a missing or damaged payload still falls back to an offline boot.",
     "ship": true
   },
   "target_firmware": "v3.0.2"

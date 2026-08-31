@@ -68,17 +68,6 @@ DASH = 3
 # `git log` is where they live now.  `card_bake` still knows the real launcher
 # geometry, which is the copy that decides pixels.
 
-# THE SAVE-TO-HOME ROW'S BUTTON.  A filled pill behind the value, sized to the
-# word plus this much padding either side, in logical pixels: enough to read as
-# a control rather than as a highlight, and small enough that the widest value
-# still clears the label column.
-PILL_PAD = 3
-
-# How many filmstrip cells the sticker chooser shows.  Three: the one you are
-# on, and enough of its neighbours to tell you the strip moves.
-STRIP_CELLS = 3
-
-
 def escaped(message):
     """`message` with every `[` doubled, which is the platform's own escape.
 
@@ -187,8 +176,6 @@ class CardView:
         # The sticker sheet is acquired through the nametag's own single lazy
         # path, so the chooser and the badge cannot end up holding two sheets
         # or -- worse -- two different ones at HIRES.
-        self.strip_cells = STRIP_CELLS
-
         # THE NAME EDITOR, BUILT LAZILY.  It resolves one pixel table per plane
         # in its constructor and constructs a second `ui.Chrome` (the shared
         # `kb_shell.KeyboardView` builds its own and that file is byte-frozen),
@@ -351,21 +338,14 @@ class CardView:
         self._bounded(left, self.text_x, y, width, self.accent)
         return self.head_h
 
-    def _rows(self, plan, top, labels, values, marks_pen=None, button=-1):
+    def _rows(self, plan, top, labels, values, marks_pen=None, split=-1,
+              boxed=()):
         """A short list with a right-hand value column.
 
-        The value is what turns five nouns into a status screen: NAME says what
-        the name IS, SKIN says which skin, SAVE TO HOME says whether it is on.
+        The value is what turns editor nouns into a status screen: NAME says
+        what the name IS and SKIN says which skin is selected.
         A menu that only names its rows makes the wearer open each one to find
         out what it holds, which on a badge is four presses to learn nothing.
-
-        `button` is the row whose value is an ACTION rather than a state, drawn
-        as a filled pill.  The owner asked for exactly this on 2026-08-21 --
-        *"can the save to home option just appear as a kind of button? so it's
-        more obvious"* -- and the pill is the answer to the "more obvious" half:
-        a row that reads `SAVE TO HOME   [SAVE]` offers a press, where
-        `SAVE TO HOME   OFF` describes a setting somebody has to go and find.
-        Only ONE row may be a button, and -1 is none.
         """
         chrome = self.chrome
         screen = self.screen
@@ -383,32 +363,32 @@ class CardView:
             if position >= total:
                 break
             y = top + offset * self.row_h
+            if position == split:
+                # One quiet rule separates editing choices from final actions
+                # without spending another screen or changing list controls.
+                screen.pen = self.rule
+                screen.rectangle(self.text_x, y, chrome.width - 2 * self.text_x,
+                                 self.scale)
             chosen = position == index
             if chosen:
                 screen.pen = self.accent
                 screen.rectangle(0, y, chrome.width - 3 * self.scale,
                                  self.row_h)
+            if position in boxed:
+                # ADD and DONE are verbs among sticker-object rows.  Their
+                # outline keeps that distinction visible before focus arrives.
+                self._outline(self.scale, y + self.scale,
+                              chrome.width - 5 * self.scale,
+                              self.row_h - 2 * self.scale,
+                              self.black if chosen else self.accent)
             value = values[position] if position < len(values) else ""
             width = chrome.width - 2 * self.text_x
             if value:
                 width -= self._width(value) + self.text_x
                 value_x = chrome.width - self.text_x - self._width(value)
-                if position == button:
-                    # THE PILL INVERTS ON THE SELECTED ROW, because the row's
-                    # own band is already the accent: an accent pill on an
-                    # accent row is an invisible button.  Ink and panel simply
-                    # swap, so the control reads the same either way.
-                    pad = PILL_PAD * self.scale
-                    self.screen.pen = self.black if chosen else self.accent
-                    self.screen.rectangle(value_x - pad, y,
-                                          self._width(value) + 2 * pad,
-                                          self.row_h)
-                    self._bounded(value, value_x, y, self._width(value),
-                                  self.accent if chosen else self.black)
-                else:
-                    self._bounded(value, value_x, y, self._width(value),
-                                  self.black if chosen
-                                  else (marks_pen or self.grey))
+                self._bounded(value, value_x, y, self._width(value),
+                              self.black if chosen
+                              else (marks_pen or self.grey))
             self._bounded(labels[position], self.text_x, y, width,
                           self.black if chosen else self.white)
         # BOTH AFFORDANCES ARE GATED ON THE LIST ACTUALLY SCROLLING.
@@ -532,24 +512,18 @@ class CardView:
         # NO SLOT COUNTER IN THE HEADER ANY MORE.  It read `n/m` -- which of the
         # five saved badges you were editing -- and with one card it could only
         # ever say `1/1`, which is chrome that answers a question nobody can ask.
-        # The wearer's name is the whole header now, and it is the one thing on
-        # this screen that says WHICH badge these six rows are about.
-        top = self._header(badge["name"] or "UNNAMED BADGE")
-        # THE ROW SAYS WHAT PRESSING IT WILL DO, or that there is nothing to do.
-        # `OUT OF DATE` used to live here and the owner removed it by name:
-        # *"they don't need to see outdated"*.  A wearer who has edited their
-        # badge does not need to be told the wallpaper is behind -- they need a
-        # button that says SAVE, which is what a stale film and an absent one
-        # both get.  A film that already matches has nothing to offer, so it
-        # states the fact and drops the pill.
-        home_ready = plan["installed"] and not plan["stale"]
+        # The title names the task; the wearer's name remains the secondary
+        # context that says WHICH badge these six rows are about.
+        top = self._header("SET UP BADGE", badge["name"] or "UNNAMED")
+        # DONE is a verb, not stored state, so it has no diagnostic value.  Its
+        # selected green row and B label provide the action hierarchy instead.
         count = len(badge["stickers"])
         values = (
             badge["name"] or "-",
             catalogue.label(badge["background"]),
             "%d" % count if count else "-",
             effects.label(badge["effect"]),
-            "ON" if home_ready else model.SAVE,
+            "",
             # RESET HAS NO VALUE COLUMN, AND THE BLANK IS THE HONEST ANSWER.
             # Every other value here reports state -- what the name IS, which
             # skin, how many stickers, whether the film is on.  A reset has no
@@ -560,8 +534,7 @@ class CardView:
             "",
         )
         self._rows(plan, top, model.MENU_ITEMS, values,
-                   button=-1 if home_ready
-                   else model.MENU_ITEMS.index(model.MENU_HOME))
+                   split=model.MENU_ITEMS.index(model.MENU_HOME))
 
     # -- the name ------------------------------------------------------------
 
@@ -603,6 +576,10 @@ class CardView:
                            face=faces.face_of(choice),
                            name=plan["badge"]["name"][:cap])
         self.nametag.badge(pplan)
+        # The picture itself cannot explain that the vertical keys swap its
+        # background.  A small overlaid cue makes the first guided transition
+        # self-explanatory without taking more of the preview away.
+        self._header("CHOOSE BACKGROUND", "UP / DOWN")
         chrome = self.chrome
         # ONE BAND, at the foot of the content area: the group and the entry on
         # one line, the position on the other end.  Two rows of chrome over a
@@ -686,7 +663,10 @@ class CardView:
         for mark in stickers:
             labels.append(marks.label(mark["kind"]))
             values.append("")
-        self._rows(plan, top, labels, values)
+        labels.append("DONE")
+        values.append("")
+        self._rows(plan, top, labels, values,
+                   boxed=(0, len(labels) - 1))
 
     def _outline(self, x, y, width, height, pen):
         """A hollow rectangle `self.ring` thick.  Four fills, never a plate.
@@ -720,40 +700,52 @@ class CardView:
                       cell_h + 2 * self.ring, pen)
 
     def pick_screen(self, plan):
-        """A three-cell filmstrip hard against the right edge, and a title.
-
-        THE SELECTED CELL IS CENTRED BETWEEN THE TWO PHYSICAL SCROLL KEYS, at
-        `(scroll_y[0] + scroll_y[1]) / 2`, so the thing that moves is level with
-        the thumb that moves it.  `namebadge`'s geometry, and the adjacency is
-        the whole affordance.
-        """
+        """A paged 6x4 catalogue plus one focusable BACK action."""
         self._behind(plan)
         chrome = self.chrome
-        top = self._header("CHOOSE A STICKER",
-                           "%d/%d" % (plan["pick"] + 1, marks.COUNT))
+        page_size = 24
+        page_count = (marks.COUNT + page_size - 1) // page_size
+        page = plan["pick"] // page_size
+        mark = marks.MARKS[plan["pick"]]
+        top = self._header("%s  %d/%d" %
+                           (mark[1], plan["pick"] + 1, marks.COUNT),
+                           "PAGE %d/%d" % (page + 1, page_count))
         cell_w, cell_h = self.nametag.mark_w, self.nametag.mark_h
-        strip_x = chrome.width - cell_w - 5 * self.scale
-        centre = (chrome.scroll_y[0] + chrome.scroll_y[1]) // 2 - cell_h // 2
-        for offset in range(-(self.strip_cells // 2),
-                            self.strip_cells // 2 + 1):
-            index = (plan["pick"] + offset) % marks.COUNT
-            y = centre + offset * (cell_h + 2 * self.scale)
-            if offset == 0:
-                self._outline(strip_x - self.ring, y - self.ring,
+        action_y = chrome.content_h - self.row_h
+        grid_h = action_y - top
+        gap_x = max(self.scale, (chrome.width - 2 * self.text_x
+                    - 6 * cell_w) // 5)
+        gap_y = max(self.scale, (grid_h - 4 * cell_h) // 3)
+        grid_w = 6 * cell_w + 5 * gap_x
+        grid_used_h = 4 * cell_h + 3 * gap_y
+        start_x = (chrome.width - grid_w) // 2
+        start_y = top + max(0, (grid_h - grid_used_h) // 2)
+        first = page * page_size
+        last = min(first + page_size, marks.COUNT)
+        for index in range(first, last):
+            offset = index - first
+            column = offset % 6
+            row = offset // 6
+            x = start_x + column * (cell_w + gap_x)
+            y = start_y + row * (cell_h + gap_y)
+            if plan["pick_action"] < 0 and index == plan["pick"]:
+                self._outline(x - self.ring, y - self.ring,
                               cell_w + 2 * self.ring, cell_h + 2 * self.ring,
                               self.accent)
             self.nametag.mark(marks.MARKS[index][0],
-                             (strip_x + cell_w / 2.0) / chrome.width,
-                             (y + cell_h / 2.0) / chrome.height,
-                             plan["now"])
-        mark = marks.MARKS[plan["pick"]]
-        y = top + self.row_h
-        self.screen.font = chrome.font
-        self._bounded(mark[1], self.text_x, y,
-                      strip_x - 2 * self.text_x, self.white)
-        note = "ANIMATED" if mark[3] > 1 else "STILL"
-        self._bounded(note, self.text_x, y + self.row_h,
-                      strip_x - 2 * self.text_x, self.grey)
+                              (x + cell_w / 2.0) / chrome.width,
+                              (y + cell_h / 2.0) / chrome.height,
+                              plan["now"])
+
+        # BACK is part of the focus graph, not an A-key shortcut, so A/C remain
+        # predictable grid directions.  DONE lives on the list hub where the
+        # wearer can review placed stickers before leaving.
+        chosen = plan["pick_action"] == 0
+        self.screen.pen = self.accent if chosen else self.band
+        self.screen.rectangle(0, action_y, chrome.width, self.row_h)
+        self._bounded(model.BACK, 0, action_y, chrome.width,
+                      self.black if chosen else self.white,
+                      align=(self.image.CENTER, self.image.MIDDLE))
 
     def place_screen(self, plan):
         """The badge with the mark under the cursor, and marching ants round it.

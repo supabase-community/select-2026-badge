@@ -59,15 +59,18 @@ THREE RULES THIS FILE FOLLOWS THAT THE LORES VERSION DID NOT.
    their widths are retained in :class:`_Wrap` blocks and recomputed only when
    the string or the band changes, which is a screen transition. So the steady
    frame measures NOTHING — the discipline ``docs/engineering-findings.md``
-   states as "measure chrome once, at construction, even when it looks free",
-   and the same discipline the QR plate below already applies to the modules.
+   states as "measure chrome once, at construction, even when it looks free".
 
-THE QR ENCODER IS A GUARDED IMPORT and that is not a browser accommodation.
-``qrcode`` is an undocumented native C usermod compiled into the Tufty firmware
-and into nothing else, so a bare import would make this app refuse to start on
-any unit whose firmware lacks it — and an import that raises inside ``launch()``
-resets the badge. Without it the Pair screen prints the claim URL as text, which
-is legible, honest and typeable, and says so.
+**THE QR MACHINERY IS GONE (2026-08-28), AND SO IS THE DISPLAY-SIZE DRAW.** This
+file carried a retained ``_QrPlate``, a guarded ``import qrcode`` for the
+undocumented native usermod, the two-column claim layout, the typeable-URL
+fallback and ``_draw_match_code`` -- the one place the app ever asked
+``Chrome.fit_display`` for its 48 pt ceiling. Every one of them existed for the
+Pair screen, which the owner deleted. What that leaves is worth stating because
+it is now a property of the whole file rather than a rule about most of it:
+**every string this app draws is a body line at ``Chrome.font_size``, drawn at an
+``(x, y)``, from a model it was handed.** ``_draw_body`` is the only text path
+with any branching left in it.
 """
 
 import settings_copy
@@ -97,34 +100,6 @@ GRATICULE = None
 
 _chrome = None
 _list = None
-# `pairview.qr_layout`, handed in by the app. NOT imported here: `pairview` lives
-# in `/system/lib`, the app already guards that import once, and a lazy import
-# inside a draw call would work in a harness and fail on the first frame after
-# boot (`pg_runtime` pops the app directory off `sys.path` in a `finally`).
-_qr_layout = None
-
-# The native encoder, or None on a unit whose firmware has no usermod.
-try:
-    import qrcode
-except ImportError:  # pragma: no cover - device/browser difference, not logic
-    qrcode = None
-
-#: ECC level the 152-character capacity boundary was measured at (R2-4).
-QR_ECC = "ECC_MEDIUM"
-
-#: Module scale ceiling for the claim square, passed to ``pairview.qr_layout``
-#: rather than taken from its ``QR_MAX_SCALE`` default of 4.
-#:
-#: THE POINT OF HIRES FOR THIS SCREEN IS A PHYSICALLY BIGGER QR, and stacking
-#: the square over its caption does not deliver one. At LORES the square is 82
-#: logical px, which the panel doubles to 164 PHYSICAL px at 4 physical px per
-#: module. A HIRES vertical stack reaches scale 4 -> 164 logical px, so the
-#: modules land at exactly the same physical size and the phone gains nothing.
-#: Putting the caption BESIDE the square instead frees the full content height,
-#: which reaches scale 5: a 205 px square at 5 physical px per module, 25%
-#: bigger ink for the camera, on a canvas that had 214 px of height and was
-#: using 82 of them.
-QR_MAX_SCALE = 5
 
 #: The most body lines any screen this app draws can produce. One retained wrap
 #: block per slot, and a fit test asserts no model exceeds it.
@@ -144,8 +119,15 @@ QR_MAX_SCALE = 5
 MAX_BODY_LINES = 8
 
 #: Characters :func:`_pieces` prefers to break a long token after, and how far
-#: back it will look for one. A claim URL should break after a ``/`` rather than
-#: in the middle of a hostname.
+#: back it will look for one.
+#:
+#: KEPT AFTER THE CLAIM URL WAS DELETED, and worth saying why rather than
+#: deleting as dead. The URL was the only string in the app that NEEDED
+#: character-level breaking, and a URL is what these separators are chosen for --
+#: but `_pieces` is the last resort of the general wrapper, not a URL feature,
+#: and this table is what keeps its cut from landing mid-word when it fires.
+#: Nothing the app draws today reaches it; `test_settings_fit` proves that and
+#: would fail if a future line did.
 BREAK_AFTER = "/#-._:?&="
 BREAK_LOOKBACK = 8
 
@@ -154,132 +136,6 @@ BREAK_LOOKBACK = 8
 #: because it looks like the string simply ended. Nothing the app draws today
 #: reaches this; `test_settings_fit` proves it and would fail if it did.
 ELLIPSIS = "..."
-
-
-class _QrPlate:
-    """The claim QR, rasterised once per code and blitted on later full draws.
-
-    THE PIXELS ARE A PURE FUNCTION OF THE PAYLOAD, and the payload changes on
-    `pairstate`'s five-minute schedule — not per frame. Drawn directly, one Pair
-    frame constructed a fresh `qrcode.QRCode`, encoded the whole URL, queried
-    `modules ** 2` = 1089 modules and drew one `screen.rectangle` per dark
-    module (about half of them), and then did all of it again on the next frame
-    for identical pixels. Measured on the reference badge, that screen ran
-    46 ms p99 in isolation and 55 ms p99 with the live transport polling on the
-    same frames, against a <50 ms gate, while every other Settings screen in the
-    same session measured 12 ms
-    (`benchmark/results/reports/2026-08-19-v3.0.1-badgelink-p4-transport.md`).
-
-    The precedent is the HIRES nickname, measured in `docs/engineering-findings.md`:
-    nine-pass outlined text cost 655 drawn directly and 35 blitted from a
-    retained plate, so the retained form was ALSO the cheaper one. Here a full
-    draw after the build becomes one blit plus four fixed strings, none of
-    which is measured. The managed :class:`RetainedFrame` skips that full draw
-    entirely while the model is equal.
-
-    MICROPYTHON RULES THIS SHAPE. One instance lives for the app's lifetime and
-    its buffer is allocated ONCE: a code rotation repaints the existing image in
-    place instead of asking for another ~168 KB, so neither a repeated full
-    draw nor the rotation frame allocates the plate. The backing `bytearray` is held in an
-    attribute rather than passed as an inline temporary, because `image` keeps
-    only a raw pointer to it and the collector's tolerance of that is an
-    implementation detail, not a contract (findings: the bare-image and
-    buffer-lifetime device probe). The blit position is a retained `vec2` for
-    the same reason — building one per frame would put an allocation back into
-    the draw path this exists to empty.
-
-    THE PLATE IS NOT ANTIALIASED, and that is a scannability decision rather
-    than a saving. `ui.Chrome` sets `screen.antialias = image.X4` because vector
-    glyphs below ~16 pt shatter without it; an `image` defaults to OFF and this
-    one is left there, because a QR module with a soft edge is a QR module a
-    camera has to guess at. `test_settings_view` asserts it.
-    """
-
-    def __init__(self):
-        # What the current pixels were drawn for. Compared field by field: an
-        # `(payload, ...)` tuple would allocate on every frame.
-        self.payload = None
-        self.top = -1
-        self.available = -1
-        self.left = -1
-        self.image = None    # the plate, or None while the encoder refuses
-        self.buffer = None   # its backing store, retained EXPLICITLY
-        self.at = None       # the retained blit position
-        self.next_y = 0      # what a refused payload continues from
-        self.builds = 0      # rasterisations; probes and tests read this
-
-    def ready(self, payload, top, available, left):
-        """Bring the plate up to date for this payload and hand it back.
-
-        Allocation-free and encoder-free when the code has not changed, which
-        is every full draw but the first of each code.
-        """
-        if (payload == self.payload and top == self.top
-                and available == self.available and left == self.left):
-            return self
-        self._build(payload, top, available, left)
-        return self
-
-    def _build(self, payload, top, available, left):
-        self.payload = payload
-        self.top = top
-        self.available = available
-        self.left = left
-        code = qrcode.QRCode(ecc=getattr(qrcode, QR_ECC))
-        if not code.set_text(payload):
-            # 152 characters is the measured ECC-medium byte-mode boundary
-            # (R2-4). A refused payload is a real product fault, so it is named
-            # rather than drawn as an empty square — and the refusal is retained
-            # like any other result, because re-encoding a payload the encoder
-            # has already rejected, once a frame, is the same defect in a
-            # smaller coat.
-            self.image = None
-            self.next_y = top + _line_h()
-            self.builds += 1
-            return
-        modules = code.get_size()[0]
-        layout = _qr_layout(modules, max(1, available), max_scale=QR_MAX_SCALE)
-        scale = layout["scale"]
-        border = layout["border_modules"]
-        extent = layout["extent"]
-        plate = self.image
-        if plate is None or plate.width != extent:
-            # The one allocation in the whole path, and it lands on a code
-            # change rather than inside a frame. It is reused across rotations:
-            # the extent is a property of the canvas, not of the code.
-            #
-            # WHY A PLATE AT ALL, since drawing the modules directly is simpler:
-            # on device the pre-plate Pair screen ran a 46 ms frame p99 in
-            # isolation and 55 ms with the transport live, against a 50 ms gate,
-            # while every other Settings screen in the same session measured
-            # 12 ms. The plate is 564 primitives and 1,091 encoder calls per
-            # frame collapsed to 10 primitives and no encoder calls. `bytearray`
-            # is held on `self` because `image(w, h, buffer)` keeps only a raw
-            # pointer to the bytes.
-            self.buffer = bytearray(extent * extent * 4)
-            plate = image(extent, extent, self.buffer)
-            self.image = plate
-        # White quiet zone: the encoder's contrast requirement, not decoration.
-        # Opaque, and covering the whole plate, so it is also how the previous
-        # code is erased — there is no API to clear an image back to
-        # transparent, and every pixel here is written by this fill or by a
-        # module rectangle on top of it.
-        plate.pen = color.rgb(255, 255, 255)
-        plate.rectangle(0, 0, extent, extent)
-        plate.pen = color.rgb(0, 0, 0)
-        for row in range(modules):
-            for column in range(modules):
-                if code.get_module(column, row):
-                    plate.rectangle(
-                        (column + border) * scale,
-                        (row + border) * scale,
-                        scale,
-                        scale,
-                    )
-        placed = top + layout["offset"]
-        self.at = vec2(left, placed)
-        self.next_y = placed + extent + _chrome.scale
-        self.builds += 1
 
 
 class _Wrap:
@@ -316,15 +172,11 @@ class _Wrap:
         return len(self.lines) * _line_h()
 
 
-# The one plate, and the retained copy blocks. Replaced by `build()` rather than
-# reused across chromes: a rebuilt chrome can be a different canvas, and a plate
-# sized for the old one would blit the QR into the wrong place at the wrong
-# scale while a wrap sized for the old one would be measured in the wrong face.
-_plate = _QrPlate()
+# The retained copy blocks. Replaced by `build()` rather than reused across
+# chromes: a rebuilt chrome can be a different canvas, and a wrap sized for the
+# old one would have been measured in the wrong face.
 _title = _Wrap()
 _body = ()
-_countdown = _Wrap()
-_caption = _Wrap()
 
 
 class RetainedFrame:
@@ -375,14 +227,17 @@ class RetainedFrame:
         self._has_model = False
 
 
-def build(qr_layout=None):
+def build():
     """Construct the chrome after `badge.mode` and before the first frame.
 
     `ui.Chrome` reads `screen.width` in its constructor, so it cannot be built
     at import time above the mode call — that is the mistake `kbgrid`'s own
-    entry point documents. `qr_layout` is `pairview.qr_layout` when the shared
-    library is installed and `None` when it is not; with no library there is no
-    claim code to draw either, so the two absences agree.
+    entry point documents.
+
+    IT TOOK A `qr_layout` ARGUMENT UNTIL 2026-08-28 -- `pairview.qr_layout`,
+    handed in by the app so this file never imported from `/system/lib`. The
+    claim square went with the Phone row, so the argument is gone and this file
+    now has no dependency on the shared library at all, direct or injected.
 
     THE FACE IS LOADED EXACTLY ONCE, HERE. `ui.Chrome` calls `font.load` in its
     constructor behind an `OSError` guard: the `.af` outlines live on the FAT
@@ -392,15 +247,11 @@ def build(qr_layout=None):
     missing face degrades to a bitmap face and never to a reset, and nothing in
     a draw path ever loads a font.
     """
-    global BLACK, BACKGROUND, PHOSPHOR, DIM, WARN, _chrome, _list, _qr_layout
-    global _plate, _title, _body, _countdown, _caption
+    global BLACK, BACKGROUND, PHOSPHOR, DIM, WARN, _chrome, _list
+    global _title, _body
     global TRAIL_1, TRAIL_2, TRAIL_3, GRATICULE
-    _qr_layout = qr_layout
-    _plate = _QrPlate()
     _title = _Wrap()
     _body = tuple(_Wrap() for _ in range(MAX_BODY_LINES))
-    _countdown = _Wrap()
-    _caption = _Wrap()
     BLACK = color.rgb(1, 4, 4)
     BACKGROUND = color.rgb(5, 18, 16)
     PHOSPHOR = color.rgb(62, 207, 142)
@@ -431,21 +282,16 @@ def list_view():
 # -- bands, all derived from the chrome and none of them a literal ------------
 #
 # DERIVED ONCE IN `build()`, AND THAT IS NOT MICRO-OPTIMISATION. The first draft
-# of this file computed them per call: `_qr_band` returned a fresh tuple every
+# of this file computed them per call -- `_qr_band` returned a fresh tuple every
 # frame and `_column_x` asked `pairview.qr_layout` for a fresh DICT every frame,
-# which put two allocations straight back into the one draw path the retained
-# plate exists to empty. None of these numbers can change without a new chrome,
-# and `build()` is the only thing that makes one.
+# which put two allocations straight back into the draw path. Those two bands
+# are deleted with the claim screen; the discipline is kept for the ones that
+# remain, because none of these numbers can change without a new chrome and
+# `build()` is the only thing that makes one.
 
 _MARGIN = 0
 _LINE_H = 0
 _CONTENT_W = 0
-_QR_TOP = 0
-_QR_AVAILABLE = 0
-_QR_LEFT = 0
-_QR_EXTENT = 0
-_COLUMN_X = 0
-_COLUMN_W = 0
 _SWEEP_H = 0
 _SWEEP_TOP = 0
 _SWEEP_SPAN = 0
@@ -475,8 +321,7 @@ _SWEEP_DIVISIONS = 6
 
 def _derive():
     """Resolve every band from the chrome. Called by `build()` and nowhere else."""
-    global _MARGIN, _LINE_H, _CONTENT_W, _QR_TOP, _QR_AVAILABLE, _QR_LEFT
-    global _QR_EXTENT, _COLUMN_X, _COLUMN_W
+    global _MARGIN, _LINE_H, _CONTENT_W
     global _SWEEP_H, _SWEEP_TOP, _SWEEP_SPAN, _SWEEP_TICK_W
     global _SWEEP_SEGMENTS, _SWEEP_SEG_W, _SWEEP_SEG_Y, _SWEEP_SEG_BACK
     global _SWEEP_SEG_PEN
@@ -489,22 +334,6 @@ def _derive():
     # "give every drawn rect ~0.2 em of slack").
     _LINE_H = _chrome.text_h + 2 * scale
     _CONTENT_W = _chrome.width - 2 * _MARGIN
-    # The claim square gets the whole content height. Its left edge is tight
-    # because the plate carries its own four-module white quiet zone — 20 px of
-    # it at scale 5 — so the visible gap to the panel edge IS the quiet zone.
-    _QR_TOP = scale
-    _QR_AVAILABLE = _chrome.content_h - 2 * scale
-    _QR_LEFT = scale
-    # A version-4 claim code is 33 modules and that is what the device measured,
-    # but the extent is asked of `pairview.qr_layout` rather than assumed, and
-    # the plate re-asks it with the encoder's real module count.
-    if _qr_layout is None:
-        _QR_EXTENT = 0
-    else:
-        _QR_EXTENT = _qr_layout(33, max(1, _QR_AVAILABLE),
-                                max_scale=QR_MAX_SCALE)["extent"]
-    _COLUMN_X = _QR_LEFT + _QR_EXTENT + scale * 4
-    _COLUMN_W = _chrome.width - _COLUMN_X - _MARGIN
     # THE FRAME SWEEP'S TRACK, along the bottom of the content area.
     #
     # 6 LOGICAL PX TALL (12 physical at HIRES) -- 2.25 mm, and it still costs
@@ -567,25 +396,6 @@ def _line_h():
 
 def _content_w():
     return _CONTENT_W
-
-
-def _qr_left():
-    return _QR_LEFT
-
-
-def _qr_band():
-    """(top, available) for the claim square. Builds a tuple, so it is for
-    harnesses and tests rather than for a frame; the draw path reads the
-    globals."""
-    return _QR_TOP, _QR_AVAILABLE
-
-
-def _column_x():
-    return _COLUMN_X
-
-
-def _column_w():
-    return _COLUMN_W
 
 
 # -- wrapping -----------------------------------------------------------------
@@ -716,17 +526,42 @@ def _line_pen(text):
 
 
 def _draw_page(model):
-    payload = model.get("qr_payload")
-    manual_code = model.get("manual_code")
-    screen.font = _chrome.font
-    if payload is not None and manual_code and qrcode is not None \
-            and _qr_layout is not None:
-        _draw_claim_screen(model, payload, manual_code)
-        return
+    """Title, body, and the one screen that also carries an instrument.
 
+    ONE SHAPE FOR EVERY PAGE SINCE 2026-08-28. This function used to open with a
+    branch into the claim-QR layout and close with three more for a match code, a
+    countdown and a typeable URL; all four were the Pair screen's and went with
+    it. Every page is now a title over `_draw_body`, and the sweep is the one
+    thing that is not copy.
+
+    A SCREEN THAT PUBLISHES `pages` GETS THE MENU'S OWN CHROME, and it is the
+    menu's on purpose rather than a new element: `ui.ListView.draw` already
+    ends with exactly this pair of calls on exactly this geometry, so a wearer
+    who has scrolled the root list has already been taught what the rail and
+    the chevrons mean. They also draw NO COPY, which is what makes them
+    affordable here -- a "1/4" chip in the body would be a ninth band on a
+    screen budgeted for eight and a new string in `every_string()`'s fit
+    corpus. The ordinal goes in the TITLE instead, which the model composes.
+    """
+    screen.font = _chrome.font
     y = _draw_title(model.get("title", ""), _margin(), _content_w(), 2)
-    if payload is not None:
-        y = _draw_payload_text(payload, y)
+    # BEFORE THE SWEEP BRANCH, WHICH RETURNS. Diagnostics is a paged screen and
+    # it is the one that leaves through the early return, so chrome drawn after
+    # that branch would appear on Network and never on Diagnostics.
+    #
+    # ABSENT `pages` RESOLVES TO 1 AND DRAWS NOTHING AT ALL, which is what makes
+    # every unpaged screen byte-identical to what it drew before paging existed.
+    # `Chrome.position` short-circuits on `total <= 1` by itself; `scroll_hints`
+    # does not, so the guard has to be here rather than left to the primitives.
+    pages = model.get("pages") or 1
+    if pages > 1:
+        _chrome.position(model.get("page") or 0, pages)
+        # BOTH CHEVRONS, UNCONDITIONALLY, BECAUSE THE PAGES WRAP. `_move` takes
+        # the page modulo the count, so there is no end to arrive at -- and a
+        # chevron that said "no further" on a control that wraps would be a lie
+        # about the button, which on the one screen built to be trusted at a
+        # venue is worse than no affordance.
+        _chrome.scroll_hints(True, True)
     sweep = model.get("sweep")
     if sweep is not None:
         # THE ONE SCREEN THAT RESERVES A BAND FOR SOMETHING THAT IS NOT COPY.
@@ -737,13 +572,7 @@ def _draw_page(model):
         _draw_body(model, y, floor=_SWEEP_TOP - _chrome.scale)
         _draw_sweep(sweep, model.get("sweep_period"))
         return
-    y = _draw_body(model, y)
-    match_code = model.get("match_code")
-    if match_code:
-        _draw_match_code(match_code, y)
-    countdown = model.get("countdown")
-    if countdown:
-        _draw_countdown(countdown)
+    _draw_body(model, y)
 
 
 def _draw_title(text, x, budget, max_lines):
@@ -886,11 +715,73 @@ def _draw_body(model, y, floor=None):
     per-line cap bounds nothing: four lines that each wrap three ways is twelve
     bands. The remaining height is therefore divided up as the lines are drawn,
     and the last line that fits carries the truncation marker. Copy that runs
-    under the softkey bar is the one overrun a screenshot cannot show, and it is
-    what the bitmap-fallback path did with a 64-character owner hint before this
-    counted.
+    under the softkey bar is the one overrun a screenshot cannot show.
+
+    **A MODEL MAY NOMINATE LINES AS ITS SUBJECT** (`accent_lines`, a tuple of
+    indices), and those lines are drawn in `PHOSPHOR` instead of `DIM`.
+
+    **AND IT MAY NOMINATE A SPAN OF CHARACTERS AS ITS CURSOR** (`highlight`, a
+    `(line, start, end)` tuple), which is drawn as REVERSE VIDEO: a solid
+    `PHOSPHOR` rectangle over the character cell with the glyphs redrawn in the
+    panel's own `BACKGROUND` on top of it. Only the Clock screen uses either
+    today, for the owner's 2026-08-28 reason -- *"it's clearly highlighted on
+    hour ... so it's very obvious that if I go up or down, I'm changing the
+    hour"*.
+
+    **IT HAD TO BE INK AND A RECTANGLE, BECAUSE THIS FILE HAS NO SECOND BODY
+    SIZE TO SPEND.** `_text` draws every body line at `_chrome.font_size`; since
+    the claim screen's match code went, that is the ONLY size this app resolves,
+    `settings/tests/settings_metrics.py` models what was measured and the
+    harness RAISES on anything else, and the body's cap is 17.7 arcmin at 400 mm
+    against this project's chosen 15.0 floor -- under 3 arcmin of headroom before
+    the copy is below a bar the tile enforces everywhere else. A bigger
+    highlighted field was never available either: it would be a third size AND it
+    would move every character after it, so the two rows would stop lining up
+    under a press.
+
+    **REVERSE VIDEO RATHER THAN A CARET, A BRACKET OR AN UNDERLINE**, and each
+    alternative fails for its own reason. A caret or a bracket costs CHARACTERS,
+    so the layout shifts as the cursor moves -- on a screen whose two rows are
+    meant to sit digit over digit. An underline is one or two pixels of ink at
+    the bottom of a band that already carries descender air; the block is 21 px
+    tall and 18 px wide and is the only treatment here that reads across a room.
+    It is also what a BIOS does, which is what the owner asked for by name.
+
+    THREE RUNS RATHER THAN A LINE PLUS AN OVERDRAW. The highlighted line is
+    drawn as prefix / field / suffix at measured offsets instead of being drawn
+    whole and then painted over, so no glyph is ever rendered twice and no
+    fringe of the original can survive under the block. `MonaSans-Medium` applies
+    NO kerning -- `measure_text(s)` is exactly the sum of the per-glyph advances,
+    verified to 0.000 px by the ruler generator -- so three runs land exactly
+    where one string would. THAT PROPERTY IS LOAD-BEARING HERE and not merely
+    convenient: a kerning face would put the suffix a fraction of a pixel out on
+    every frame.
+
+    IT MEASURES ON A COPY CHANGE, WHICH IS THIS FILE'S RULE AND NOT A BREACH OF
+    IT. `RetainedFrame` redraws only an unequal model, the Clock model changes
+    only when a key is pressed, and no other screen publishes a `highlight` --
+    so the two extra `measure_text` calls happen per PRESS. The one screen whose
+    model changes every frame is Diagnostics, and it has no highlight.
+
+    AN INDEX AND NOT A STRING MATCH, for both. `_line_pen` keys on exact copy
+    constants, which cannot identify a line whose text is five integers wide, and
+    a prefix sniff on a draw path would silently re-ink any future line that
+    happened to match it.
     """
     lines = model.get("lines") or ()
+    accent = model.get("accent_lines") or ()
+    # **THE SEVERITY MECHANISM, AND IT IS AN INDEX SET FOR THE REASON THIS
+    # DOCSTRING ALREADY GIVES.** `_line_pen` keys on exact copy constants, which
+    # cannot identify `Clock no  ntp_rejected: b` -- a line whose text is a
+    # runtime literal. Before this key a model could not mark a line as a
+    # warning at all; it could only hope its copy happened to BE that constant.
+    #
+    # A MODEL MAY NOT PUBLISH A SEVERITY WORD OR A PER-LINE DICT. That would put
+    # a second vocabulary on the draw path and would allocate per frame on the
+    # one screen whose model is rebuilt every frame. A tuple of small integers
+    # allocates one tuple, the same as `accent_lines`, and is usually empty.
+    warn = model.get("warn_lines") or ()
+    highlight = model.get("highlight")
     count = len(lines)
     if count > MAX_BODY_LINES:
         # Not reachable from any model this app builds (`test_settings_fit`
@@ -917,98 +808,82 @@ def _draw_body(model, y, floor=None):
         if allowance < 1:
             allowance = 1
         block = _body[index].ready(lines[index], budget, allowance)
+        # THE WHOLE LINE, INCLUDING ITS WRAPPED CONTINUATIONS. An accented line
+        # that changed ink halfway down would read as two different things.
+        #
+        # PRECEDENCE IS ACCENT > WARN > `_line_pen`. Accent is the Clock
+        # editor's subject marker and only that screen publishes it, so the two
+        # can never actually collide; stating the order removes the question.
+        # `_line_pen` is KEPT rather than replaced, so `NET_LINE_REBOOT` keeps
+        # its WARN ink with no model change and nothing regresses.
+        if index in accent:
+            pen = PHOSPHOR
+        elif index in warn:
+            pen = WARN
+        else:
+            pen = _line_pen(block.text)
+        if (highlight is not None and highlight[0] == index
+                and len(block.lines) == 1):
+            # ONE LINE ONLY, AND THAT GUARD IS NOT DEFENSIVE STYLE. The span is
+            # CHARACTER offsets into the model's string; a wrapped line has been
+            # cut into pieces this function no longer knows the boundaries of, so
+            # a block placed from those offsets would land on the wrong glyphs.
+            # `test_settings_fit` proves nothing the app draws wraps here, which
+            # makes this the same kind of unreached guard as the truncation path.
+            _draw_highlighted(block.lines[0], highlight[1], highlight[2], y,
+                              pen)
+            y += pitch
+            continue
         for line_index in range(len(block.lines)):
-            _text(block.lines[line_index], _margin(), y,
-                  _line_pen(block.text))
+            _text(block.lines[line_index], _margin(), y, pen)
             y += pitch
     return y
 
 
-def _draw_countdown(text):
-    """Top right, clear of the title's ink and clear of the softkey band.
+def _draw_highlighted(text, start, end, y, pen):
+    """One body line with a reverse-video block over ``text[start:end]``.
 
-    Right-aligned from a RETAINED width rather than measured per frame: the
-    string changes once a second and the measurement changes with it, so the
-    wrap block is the cache and the steady frame reads it.
+    See :func:`_draw_body` for why the cursor is a rectangle rather than a
+    second point size, and why the line is drawn as three runs rather than
+    overdrawn.
+
+    THE BLOCK IS FLOORED ON THE LEFT AND CEILED ON THE RIGHT, so it always
+    COVERS the ink it is behind rather than leaving a half-pixel of the glyph
+    outside it. `screen.rectangle` takes integers; the text runs keep their
+    measured float offsets, because rounding those would accumulate across three
+    calls and pull the suffix off the grid the two rows line up on.
+
+    THE BLOCK IS A FULL LINE PITCH TALL, which is the character cell rather than
+    the em box: `_LINE_H` is the em box plus the 0.24 em of descender air the
+    band already reserves, so a block sized to the measured height would clip its
+    own descenders exactly as a band sized that way does.
+
+    A SPAN OUTSIDE THE STRING DRAWS THE PLAIN LINE. Unreachable from a press --
+    `clock_view` composes the spans from the same pieces it composes the string
+    from -- but this is a draw path, where a slice that silently produced an
+    empty run would put an invisible cursor on the one screen that exists to
+    repair a badge.
     """
-    block = _countdown.ready(text, _content_w(), 1)
-    x = _chrome.width - _margin() - int(block.widths[0])
-    _text(block.lines[0], x, _chrome.scale, PHOSPHOR)
-
-
-def _draw_claim_screen(model, payload, manual_code):
-    """The claim QR beside its caption, which is what buys the bigger modules.
-
-    LORES stacked an 82 px square over a caption line and had to drop the title
-    to fit. HIRES has 320x240, so the square takes the whole content HEIGHT and
-    the title, countdown and typeable code go in the column beside it: a 205 px
-    square at 5 physical pixels per module against LORES's 164 px at 4.
-    """
-    plate = _plate.ready(payload, _QR_TOP, _QR_AVAILABLE, _QR_LEFT)
-    column = _COLUMN_X
-    width = _COLUMN_W
-    if plate.image is None:
-        y = _draw_title(model.get("title", ""), _margin(), _content_w(), 2)
-        _text(settings_copy.PAYLOAD_TOO_LONG, _margin(), y, WARN)
-        countdown = model.get("countdown")
-        if countdown:
-            _draw_countdown(countdown)
+    if not 0 <= start < end <= len(text):
+        _text(text, _margin(), y, pen)
         return
-    screen.blit(plate.image, plate.at)
-    y = _draw_title(model.get("title", ""), column, width, 3)
-    countdown = model.get("countdown")
-    if countdown:
-        block = _countdown.ready(countdown, width, 1)
-        _text(block.lines[0], column, y, PHOSPHOR)
-    # Bottom-anchored, so the typeable fallback reads as the secondary route it
-    # is and does not move when the title wraps to a different line count.
-    prompt_y = _chrome.content_h - 2 * _line_h() - _chrome.scale
-    _text(settings_copy.MANUAL_PROMPT, column, prompt_y, DIM)
-    block = _caption.ready(manual_code, width, 1)
-    _text(block.lines[0], column, prompt_y + _line_h(), PHOSPHOR)
-
-
-def _draw_payload_text(payload, y):
-    """The claim URL as text, on a unit with no encoder. NOT a fake QR.
-
-    A rendered placeholder a phone cannot scan would be the one failure a
-    bystander reads as working. The URL is 350.6 px at 17 pt against 308 px of
-    content width and contains no space, so it is CHARACTER-wrapped by
-    :func:`_pieces` — the renderer would have left it one 350 px line.
-    """
-    _text(settings_copy.NO_ENCODER, _margin(), y, DIM)
-    y += _line_h()
-    _text(settings_copy.NO_ENCODER_OPEN, _margin(), y, DIM)
-    y += _line_h()
-    block = _caption.ready(payload, _content_w(), 3)
-    for index in range(len(block.lines)):
-        _text(block.lines[index], _margin(), y, PHOSPHOR)
-        y += _line_h()
-    return y
-
-
-def _draw_match_code(text, y):
-    """The six-character confirm code, as big as the display face goes.
-
-    Its entire job is being compared against a phone by eye, so it gets the
-    largest clear treatment on the screen: `ui.DISPLAY_PT`'s ceiling of 48 pt,
-    a 31 px cap = 5.81 mm = 49.9 arcmin at 400 mm, against the body's 17.7. The
-    widest code the match alphabet can produce (`WWWWWW`) measures 249.8 px
-    against the 304 px budget, so `fit_display` never has to come down from the
-    ceiling — which `test_settings_fit` asserts rather than hopes.
-
-    Centred in whatever band is left below the question, so the question is
-    what the wearer reads first and the code is what they compare.
-    """
-    budget = _content_w() - 2 * _chrome.scale
-    size, width, height = _chrome.fit_display(text, budget)
-    band = _chrome.content_h - y
-    top = y + (band - int(height)) // 2
-    if top < y:
-        top = y
+    left = _margin()
+    prefix = text[:start]
+    field = text[start:end]
+    prefix_w = _measure(prefix) if prefix else 0.0
+    field_w = _measure(field)
+    if prefix:
+        _text(prefix, left, y, pen)
     screen.pen = PHOSPHOR
-    screen.text(text, (_chrome.width - int(width)) // 2, top, font_size=size)
-    # Every other draw in this file uses the chrome face; leave it selected so a
-    # later call cannot inherit the display face by accident.
-    screen.font = _chrome.font
-    return top + int(height)
+    block_x = int(left + prefix_w)
+    screen.rectangle(block_x, y, int(left + prefix_w + field_w) + 1 - block_x,
+                     _line_h())
+    # THE PANEL'S OWN GROUND, not `BLACK`: the digits read as cut OUT of the
+    # block, which is what makes it a cursor rather than a badge with two inks
+    # fighting. It is the colour `draw` already cleared the screen to, so the
+    # highlighted cell is the only place on the panel where the background is
+    # in front of something.
+    _text(field, left + prefix_w, y, BACKGROUND)
+    suffix = text[end:]
+    if suffix:
+        _text(suffix, left + prefix_w + field_w, y, pen)

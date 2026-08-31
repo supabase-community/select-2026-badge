@@ -1,11 +1,10 @@
 """THE NUMBERED EFFECT LIBRARY: `play_effect` looks an id up in here.
 
-WHAT THE COMMAND IS FOR.  One console press has to make 800 badges do the same
+WHAT THE BROADCAST IS FOR.  One console press has to make ~1,000 badges do the same
 visible thing at the same instant ("play effect #7 for 5 seconds").  The payload
 that crosses the wire is therefore deliberately tiny -- `{"kind", "id",
-"duration_s"}` and nothing else -- because a fleet fan-out writes one
-`badge_commands` row per badge and ALL the animation data lives here, in frozen
-firmware.  The backend never ships a frame.
+"duration_s"}` per sequence item and nothing else -- because ALL the animation
+data lives here, in frozen firmware. The backend never ships a frame.
 
 ⚠ NAME COLLISION, AND IT IS NOT THE SAME WORD.  `shared/effects.py` is the
 wearer's CARD FILTER set (a whole-surface native filter over the finished
@@ -67,7 +66,8 @@ integer arithmetic, `step()` answers False when nothing moved, and the per-segme
 `Program` objects are built ONCE when the effect starts (at most
 `MAX_SEGMENTS` of them for a whole show) rather than per frame.
 
-MEASURED, on the pinned MicroPython unix port, all 22 shipped effects
+MEASURED, on the pinned MicroPython unix port, all 22 effects shipped before the
+2026-08-30 light-set expansion
 (`badgelink/host/effect_frame_cost.py`, which exits non-zero if this stops being
 true): **0 bytes of heap per frame over 2,000 frames at an 11 ms step**, on every
 arm.  One-off costs: **608-1,408 B** to construct a player (1-5 segments) and
@@ -78,10 +78,17 @@ the lazy `caselight_program` import itself.  Write density ranges from 1 frame i
 granularity differs on the RP2350 and the real per-frame cost is the PWM and
 panel writes, which this probe does not perform.
 
+RERUN 2026-08-30, after the four spatial lights rows, on the pinned
+badgeware-playground MicroPython WebAssembly runtime: **all 36 arms still
+allocate 0 B per frame and terminate**; construction is 672-4,752 B (the high
+end is `night-finale`'s 20 prebuilt four-tuples), the shared table is 10,336 B
+in that runtime, and write density remains 1-1,084 frames in 2,000. Those
+numbers replace no device claim; they prove the same bounded shape on the
+runtime available for this change.
+
 DURATION IS AUTHORITATIVE AND THE CYCLE LOOPS UNDER IT.  Each entry declares a
 CYCLE; the player repeats it until `duration_s` expires and then restores.  That
-is what makes one id usable for both a 3 s wink and a 60 s ambient wash, and it
-is what makes phase alignment possible (see `skew_ms`).
+is what makes one id usable for both a 3 s wink and a 60 s ambient wash.
 
 TIME IS THE CALLER'S PROBLEM, deliberately -- `caselight_program`'s rule, kept:
 this module takes `elapsed_ms` and imports nothing at module scope, so
@@ -112,15 +119,11 @@ PAYLOAD_KEYS = ("kind", "id", "duration_s")
 
 # HOW LONG AN EFFECT MAY RUN, and both ends are arguments rather than taste.
 #
-# ONE SECOND MINIMUM, because a shorter effect cannot be a SHARED moment.
-# `network_runtime._pump_scheduled_commands` reads the wall clock at most once a
-# second on purpose ("a moment the fleet shares to the second does not need
-# millisecond resolution"), so two badges firing the same `execute_at` can be
-# ~1 s out of phase before anything else goes wrong.  An effect shorter than the
-# fleet's own clock resolution is a flicker on some badges and nothing at all on
-# others.
+# ONE SECOND MINIMUM, because a shorter fleet effect is dominated by broadcast
+# fan-out and rendered-frame timing: it becomes a flicker on some badges and a
+# missed moment on others.
 #
-# FIVE MINUTES MAXIMUM, because a fleet effect nobody can stop is 800 badges
+# FIVE MINUTES MAXIMUM, because a fleet effect nobody can stop is ~1,000 badges
 # nobody can stop.  It is the same argument `caselight_program` makes for its
 # four primitives all terminating, ten times longer than the longest use anybody
 # has described ("play effect #7 for 5 seconds"), and short enough that a
@@ -128,9 +131,8 @@ PAYLOAD_KEYS = ("kind", "id", "duration_s")
 DURATION_MIN_S = 1
 DURATION_MAX_S = 300
 
-# ⚠ THE SERVER-SIDE CHECK CONSTRAINT MUST MIRROR THIS CLAUSE FOR CLAUSE, and it
-# does not exist yet (the Supabase lane authors it; see
-# `docs/design/effect-library.md` §"The cross-lane contract").  The rule
+# ⚠ THE SERVER-SIDE `valid_effect_sequence` CHECK MUST MIRROR THIS CLAUSE FOR
+# CLAUSE. The rule
 # `caselight_program.valid_period` learned the hard way applies again: being
 # LOOSE where the constraint is tight is harmless because the row cannot exist,
 # while being TIGHT where the constraint is loose leaves a queued command that can
@@ -149,7 +151,7 @@ DURATION_MAX_S = 300
 #   LIT  full brightness for its whole length
 #
 # WHY THEY COULD NOT GO IN `caselight_program`: that module mirrors
-# `badge_commands_set_lights_payload_check` clause for clause, and the constraint
+# `fleet_actions_set_lights_payload_check` clause for clause, and the constraint
 # has four patterns.  Adding a fifth there would drift the module from the SQL it
 # exists to mirror.  WHY THEY ARE NEEDED HERE: a `set_lights` show is a fixed
 # number of cycles, so it never had to fill an arbitrary span; an effect's length
@@ -164,9 +166,31 @@ GAP = "gap"
 LIT = "lit"
 
 #: The four this module borrows, in `caselight_program.PATTERNS` order, plus the
-#: two it owns.  A test pins the first four against that module so a rename there
-#: fails here instead of silently producing a dark badge.
+#: two scalar patterns it owns.  A test pins the first four against that module
+#: so a rename there fails here instead of silently producing a dark badge.
 SEGMENT_PATTERNS = (FLASH, BREATHE, STROBE, OFF, GAP, LIT)
+
+# FOUR-CHANNEL PHRASES. The wire still carries only a numbered effect: these
+# names are firmware-local segment types whose bit masks select logical case
+# channels CL0..CL3.  Fixed masks keep a room in sync; using `random` here would
+# make ~1,000 badges look like noise instead of one show.
+PINWHEEL = "pinwheel-4"
+CROSSFIRE = "crossfire-4"
+SPARKSTORM = "sparkstorm-4"
+NIGHT_FINALE = "night-finale-4"
+SPATIAL_PATTERNS = (PINWHEEL, CROSSFIRE, SPARKSTORM, NIGHT_FINALE)
+
+# Every phrase contains one all-on frame so it still reads at the edge of the
+# room. Physical clockwise order remains a device-eye question; these masks pin
+# logical CL0..CL3 only (`docs/hardware-map.md`).
+_SPATIAL_MASKS = {
+    PINWHEEL: (0x1, 0x2, 0x4, 0x8, 0xF, 0x0),
+    CROSSFIRE: (0x5, 0x0, 0xA, 0x0, 0x5, 0xA, 0xF, 0x0),
+    SPARKSTORM: (0x1, 0x8, 0x2, 0x4, 0x9, 0x2, 0xC,
+                 0x1, 0x6, 0x8, 0x3, 0xF, 0x0),
+    NIGHT_FINALE: (0x1, 0x2, 0x4, 0x8, 0x5, 0xA, 0x3, 0xC, 0x6, 0x9,
+                   0xF, 0x0, 0x9, 0x6, 0xC, 0x3, 0xA, 0x5, 0xF, 0x0),
+}
 
 # HOW MANY SEGMENTS ONE CYCLE MAY HAVE.  Eight, and the number bounds the only
 # per-effect allocation there is: `player_for` builds one small `Program` per
@@ -176,7 +200,7 @@ SEGMENT_PATTERNS = (FLASH, BREATHE, STROBE, OFF, GAP, LIT)
 MAX_SEGMENTS = 8
 
 # THE PANEL'S FLOOR, AND IT IS BORROWED WITH ITS ARGUMENT INTACT.  0.1 is
-# `badge_commands_set_backlight_payload_check`'s floor, repeated at
+# `fleet_actions_set_backlight_payload_check`'s floor, repeated at
 # `network_runtime._apply_set_backlight`, and the reason it is not zero is the
 # reason it is not zero here: "a dark panel is indistinguishable from a dead
 # badge to its wearer, and this is a fleet-scope command."  A real "screen off"
@@ -197,12 +221,9 @@ PANEL_FLOOR = 0.1
 # rather than a table walk: ids are dense, unique and stable by construction, and
 # `test_effect_library.StructureTests` fails if that ever stops being true.
 #
-# ⚠ APPEND ONLY.  A console, a saved show and a scheduled `badge_commands` row
-# all name an effect by NUMBER, and a scheduled row can sit in a badge's
-# `/state/badgelink-scheduled.json` for up to `command_schedule.MAX_HORIZON_S`
-# (36 hours).  Reordering this tuple silently repoints every one of them.  To
-# retire an effect, replace its row with a quiet one and say so in the comment;
-# never delete a row and never move one.
+# ⚠ APPEND ONLY. The console and saved show recipes name an effect by NUMBER;
+# reordering this tuple silently repoints both. To retire an effect, replace its
+# row with a quiet one and say so in the comment; never delete or move one.
 #
 # Each row is `(name, cycle, panel_cycle)`:
 #   name         the stable slug the ack and the console show.  Unique across
@@ -218,11 +239,12 @@ _NAME = 0
 _CYCLE = 1
 _PANEL = 2
 
-# THE `lights` SET -- the four rear LEDs only, no panel.  Eight rhythms chosen to
-# be TELLABLE APART on four white LEDs behind a diffuser, which is the real
-# constraint on how many of these make sense.  `shared/effects.py` cut a filter
-# for being a byte-identical duplicate of another; the same standard applies to a
-# light show, and it is why this is eight rows and not eighteen.
+# THE `lights` SET -- the four rear LEDs only, no panel. The first eight are the
+# frozen launch set; ids 8-17 add longer temporal phrases; ids 18-21 use the
+# existing four-argument `badge.caselights(CL0, CL1, CL2, CL3)` form. Every
+# appended phrase has a full-bright frame, a distinct cycle tuple and no more
+# than MAX_SEGMENTS, so the extra choice does not weaken the existing brightness,
+# identity or allocation contracts.
 LIGHTS_EFFECTS = (
     # 0 -- DARK, for the whole duration.  The escape hatch: whatever a badge is
     #      doing, id 0 makes the fleet quiet, and it is id 0 so an operator under
@@ -253,6 +275,58 @@ LIGHTS_EFFECTS = (
     # 7 -- steady on.  The other reason LIT exists: "light the room" is a real
     #      request and no cycling primitive expresses it.
     ("on", ((LIT, 1000, 1),), None),
+    # 8 -- a deliberate knock: two readable flashes followed by enough silence
+    #      that it cannot be mistaken for the continuous launch-set blink.
+    ("double-tap", ((FLASH, 240, 2), (GAP, 920, 1)), None),
+    # 9 -- three rounded swells rather than cuts. The 800 ms period reaches the
+    #      shared BRIGHT table entry on every pulse, even at the default 5 s.
+    ("soft-triple", ((BREATHE, 800, 3), (GAP, 800, 1)), None),
+    # 10 -- two short beams one second apart and then a long dark sweep. The
+    #       asymmetry is what separates it from heartbeat across a room.
+    ("lighthouse",
+     ((LIT, 200, 1), (GAP, 800, 1), (LIT, 200, 1), (GAP, 2800, 1)), None),
+    # 11 -- a hard flare, a small separation, then one broad halo. This uses
+    #       existing bounded primitives rather than adding a one-off fade mode.
+    ("flare",
+     ((LIT, 300, 1), (GAP, 300, 1), (BREATHE, 2400, 1), (GAP, 1000, 1)), None),
+    # 12 -- three flashes whose cadence accelerates into a full-bright hold.
+    #       Segment periods carry the timing; no counter is added to the player.
+    ("countdown",
+     ((FLASH, 1200, 1), (FLASH, 800, 1), (FLASH, 400, 1),
+      (LIT, 800, 1), (GAP, 1200, 1)), None),
+    # 13 -- the same acceleration with silence between claps, using the full
+    #       eight-segment cap but not increasing the player's allocation bound.
+    ("slow-clap",
+     ((FLASH, 1600, 1), (GAP, 400, 1), (FLASH, 1200, 1), (GAP, 400, 1),
+      (FLASH, 800, 1), (GAP, 400, 1), (FLASH, 400, 1), (GAP, 1600, 1)), None),
+    # 14 -- eight bounded ticks resolve into a steady full-bright finish. The
+    #       finite count keeps a repeated default-duration show self-restoring.
+    ("drumroll", ((STROBE, 180, 8), (LIT, 700, 1), (GAP, 1200, 1)), None),
+    # 15 -- two short swells followed by one broad swell. All are the same
+    #       allocation-free triangle; only their musical phrase is new.
+    ("rolling-wave",
+     ((BREATHE, 1200, 2), (BREATHE, 2400, 1), (GAP, 600, 1)), None),
+    # 16 -- broad flashes, a brief rest, tight sparks, then a bright finish. It
+    #       is intentionally celebratory without inventing random per-badge time.
+    ("celebration",
+     ((FLASH, 300, 4), (GAP, 200, 1), (STROBE, 120, 4),
+      (LIT, 700, 1), (GAP, 1000, 1)), None),
+    # 17 -- two sparse pinpricks and one wider wink. Deterministic spacing keeps
+    #       every badge on the same phrase when this is used inside a sequence.
+    ("constellation",
+     ((STROBE, 700, 2), (GAP, 300, 1), (FLASH, 1100, 1),
+      (GAP, 1700, 1)), None),
+    # 18 -- one logical lamp advances per beat, then all four resolve together.
+    #       The physical diffuser order is deliberately not claimed here.
+    ("pinwheel", ((PINWHEEL, 720, 1),), None),
+    # 19 -- opposing logical pairs trade places before a full-room hit.
+    ("crossfire", ((CROSSFIRE, 800, 1),), None),
+    # 20 -- a deterministic irregular mask sequence: lively across a fleet,
+    #       but identical on every badge and every replay.
+    ("sparkstorm", ((SPARKSTORM, 1040, 1),), None),
+    # 21 -- the broadest logical-channel phrase and the fastest approved pace,
+    #       ending each lap with an all-on hit and a clean dark separation.
+    ("night-finale", ((NIGHT_FINALE, 1200, 1),), None),
 )
 
 # THE `glyph` SET -- caselights AND the panel backlight, named after the shipped
@@ -266,9 +340,10 @@ LIGHTS_EFFECTS = (
 # Nametag's pixel show and had to be distinguishable on four LEDs plus one
 # backlight alone.  Ids 8-13 command real temporary decks, so the picture now
 # supplies the identity.  Making the lamps compete with a Select 26 lockup would
-# turn a logo show into a strobe show; slow breathes and steady light keep the
-# artwork load-bearing.  The five lockups stay in the glyph app's own order and
-# `elephant` stays last, exactly as the owner approved on 2026-08-28.
+# turn a logo show into a strobe show; one slow same-period breathe on both
+# channels keeps the artwork load-bearing while avoiding a static rear lamp.
+# The five lockups stay in the glyph app's own order and `elephant` stays last,
+# exactly as the owner approved on 2026-08-28.
 GLYPH_EFFECTS = (
     # 0 -- radar: one slow sweep round the case, the panel swelling with it.
     #      In phase on purpose: the deck's sweep is one moving front, not two.
@@ -301,26 +376,25 @@ GLYPH_EFFECTS = (
     ("arrow-field",
      ((FLASH, 400, 2), (GAP, 200, 1), (FLASH, 200, 2), (GAP, 600, 1)),
      ((BREATHE, 1400, 1),)),
-    # 8 -- logo-sizzle: steady case light under the fastest permitted panel
-    #      breath.  Its own 2.38 s storyboard already blanks twice per lap, so a
-    #      second blink would compete with the lockup instead of framing it.
-    ("logo-sizzle", ((LIT, 2400, 1),), ((BREATHE, 2400, 1),)),
+    # 8 -- logo-sizzle: one restrained, same-period breathe on both channels.
+    #      Its own 2.38 s storyboard already blanks twice per lap, so a flash or
+    #      independent cadence would compete with the lockup instead of framing it.
+    ("logo-sizzle", ((BREATHE, 2400, 1),), ((BREATHE, 2400, 1),)),
     # 9 -- logo-trail: one four-second swell on both channels.  This is the
     #      widest and busiest lockup field; moving the lamps any faster would
     #      turn its deliberate punctuation trail back into visual noise.
     ("logo-trail", ((BREATHE, 4000, 1),), ((BREATHE, 4000, 1),)),
-    # 10 -- logo-offset: steady case light and a 3.6 s panel breath.  Two sparse
-    #       rows need luminance support, not another cadence competing with the
-    #       only lockup that places `26` on the top line.
-    ("logo-offset", ((LIT, 3600, 1),), ((BREATHE, 3600, 1),)),
-    # 11 -- logo-left: steady case light beneath the slowest panel breathe.  The
+    # 10 -- logo-offset: matching 3.6 s breathes support two sparse rows without
+    #       adding a second cadence to the only lockup with `26` on the top line.
+    ("logo-offset", ((BREATHE, 3600, 1),), ((BREATHE, 3600, 1),)),
+    # 11 -- logo-left: matching slow breathes on both channels.  The
     #       arrangement differs from `logo-stack` only by a 60 px year shift, so
     #       its lamps deliberately do not invent a louder distinction.
-    ("logo-left", ((LIT, 4000, 1),), ((BREATHE, 4000, 1),)),
+    ("logo-left", ((BREATHE, 4000, 1),), ((BREATHE, 4000, 1),)),
     # 12 -- logo-stack: the same restrained light bed as `logo-left`.  The logo
     #       placement is the comparison the viewer should see; changing the
     #       rhythm would answer a different and less useful question.
-    ("logo-stack", ((LIT, 4000, 1),), ((BREATHE, 4000, 1),)),
+    ("logo-stack", ((BREATHE, 4000, 1),), ((BREATHE, 4000, 1),)),
     # 13 -- elephant: a slightly livelier case breathe under the slow 2.4 s
     #       panel swell.  The moving Muybridge study can carry that extra lift
     #       without the FLASH/STROBE cuts forbidden beneath a brand lockup.
@@ -451,7 +525,7 @@ def parse(payload):
     EVERY REJECTION IS A FAILED ACK AND NEVER A RENDER.  The command arrives from
     a fleet fan-out, so the badge's only safe answers are "played it" and "could
     not"; guessing at a payload it does not understand is how one console typo
-    becomes 800 badges doing something nobody chose.
+    becomes ~1,000 badges doing something nobody chose.
 
     The clause order mirrors what a CHECK constraint would do, and the FIRST
     clause is the one `caselight_program.parse` learned from a real Postgres:
@@ -507,8 +581,8 @@ class EffectPlayer:
 
     `step` returns False on every frame where neither channel moved, which is
     most of them -- True and False are singletons, so a quiet frame allocates
-    nothing at all.  `case_level` and `panel_level` are elements of pre-built
-    tables, never freshly computed floats.
+    nothing at all.  `case_level`, optional `case_levels`, and `panel_level` are
+    elements of pre-built tables, never freshly computed floats or tuples.
 
     IT IS A DIFFERENT SHAPE FROM `caselight_program.Program` ON PURPOSE.  That
     class returns a level because it drives ONE channel; this one drives two, and
@@ -517,18 +591,17 @@ class EffectPlayer:
     would put a type switch in the frame pump.
     """
 
-    def __init__(self, kind, effect_id, entry, duration_ms, skew_ms=0,
-                 panel_base=None):
+    def __init__(self, kind, effect_id, entry, duration_ms, panel_base=None):
         lights = _lights()
         self.kind = kind
         self.effect_id = effect_id
         self.name = entry[_NAME]
         self.duration_ms = int(duration_ms)
-        self.skew_ms = int(skew_ms)
         self.panel_base = panel_base
         self.done = False
         self.writes = 0
         self.case_level = None
+        self.case_levels = None
         self.panel_level = None
         self._case_last = None
         self._panel_last = None
@@ -558,7 +631,7 @@ class EffectPlayer:
 
     @staticmethod
     def _compile(lights, cycle):
-        """`cycle` -> a tuple of `(program_or_None, length_ms, pattern)`.
+        """Compile programs or four-channel frames once when a show starts.
 
         The borrowed patterns become real `caselight_program.Program` objects and
         this player calls their `_level_at`.  ⚠ THAT IS A DELIBERATE REACH INTO A
@@ -572,21 +645,35 @@ class EffectPlayer:
         compiled = []
         for pattern, period_ms, count in cycle:
             length = int(period_ms) * int(count)
-            if pattern in (GAP, LIT):
-                compiled.append((None, length, pattern))
+            if pattern in SPATIAL_PATTERNS:
+                dark = lights.DARK
+                bright = lights.BRIGHT
+                frames = tuple(
+                    tuple(bright if mask & (1 << channel) else dark
+                          for channel in range(4))
+                    for mask in _SPATIAL_MASKS[pattern])
+                compiled.append((frames, length, pattern, int(period_ms)))
+            elif pattern in (GAP, LIT):
+                compiled.append((None, length, pattern, int(period_ms)))
             else:
                 compiled.append(
-                    (lights.Program(pattern, period_ms, count), length, pattern))
+                    (lights.Program(pattern, period_ms, count), length, pattern,
+                     int(period_ms)))
         return tuple(compiled)
 
     def _level_at(self, compiled, cycle_length, phase):
         """The caselight level for `phase` ms into one pass of a cycle."""
-        for program, length, pattern in compiled:
+        for program, length, pattern, period_ms in compiled:
             if phase < length:
                 if pattern == GAP:
                     return self._dark
                 if pattern == LIT:
                     return self._bright
+                if pattern in SPATIAL_PATTERNS:
+                    # `program` is the immutable frame tuple built in `_compile`;
+                    # indexing it keeps the steady frame allocation-free.
+                    within = phase % period_ms
+                    return program[(within * len(program)) // period_ms]
                 return program._level_at(phase)
             phase -= length
         # Only reachable if `cycle_length` and the segments disagree, which
@@ -595,15 +682,12 @@ class EffectPlayer:
         return self._dark
 
     def step(self, elapsed_ms):
-        """Advance to `elapsed_ms` since the effect's SCHEDULED start.
+        """Advance to `elapsed_ms` since this badge started the effect.
 
-        Returns True when `case_level` or `panel_level` holds something to write.
-
-        `elapsed_ms` counts from the moment the show was supposed to begin, not
-        from when this badge got round to it -- `skew_ms` is added here, which is
-        the whole of the fleet-sync mechanism (see `player_for`).
+        Returns True when a case output or `panel_level` holds something to write.
         """
         self.case_level = None
+        self.case_levels = None
         self.panel_level = None
         if self.done:
             return False
@@ -612,7 +696,6 @@ class EffectPlayer:
             # takes the same guard for the same reason: a fixture or a resynced
             # RTC can do this even though `_ticks_diff` handles the wrap.
             elapsed_ms = 0
-        elapsed_ms += self.skew_ms
         if elapsed_ms >= self.duration_ms:
             return self._finish()
         moved = False
@@ -620,7 +703,10 @@ class EffectPlayer:
                                elapsed_ms % self._case_ms)
         if level != self._case_last:
             self._case_last = level
-            self.case_level = level
+            if isinstance(level, tuple):
+                self.case_levels = level
+            else:
+                self.case_level = level
             moved = True
         if self._panel is not None:
             panel = self._panel_for[
@@ -639,11 +725,18 @@ class EffectPlayer:
 
         ALWAYS EMITTED, EVEN IF IT COSTS TWO WRITES.  `caselight_program` can
         skip its terminal dark frame when the level is already dark; this player
-        cannot take that shortcut on the panel, because leaving 800 badges at a
+        cannot take that shortcut on the panel, because leaving ~1,000 badges at a
         brightness a show chose is a visible, persistent fault that survives
         until each wearer notices and fixes it by hand.
         """
         self.done = True
+        # `interrupt()` can follow a moved `step()` before the caller clears its
+        # staged outputs. A restore frame must contain only restore values;
+        # otherwise the runtime prefers stale four-channel light data over the
+        # scalar DARK staged below and immediately replays the interrupted frame.
+        self.case_level = None
+        self.case_levels = None
+        self.panel_level = None
         moved = False
         if self._case_last != self._dark:
             self._case_last = self._dark
@@ -673,49 +766,14 @@ class EffectPlayer:
         """
         if self.done:
             self.case_level = None
+            self.case_levels = None
             self.panel_level = None
             return False
         return self._finish()
 
 
-def player_for(payload, skew_ms=0, panel_base=None):
-    """`parse` then :class:`EffectPlayer`, which is what the applier calls.
-
-    `skew_ms` IS THE FLEET-SYNC MECHANISM, and it is why one badge that fired
-    late still ends the show with everyone else.  The badge fires an `execute_at`
-    command from `_pump_scheduled_commands`, which checks the wall clock at most
-    once a second and will fire anything up to `command_schedule.MAX_LATE_S`
-    (120 s) late -- a badge that was mid-boot, mid-poll or on a slow frame can
-    therefore start a 30 s show 90 seconds after everyone else and run it alone.
-    Passing the lateness here starts the player that far INTO the effect, so
-    every badge is at the same phase of the same cycle and they all stop
-    together.  Residual error is bounded by the once-a-second clock read plus NTP
-    accuracy, which is why `DURATION_MIN_S` is one second.
-
-    A skew at or past the duration means the show is OVER, and this raises rather
-    than returning an inert player -- an `applied` ack for a show that never
-    played would hide a real delivery problem.
-
-    ⚠ WHO ACTUALLY HEARS ABOUT IT DEPENDS ON THE PATH, and this docstring said
-    "failed ack" flatly until 2026-08-26.  On the IMMEDIATE path `_on_command`
-    turns the raise into a `failed` ack and the console learns.  On the SCHEDULED
-    path -- **the only path that can produce a nonzero skew at all** -- the row
-    was acked `applied` with `result.applies == "scheduled"` at QUEUE time and
-    there is no second ack: `badgelink_badge_poll` does not filter on
-    `execute_at` and fails a row at five delivery attempts, and the ack CHECK
-    accepts exactly `applied` and `failed`.  So `_pump_scheduled_commands`
-    catches this, emits `command_fire_failed` to serial, and the wire hears
-    nothing.  That is the schema's constraint rather than a gap here; the console
-    rule it forces is `docs/design/effect-library.md` §9b item 7 ("scheduled
-    means queued, never played").
-    """
+def player_for(payload, panel_base=None):
+    """`parse` then :class:`EffectPlayer`, which is what the applier calls."""
     kind, effect_id, duration_ms = parse(payload)
-    skew_ms = int(skew_ms)
-    if skew_ms < 0:
-        skew_ms = 0
-    if skew_ms >= duration_ms:
-        raise ValueError(
-            "play_effect arrived {} ms into a {} ms effect".format(
-                skew_ms, duration_ms))
     return EffectPlayer(kind, effect_id, _TABLES[kind][effect_id], duration_ms,
-                        skew_ms=skew_ms, panel_base=panel_base)
+                        panel_base=panel_base)

@@ -33,6 +33,7 @@ import loading  # noqa: E402
 _load = loading.begin(4)
 
 import backlight  # noqa: E402
+import idle  # noqa: E402
 from snake_model import (
     DOWN,
     LEVEL_MS,
@@ -98,8 +99,19 @@ accent, accent_source = load_accent()
 _load.step("-- accent from /state/profile.json")
 view = SnakeView(screen, image, color, font, vec2, accent)
 _load.step("-- view built")
-high_score, high_level, load_status = load()
+high_score, high_level, plays, load_status = load()
 _load.step("-- 1 row from /state/snake.json")
+# HOW MANY RUNS OF THIS GAME HAVE BEEN FINISHED, and it is DURABLE: it comes out
+# of `/state/snake.json` with the high score and goes back in with it on every
+# completed run.  It prices the leaderboard row -- a score is unique in the
+# database as `(badge_id, game, play_number, score)` -- which is what replaced
+# the random idempotency key, and it is also the only way to recover how many
+# times a wearer played: the badge keeps just its HIGHEST pending score per game,
+# so `max(play_number)` is the count and `count(*)` is not.
+#
+# `settings`' "Erase scores" deletes this file and therefore resets this counter.
+# That is deliberate rather than a leak: the SCORE is in the database key too, so
+# replaying to the same index with a different score still creates a row.
 phase = INTRO
 game = None
 # The default STAKE is level 4, and it is zero-based here, so 3.  The owner
@@ -141,6 +153,8 @@ save_failed = False
 # HOME interrupt and can therefore land in the middle of the main loop's own
 # write, on the same temp path; it stands down rather than interleave with it.
 saving = False
+_return_idle = idle.ReturnToNametag(time.ticks_ms)
+_next_app = None
 # Live from the first frame: no screen inside this app has changed yet, the
 # launcher already consumed its own press, and an app whose whole claim is
 # "instant to start" must not dead-key the first thing the player does.
@@ -239,11 +253,29 @@ def bank_run(reason):
     death, the labelled quit and HOME -- agree the run is over.  A door that
     banked without submitting would be a client-side filter nobody ruled for.
     """
-    global high_score, high_level, save_failed, saving
+    global high_score, high_level, save_failed, saving, plays
     saving = True
+    # THE COUNTER MOVES FIRST, IN RAM, WHERE IT CANNOT FAIL.  The order is not
+    # negotiable: increment, then the atomic save that makes it durable, then the
+    # submission that carries it.
+    #
+    # GAME FILE BEFORE SPOOL, AND THAT DIRECTION IS THE ONE THAT MATTERS.  A
+    # power cut between the two costs this run's leaderboard row -- the same loss
+    # an un-landed spool write always had.  Reversed, a spooled score would claim
+    # play N while the disk still said N-1, the next run would mint N again, and
+    # `max(play_number)` -- the only way anyone can recover how many times this
+    # wearer played -- would under-count.  The score is in the database key, so
+    # the collision itself corrupts nothing; the count is what would lie.
+    #
+    # INSIDE THE `saving` WINDOW, WITH THE SPOOL, so the HOME re-entrancy this
+    # function's `finally` describes cannot double-count either.  If it ever did,
+    # the second submission would carry the SAME score at a HIGHER play number
+    # and `scorebox.record`'s strictly-greater rule would drop it -- which is the
+    # replacement for what the random key used to get wrong here.
+    plays += 1
     try:
         high_score, high_level, changed = update_high_score(
-            game["score"], game["level"], high_score, high_level
+            game["score"], game["level"], high_score, high_level, plays
         )
         save_failed = False
         return changed
@@ -266,9 +298,13 @@ def bank_run(reason):
         # until this returns, so a HOME interrupt arriving with `saving` already
         # cleared re-enters `bank_run` on the same live run -- and where a second
         # local write is merely wasted (the record is idempotent), a second
-        # submit is a SECOND ROW with a fresh idempotency key, so one run would
-        # appear twice on the leaderboard.  The window was microseconds wide and
-        # an append plus an `os.sync` would have made it milliseconds.
+        # submit USED TO BE a SECOND ROW with a fresh idempotency key, so one run
+        # appeared twice on the leaderboard.  THAT HALF IS CLOSED TWICE OVER NOW:
+        # the re-entry increments `plays` and carries the SAME score at a HIGHER
+        # play number, and `scorebox.record` ignores a score that does not
+        # strictly beat the standing one.  The window stays shut anyway -- it also
+        # guards the atomic save's temp path, and a run banked twice would
+        # over-count `max(play_number)`.
         # GUARDED AT THE CALL SITE (owner ruling, 2026-08-27), and inside a
         # `finally` the stakes are higher than elsewhere: an exception raised
         # here REPLACES the one in flight, so an unguarded submit could both
@@ -278,9 +314,23 @@ def bank_run(reason):
         # `spool` swallows a raising store itself; what only this `try` catches
         # is the argument evaluation and a `spool` that broke its contract.  The
         # print is what stops the guard from hiding a real defect.
+        #
+        # `plays` GOES WITH IT TOO, and it is what makes a re-offered post free:
+        # the row is unique as `(badge_id, game, play_number, score)`, so a lost
+        # response costs one duplicate REQUEST and creates no duplicate ROW.
+        #
+        # `reason` GOES WITH IT, and it is the only thing that can separate the
+        # two runs the leaderboard could not tell apart.  See `on_exit`: HOME out
+        # of a run that a single B started on the post-mortem spooled
+        # `snake score 0 duration_ms 584`, and 584 ms is inside this game's real
+        # instant-death range at the default level.  The badge still SENDS that
+        # row -- suppressing it would be the client-side filtering the ruling
+        # forbids, and a genuine zero is a real score -- so it sends the door
+        # instead, and `metadata ->> 'end'` decides in SQL.
         try:
-            spool("snake", game["score"],
-                  time.ticks_diff(time.ticks_ms(), run_started))
+            spool("snake", game["score"], plays,
+                  time.ticks_diff(time.ticks_ms(), run_started),
+                  end=reason)
         except Exception as error:  # noqa: BLE001 - a reset is the alternative
             print("SNAKE_SPOOL_ERROR score={} err={}".format(
                 game["score"], repr(error)))
@@ -290,13 +340,28 @@ def bank_run(reason):
 def finish_game(event, now):
     global phase
     phase = FINISHED
-    arm_input(now)
     # Fire the lights BEFORE the atomic save. There is no audio on this badge,
     # so four case lights are the only instantaneous feedback channel, and a
     # direct write is 252 us median against a save that is 7-130 ms median and
     # 185 ms at the tail. The screen can lag; the flash cannot.
     badge.caselights(0.7 if event == "won" else 0.85)
     changed = bank_run("finish")
+    # ARMED AFTER THE SAVE, AND OFF A FRESH TICK -- both halves matter, and this
+    # line used to be above `badge.caselights` with the frame's `now`.
+    #
+    # ARM_MS exists to swallow the press that was already travelling when the
+    # snake died. `now` is stamped at the TOP of the frame, and everything
+    # between it and here is the most expensive thing this app does on purpose:
+    # the atomic save at 7-130 ms median with a 185 ms tail, plus the spool's
+    # append and `os.sync`. Armed from `now`, the 90 ms window had usually
+    # ALREADY EXPIRED by the time the post-mortem read input, so the thumb that
+    # was in flight at death landed on the death screen and started a new run --
+    # the first link in the phantom zero-score chain `on_exit` describes.
+    #
+    # A fresh `ticks_ms()` is what makes the window mean 90 ms of the PLAYER's
+    # time rather than 90 ms minus however long the flash took. All five games
+    # share this shape; only snake could turn it into a leaderboard row.
+    arm_input(time.ticks_ms())
     set_light("win" if event == "won" else "death", now, 1400)
     print(
         "SNAKE_FINISH event={} score={} level={} high={} high_level={} saved={}"
@@ -531,8 +596,14 @@ def render():
 
 
 def update():
-    global frame
+    global frame, _next_app
     now = time.ticks_ms()
+    # A live run and its flash commit are never inactivity: the player can go
+    # thirty seconds without a button while the snake is still moving.
+    if _return_idle.frame(
+            bool(badge.held()), busy=phase == PLAYING or saving):
+        _next_app = idle.NAMETAG_APP
+        return "idle"
     # Input is dispatched once, on the phase this frame started in, and the
     # render then follows whatever phase that left behind.  A handler must
     # never run against a phase another handler just entered, or the frame
@@ -592,11 +663,26 @@ def on_exit():
             # The main loop is mid-commit on this very run. Its `rename` is the
             # authoritative one; a second writer here could only corrupt it.
             print("SNAKE_EXIT skipped=write-in-flight")
-            return
+            return _next_app
         if game is None or phase not in (PLAYING, PAUSED):
             # INTRO has no run to bank, and FINISHED already banked one.
             print("SNAKE_EXIT phase={} banked=nothing".format(phase))
-            return
+            return _next_app
+        # A HALF-SECOND-OLD RUN IS PLAYING AND THIS BANKS IT, DELIBERATELY.  The
+        # sequence is one wearer really performed: die, then one B on the
+        # post-mortem restarts (`start_game` zeroes the score and restamps the
+        # clock), then HOME -- and the row that reached the leaderboard was
+        # `snake score 0 duration_ms 584`, on a badge whose real run was
+        # `snake 24 @ 17216ms`.
+        #
+        # DO NOT ADD A GUARD HERE.  Not on score (the owner genuinely died at 0 on
+        # flappy, and that row must survive) and not on duration (584 ms is inside
+        # this game's honest instant-death range -- snake wraps at the walls, so
+        # the only death is self-collision, three turns and ~480 ms at level 4 and
+        # nearer 100 ms at level 9).  Either would be the client-side judgment
+        # `scorebox` forbids in its first paragraph.  `bank_run` labels the row
+        # `end=exit` instead, and the exclusion lives in a view that can be
+        # changed at the venue without touching 200 badges.
         changed = bank_run("exit")
         print(
             "SNAKE_EXIT score={} level={} high={} saved={} failed={}".format(
@@ -608,6 +694,7 @@ def on_exit():
             print("SNAKE_EXIT_ERROR err={}".format(repr(error)))
         except Exception:  # noqa: BLE001 - nothing left worth trying
             pass
+    return _next_app
 
 
 _load.end()

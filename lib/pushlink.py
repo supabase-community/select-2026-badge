@@ -228,13 +228,96 @@ EVENT_TOPIC_PREFIX = "realtime:event:"
 #: cause -- extending it would re-ring the whole fleet for one command.
 EVENT_DOORBELL_NAME = "doorbell"
 
-#: THE FLEET PAYLOAD KEY THE POSITIVE FILTER READS, and the only one it reads.
-#: The publisher's `jsonb_build_object` sends four -- `badge_id`, `command_id`,
-#: `kind`, `at` -- and `badge_id` is the TARGET's physical `machine.unique_id()
-#: .hex()`, not the JWT subject, because the subject is the fleet's now. The
-#: doorbell is still not a courier: one bit is read out of the payload (is this
-#: me?) and nothing is carried out of it.
+#: THE FLEET PAYLOAD KEY THAT ADDRESSES THE HINT. The legacy per-row publisher
+#: names one physical badge; the fleet_actions publisher names either one
+#: physical badge or the explicit ``all`` sentinel below. It is ADDRESSING, never
+#: authority: RLS on `realtime.messages` already decided who may hear this.
 FLEET_TARGET_KEY = "badge_id"
+
+#: RESERVED TARGET, not a wildcard convention. A hardware id is exactly 16
+#: lowercase hex characters, so this word cannot collide with one; every near
+#: miss (``*``, null, uppercase, whitespace) stays silent.
+RELIABLE_ALL_TARGET = "all"
+
+#: -- THE BROADCAST ENVELOPE (2026-08-29) ------------------------------------
+#:
+#: WHAT EACH KEY IS FOR:
+#:
+#:   ``id``           the same value as ``action_id`` -- see below
+#:   ``badge_id``     16 lowercase hex, or the ``all`` sentinel. ADDRESSING.
+#:   ``action_id``    the `fleet_actions` row id, canonical UUID text. It is
+#:                    also `fleet_receipts.action_id`, which is how a badge's
+#:                    write-back names what it answered without the server
+#:                    having to correlate anything.
+#:   ``action_type``  the verb. A non-empty string here and NOTHING MORE; the
+#:                    vocabulary belongs to `network_runtime._apply`, which is
+#:                    the one place it is already spelled.
+#:   ``payload``      the verb's arguments, an object or array. Opaque here;
+#:                    ``play_effect`` is always an array of effect objects and
+#:                    the runtime owns that verb-specific rule.
+#:   ``at``           when the action was published. Non-empty text.
+#:
+#: ⚠ **THE DOORBELL IS A COURIER NOW, AND THIS TUPLE IS THE WHOLE CONTRACT.**
+#: Until today a broadcast was read for ONE BIT -- "is this news?" -- and the
+#: durable `badge_commands` row was the courier. That queue is deleted (the
+#: rebuild commit `928d53f7`: moments are broadcast, states are polled), so
+#: there is nothing behind a ring to recover it and the payload has to carry the
+#: moment itself. The cost of that is exactly what this key set defends against:
+#: a payload this badge cannot positively identify is no longer one wasted
+#: request, it is a light show nobody chose.
+#:
+#: **`id` IS IN THE SET BECAUSE THE SERVER PUTS IT THERE WHETHER WE WANT IT OR
+#: NOT.** `realtime.send` injects an `id` key into any payload lacking one, and
+#: that is precisely how the per-command doorbell broke: it emitted
+#: ``{at, badge_id, command_id, kind}``, arrived as
+#: ``{at, badge_id, command_id, id, kind}``, missed this exact-key filter, and
+#: was dropped -- 595 of 598 broadcasts, silently, fleet-wide
+#: (`docs/design/badge-schema-rebuild-2026-08-28.md` §3). The publisher must
+#: therefore set ``id`` ITSELF, to the action id, so the injection is a no-op.
+#: The ``id == action_id`` clause in `_reliable_doorbell_payload` is what makes
+#: forgetting that loud instead of silent.
+#:
+#: **THE WORD `kind` IS GONE FROM THE ENVELOPE AND ITS ABSENCE IS DELIBERATE.**
+#: It carried the constant string ``"command"``, which said nothing a doorbell
+#: payload on this topic did not already say, and it COLLIDED head-on with
+#: `effect_library`'s own ``kind`` (``"glyph"``/``"lights"``) which now travels
+#: INSIDE ``payload``. Two meanings of one word in one payload is how a
+#: validator gets written against the wrong one.
+#:
+#: **THE BADGE AND THE PUBLISHER MUST LAND TOGETHER.** An exact key set the
+#: server does not emit is total, silent, fleet-wide loss that looks like a quiet
+#: event -- that is the 595/598 bug -- and relaxing the exactness to hedge just
+#: trades silence for ~1,000 badges rendering a guess. Neither is acceptable, so
+#: this tuple is pinned by `badgelink/tests/test_fleet_doorbell.py` on this side
+#: and must be pinned against the trigger on the other.
+RELIABLE_DOORBELL_KEYS = ("id", "badge_id", "action_id", "action_type",
+                          "payload", "at")
+
+#: Spelled separately because three lanes read them: this validator, the receipt
+#: `network_runtime` posts, and the console that joins the two.
+ACTION_ID_KEY = "action_id"
+ACTION_TYPE_KEY = "action_type"
+ACTION_PAYLOAD_KEY = "payload"
+
+#: THE VERB'S LENGTH BOUND. 32, against a longest live verb of fourteen
+#: characters (``set_caselights``, ``set_networking``), so it refuses nothing
+#: this fleet can say and is not a limit anyone will meet.
+#:
+#: IT IS HERE BECAUSE THIS STRING TRAVELS FURTHER THAN THE VALIDATOR. It reaches
+#: `network_runtime._apply`'s dispatch and it reaches the event sink, which on a
+#: tethered badge is a serial console an operator is reading the event by --
+#: server-supplied text with no length of its own is the one thing on that line
+#: that could push everything else off it. Bounding it HERE rather than at either
+#: consumer is the same argument the rest of this function makes: a shape the
+#: badge cannot positively identify should stop at the boundary, once.
+MAX_ACTION_TYPE = 32
+
+#: Canonical Postgres UUID text and physical-id alphabets. Spelled locally so a
+#: half-refreshed flat `/system/lib` never has to import a sibling merely to
+#: validate a broadcast on the rendered-frame path.
+LOWER_HEX = "0123456789abcdef"
+UUID_TEXT_LEN = 36
+UUID_HYPHENS = (8, 13, 18, 23)
 
 
 # -- tolerant moments --------------------------------------------------------
@@ -332,11 +415,22 @@ STARVATION_CEILING_MS = 25000
 #:   receives about itself, and this client never PUBLISHES: it sends
 #:   ``phx_join``, heartbeats, pings and ``access_token`` frames and nothing
 #:   else.
-#: * **A doorbell that rings a revoked badge buys the server a 403, not an
-#:   action.** `pull_forward` only moves the next poll earlier, and that poll is
-#:   the statement revocation is already immediate on. D9 measured the shape on
-#:   glass: post-refusal HTTP delivery with no broadcast, and the restored
-#:   Broadcast and durable ack afterwards.
+#: * **A doorbell that rings a revoked badge used to buy the server a 403, not
+#:   an action.** `pull_forward` only moved the next poll earlier, and that poll
+#:   was the statement revocation was already immediate on. D9 measured the
+#:   shape on glass: post-refusal HTTP delivery with no broadcast, and the
+#:   restored Broadcast and durable ack afterwards.
+#:
+#:   ⚠ **THAT IS NO LONGER TRUE, AND THE RULING SURVIVES ANYWAY.** Since
+#:   2026-08-29 a broadcast carries the action itself, so a badge whose HTTP
+#:   grant was revoked but whose WS session is still open WILL play the effect --
+#:   locally, with no request for the server to refuse. What that costs is
+#:   bounded by what it is: a light show on a badge in the room, for as long as
+#:   one socket outlives one revocation. Under the owner's settled threat model
+#:   (`AGENTS.md`, 2026-08-28: ~1,000 badges, one shared token, attribution
+#:   self-reported, "it could be a random ID for all we care") that is not a
+#:   boundary worth a mechanism. The RECEIPT is still refused, so the console
+#:   still sees the badge stop answering.
 #:
 #: **AND THE ADVERSARIAL BOUND DOES NOT MOVE AT ALL, which is the honest reason
 #: this is a cheap ruling.** Realtime's authorization cache is per-connection, so
@@ -564,9 +658,10 @@ BOOT_JITTER_MS = 20000
 #:
 #: * THE SCOPE IS NOW LEGIBLE, but not from the topic -- every badge sees every
 #:   fleet ring on the same topic. It is legible from the PAYLOAD's `badge_id`,
-#:   which names ONE physical badge, and :meth:`PushLink._fleet_target_is_me` is
-#:   what reads it. So the filter, not the jitter, is what makes a fleet ring
-#:   cheap: 799 badges suppress it before any poll is pulled forward.
+#:   which names one physical badge or the explicit ``all`` sentinel, and
+#:   :meth:`PushLink._fleet_action_for_me` validates the complete producer shape.
+#:   So the filter, not the jitter, is what keeps a targeted ring cheap: the
+#:   other badges suppress it before anything is acted on.
 #: * THE JITTER STILL APPLIES TO EVERY RING THIS LINK DELIVERS, and it has to.
 #:   The filter bounds the badges that ring for ONE command; it does nothing for
 #:   an owner queueing a row per badge in one statement, which is 800 rings that
@@ -607,9 +702,9 @@ RING_JITTER_MAX_MS = 2000
 #: session that NEVER joined, so a joined-then-dropped socket is a reconnect,
 #: not a strike (see :meth:`PushPolicy.note_session_failed`). So the real cost is
 #: bounded -- ~20 s of ring latency, 799 wasted decodes and about one reconnect
-#: per badge per fleet batch -- and polling remains the floor while `execute_at`
-#: still makes the show simultaneous. It is worth fixing because it is cheap to
-#: fix, not because it endangers the event.
+#: per badge per fleet batch. CP3's shipping producer now sends one room-wide
+#: `fleet_actions` frame, so that old per-badge burst is historical; the bound
+#: remains defensive for batched or future shared-topic traffic.
 #:
 #: FOUR rather than "until empty": a drained frame costs a JSON decode of a body
 #: `max_frame_size` caps at 2 KB, so four is a handful of milliseconds against
@@ -714,6 +809,96 @@ def _nonempty_text(value):
     """A JSON string with something in it.  The trigger sends no empty ones."""
 
     return isinstance(value, str) and len(value) > 0
+
+
+def _exact_payload_keys(payload, expected):
+    """No missing and no future keys, without allocating a set per ring."""
+
+    if not isinstance(payload, dict) or len(payload) != len(expected):
+        return False
+    for key in expected:
+        if key not in payload:
+            return False
+    return True
+
+
+def _canonical_uuid_text(value):
+    """Postgres UUID JSON form: lowercase hex with four fixed hyphens."""
+
+    if not isinstance(value, str) or len(value) != UUID_TEXT_LEN:
+        return False
+    for index in range(UUID_TEXT_LEN):
+        character = value[index]
+        if index in UUID_HYPHENS:
+            if character != "-":
+                return False
+        elif character not in LOWER_HEX:
+            return False
+    return True
+
+
+def _physical_badge_id(value):
+    """Exactly the lowercase 16-hex shape `machine.unique_id().hex()` emits."""
+
+    if not isinstance(value, str) or len(value) != 16:
+        return False
+    for character in value:
+        if character not in LOWER_HEX:
+            return False
+    return True
+
+
+def _reliable_doorbell_payload(payload):
+    """The validated action inside one broadcast, or ``None``.
+
+    **IT RETURNS THE ACTION AND NOT A BOOLEAN, AND THAT IS THE REBUILD.** While
+    the doorbell was a hint, this answered "is this news?" and the durable
+    `badge_commands` row carried the content. There is no row now, so the only
+    copy of the moment is the one in this payload and it has to travel out of
+    here -- see :data:`RELIABLE_DOORBELL_KEYS`.
+
+    ``(action_id, action_type, payload)`` on success. A TUPLE rather than a dict
+    because this runs on the rendered-frame path and a tuple of three references
+    that already exist is the cheapest thing that can leave a validator; the
+    caller unpacks it once.
+
+    **THE ENVELOPE IS VALIDATED HERE, THE ACTION IS NOT.** ``action_type`` must
+    be a non-empty string and ``payload`` must be a JSON object or array --
+    enough to prove this is an action-shaped thing and not a future message --
+    and nothing beyond that. W9 requires the array arm for ``play_effect``;
+    `_apply` rejects arrays for verbs that still require objects. The verb
+    vocabulary belongs to the appliers and effect item arguments belong to
+    `effect_library.parse`, whose clause order is
+    load-bearing (test for the KEY before reading it) and which already fails
+    loudly. Duplicating either here would be a second boundary to keep in step,
+    which is the mistake `_apply_play_effect`'s own comment names.
+
+    Every clause is a refusal and every refusal is silence rather than a guess:
+    on a shared topic a validator that hedges is ~1,000 badges rendering something
+    nobody chose.
+    """
+
+    if not _exact_payload_keys(payload, RELIABLE_DOORBELL_KEYS):
+        return None
+    target = payload[FLEET_TARGET_KEY]
+    if target != RELIABLE_ALL_TARGET and not _physical_badge_id(target):
+        return None
+    action_id = payload[ACTION_ID_KEY]
+    if not _canonical_uuid_text(action_id):
+        return None
+    # `realtime.send` injects `id` when the publisher omits it, so this equality
+    # is what proves the publisher wrote the whole envelope on purpose.
+    if payload["id"] != action_id:
+        return None
+    if not _nonempty_text(payload["at"]):
+        return None
+    action_type = payload[ACTION_TYPE_KEY]
+    if not _nonempty_text(action_type) or len(action_type) > MAX_ACTION_TYPE:
+        return None
+    action_payload = payload[ACTION_PAYLOAD_KEY]
+    if not isinstance(action_payload, (dict, list)):
+        return None
+    return (action_id, action_type, action_payload)
 
 
 def is_revocation_reason(reason):
@@ -1063,9 +1248,15 @@ class PushPolicy:
 class PushLink:
     """Layer 2 under the product's polling pump, as a doorbell.
 
-    ``poll_loop`` is the object the doorbell rings: a ``polltransport.PollLoop``
-    or its ``PollTransport`` adapter, i.e. anything exposing ``pull_forward`` and
-    ``state``. ``client_factory()`` builds a configured layer-2
+    ``poll_loop`` is the transport this link reads ``state`` from: a
+    ``polltransport.PollLoop`` or its ``PollTransport`` adapter. It used to be
+    "the object the doorbell rings" and it is not any more -- a validated
+    broadcast goes to :meth:`set_action_sink`, not to ``pull_forward``, because
+    there is no queue left for a pulled-forward poll to collect. The argument
+    stays required so the transport's ``state`` is still reachable and so the
+    construction seam does not move in the same change as the behaviour.
+
+    ``client_factory()`` builds a configured layer-2
     ``RealtimeClient`` with its transports already injected — this module never
     constructs an SSLContext, never reads a CA file and never sees a token except
     through ``token_provider``.
@@ -1134,6 +1325,18 @@ class PushLink:
     #: the same reason as the held-strategy slots above: an artifact whose
     #: product never wires it allocates no per-instance slot for it.
     _unreachable_sink = None
+    #: WHO ACTS ON A VALIDATED BROADCAST, or ``None``. Set by the product through
+    #: :meth:`set_action_sink`. Class-defaulted like the sink above, and for one
+    #: extra reason: a fixture that never wires it still exercises the whole
+    #: validator, which is where the interesting behaviour is.
+    _action_sink = None
+    #: Validated actions this link handed to the product, and validated actions
+    #: it had nowhere to hand. THE SECOND NUMBER IS THE DIAGNOSTIC: it is nonzero
+    #: only when the badge understood a broadcast and then lost it -- no sink
+    #: wired, or a sink that raised -- which is invisible from the wearer's side,
+    #: because the show simply does not play.
+    actions_delivered = 0
+    actions_dropped = 0
 
     def __init__(
         self,
@@ -1321,6 +1524,14 @@ class PushLink:
             "doorbells": self.doorbells,
             "doorbells_rung": self.doorbells_rung,
             "doorbells_filtered": self.doorbells_filtered,
+            #: THE TWO NUMBERS THAT SEPARATE "NOBODY PUBLISHED" FROM "THE BADGE
+            #: HEARD IT AND NOTHING HAPPENED", which are the same silence on
+            #: serial and are now the difference between a working show and a
+            #: dead one. `actions_dropped` above zero means the envelope
+            #: validated and the product still did not act: no sink wired, or a
+            #: sink that raised. Read it before suspecting the publisher.
+            "actions_delivered": self.actions_delivered,
+            "actions_dropped": self.actions_dropped,
             #: WHETHER THE RING FILTER CAN ANSWER YES AT ALL, as a bool and not
             #: the id. A `PushLink` on the fleet primary with no `target_uid`
             #: rings for nothing and looks identical on serial to one whose
@@ -1418,6 +1629,67 @@ class PushLink:
 
         self._unreachable_sink = sink if callable(sink) else None
         return self._unreachable_sink is not None
+
+    def set_action_sink(self, sink):
+        """Who ACTS on a validated broadcast.  ``None`` unwires.
+
+        THE ACTION TRAVELS OUT, THE VOCABULARY DOES NOT COME IN. This module
+        imports nothing but ``asyncio`` (see the module docstring) and
+        `effect_library` is a sibling in the same flat `/system/lib`, so it must
+        not resolve, interpret or apply a verb -- the same rule that put
+        ``target_uid`` in the constructor rather than a `machine` import here.
+        What leaves is exactly what the envelope proved:
+        ``(action_id, action_type, payload, receipt_delay_ms)``, four positional
+        arguments.
+
+        THE DELAY IS PASSED RATHER THAN APPLIED because this module cannot queue
+        anything -- it has no transport and no clock the product shares -- and
+        because the product is the only side that knows a RECEIPT is the thing
+        being delayed. See ``_on_event``.
+
+        Synchronous, I/O-free and contained at the call site. Set ONCE per
+        service by `network_runtime._service_push`, beside the unreachable sink
+        and for the same reason: it is a bound method of an object that outlives
+        every doorbell.
+        """
+
+        self._action_sink = sink if callable(sink) else None
+        return self._action_sink is not None
+
+    def _deliver_action(self, action, receipt_delay_ms):
+        """Hand one validated action to the product.  Never raises.
+
+        Contained exactly like `_note_unreachable`, and the containment is NOT
+        symmetric with it: this one runs on the delivery path of the only
+        mechanism the badge still has for a remote moment, inside `_on_event`,
+        which layer 2 calls from a drain loop inside a rendered frame. A product
+        sink that throws must cost this badge one action and one counter, never
+        the socket every later action arrives on.
+
+        Answers whether the product took it, which is what `_on_event` reports as
+        a rung doorbell -- so ``doorbells_rung`` keeps meaning "rings that
+        reached something" rather than "rings that arrived".
+        """
+
+        sink = self._action_sink
+        if sink is None:
+            # A validated action with nowhere to go. Counted, not emitted: a link
+            # whose product never wired the seam would say this on every
+            # broadcast of the event, and the counter already says it once.
+            self.actions_dropped += 1
+            return False
+        try:
+            taken = sink(action[0], action[1], action[2], receipt_delay_ms)
+        except Exception as exc:
+            self.contained_errors += 1
+            self.actions_dropped += 1
+            self.last_error = _error_text(exc)
+            return False
+        if not taken:
+            self.actions_dropped += 1
+            return False
+        self.actions_delivered += 1
+        return True
 
     # -- the per-frame pump ------------------------------------------------
 
@@ -1680,39 +1952,13 @@ class PushLink:
     async def _service(self, now):
         """Drain what has already arrived, bounded, and ring for what is ours.
 
-        **WHY THIS IS A LOOP SINCE 2026-08-26, and it is the shared topic's one
-        real cost.** Layer 2's ``service()`` handles AT MOST ONE frame per call
-        by design (`realtime/client.py`: "one non-blocking step: at most one
-        frame in"), and one call per rendered frame was generous on the private
-        ``badge:<id>`` topic, where the only publisher was this badge's own
-        status trigger -- three frames per command it caused itself.
-
-        On the shared ``event:doorbell`` topic every badge receives EVERY badge's
-        ring. An admin queueing a fleet show inserts one ``badge_commands`` row
-        per badge in one statement, so ~800 AFTER INSERT triggers publish ~800
-        broadcasts, and every badge receives all of them. At one frame per
-        rendered frame (~27 ms measured) that is **~21 seconds** to drain a burst
-        the badge filters 799/800 of -- and what that costs is the HEARTBEAT: the
-        pong sits behind hundreds of undrained frames, layer 2's own bounded
-        catch-up is eight frames, and a healthy socket is dropped as "heartbeat
-        reply timed out". See :data:`FLEET_DRAIN_MAX` for why that is a bounded
-        annoyance and NOT a demotion (a joined session that drops never charges
-        the demotion counter).
-
-        Draining up to :data:`FLEET_DRAIN_MAX` already-arrived frames per rendered
-        frame turns ~21 s into ~5 s. It cannot become a blocking read: every
-        call is the same non-blocking step, and the loop STOPS the moment a call
-        yields nothing, so the ordinary idle case pays one extra cheap call that
-        finds an unfinished receive task. The bound is small on purpose -- the
-        cost per drained frame is a ≤2 KB JSON decode (`max_frame_size`), and
-        this pump runs inside the launcher's rendered frame, so the budget is
-        the same order as `polltransport.OPEN_STEP_BUSY_BUDGET_MS`'s 5 ms.
-
-        THE REAL MITIGATION IS SERVER-SIDE and it is not this method's to make:
-        a synchronized show does not need the doorbell at all, because
-        ``execute_at`` is what makes it simultaneous and polling is what delivers
-        it (the fleet-show design of record). This bound is what keeps the
-        doorbell from being harmed by a show it is not needed for.
+        Layer 2's ``service()`` handles at most one frame per call. The shipping
+        producer now emits one room-wide ``fleet_actions`` frame, so the old
+        per-badge command burst is gone; this bounded loop remains because a
+        delayed socket or a future producer can still batch frames ahead of the
+        heartbeat reply. It cannot become a blocking drain: each call is the
+        same non-blocking step, and the loop stops as soon as no frame is ready.
+        Four ≤2 KB decodes bound the work inside one rendered frame.
         """
 
         rung = 0
@@ -1733,47 +1979,76 @@ class PushLink:
     def _on_event(self, event, now):
         kind = event.kind
         if kind == KIND_BROADCAST:
-            # THE DOORBELL IS STILL NOT A COURIER. The payload is read for ONE
-            # bit -- is this news? -- and never for content: nothing is carried
-            # out of it, nothing downstream depends on it, and a payload the badge
-            # cannot understand rings anyway. That is the difference between
-            # reading a status and delivering data, and it is what keeps a dropped
-            # broadcast from being a correctness bug (D9: "a broadcast pulls the
-            # next poll forward and does nothing else").
+            # THE DOORBELL IS THE COURIER NOW, AND THIS IS THE SEAM. D9 said "a
+            # broadcast pulls the next poll forward and does nothing else", and
+            # that was correct for exactly as long as a durable `badge_commands`
+            # row was the thing being pulled forward TO. The queue is deleted, so
+            # the only copy of the moment is the one in this payload: it is
+            # validated whole (`_reliable_doorbell_payload`) and handed OUT
+            # through `_action_sink`. Do not restore the one-bit reading without
+            # restoring the queue behind it -- with no queue, "ring and go look"
+            # rings and finds nothing, forever.
+            #
+            # WHAT DID NOT CHANGE, and must not: the validation is exactly as
+            # strict, the positive target match still decides whether this badge
+            # is addressed at all, and nothing this module cannot positively
+            # identify reaches the product. The strictness got MORE load-bearing,
+            # not less -- see `_fleet_action_for_me`.
+            #
+            # AND THIS MODULE STILL DOES NOT ACT. It imports nothing but asyncio,
+            # holds no credential and has never heard of `effect_library`; the
+            # action travels out the way `target_uid` travelled in. Layer 3 owns
+            # the vocabulary, the frame budget and the receipt.
             #
             # THE TOPIC is read as before, for routing and the jitter; it is
             # already trusted, because layer 2 refuses a frame for a channel it
             # did not join.
-            #
-            # AND THE FILTER'S DIRECTION FLIPS WITH THE CHANNEL'S SCOPE. On the
-            # private `badge:<id>` topic the only sender is this badge's own
-            # status trigger, so suppressing the provable echo and ringing for
-            # everything else is right: an unknown payload there is news. On the
-            # SHARED `event:doorbell` topic every badge receives every publish,
-            # so fail-open is 800 badges polling for one badge's command -- the
-            # herd this whole design is shaped around. There the safe direction
-            # inverts: ring ONLY on a positive hardware-UID match. Fail-safe
-            # because polling is the floor -- a missed ring costs this badge one
-            # idle cadence, a spurious fleet ring costs the event.
             if self.ring_scope(getattr(event, "topic", None)) == "fleet":
-                if not self._fleet_target_is_me(event):
+                action = self._fleet_action_for_me(event)
+                if action is None:
                     self.doorbells_filtered += 1
-                    # ONE LINE PER BOOT, AND THE COUNTER CARRIES THE REST. On the
-                    # private topic a suppression was RARE -- three per command
-                    # this badge itself caused -- so a line each was free. On the
-                    # shared topic suppression is the NORMAL case: every badge
-                    # sees every other badge's ring, so an 800-row fleet show is
-                    # 799 suppressions on every badge, and a line each would
-                    # flood the serial console an operator is reading the event
-                    # by and spend event-sink work on the cheapest branch there
-                    # is. The first line proves the filter is running (which is
-                    # what the negative-filter test reads); `doorbells_filtered`
-                    # in the snapshot is the quantity.
+                    # ONE LINE PER BOOT, AND THE COUNTER CARRIES THE REST. The
+                    # current producer targets the whole fleet, so suppression
+                    # should be rare, but a malformed or future targeted burst
+                    # must not flood the serial console. The first line proves
+                    # the filter is running; the snapshot carries the quantity.
                     if self.doorbells_filtered == 1:
                         self._emit("ring_filtered", scope="fleet",
                                    filtered=self.doorbells_filtered)
                     return 0
-            elif self._is_own_ack(event):
+                self.doorbells += 1
+                # THE JITTER IS THE RECEIPT'S NOW, NOT THE ACTION'S, and that
+                # swap is the point. It used to delay the POLL, which was fine
+                # when the poll WAS the delivery. Delaying the ACTION would start
+                # one synchronised light show at ~1,000 different random moments
+                # across a five-second window -- destroying the fleet synchrony
+                # the show exists for. So the action fires immediately and the
+                # WRITE-BACK carries the spread instead: ~1,000 receipts into
+                # `fleet_receipts` inside one fan-out window is the stampede
+                # worth stopping, and nobody is watching that one happen.
+                delay = self.ring_delay_ms(getattr(event, "topic", None))
+                if self._deliver_action(action, delay):
+                    self.doorbells_rung += 1
+                    return 1
+                return 0
+            # -- THE PRIVATE TOPIC, BELOW, IS UNCHANGED AND THAT IS DELIBERATE --
+            #
+            # It is already unreachable in production: `device_push_factory`
+            # passes `event_topic(EVENT_DOORBELL_NAME)` as the primary topic, so
+            # `_fleet_primary` is True and `ring_scope` answers "fleet"
+            # unconditionally. Only a dev badge on its own per-badge token and
+            # the CX-9 fixtures come through here.
+            #
+            # SO IT KEEPS THE OLD MEANING OF A RING, pull_forward included. Two
+            # reasons, and the second is the real one. It is the ECHO filter for
+            # a per-command status stream that carries no action to act on, so
+            # there is nothing here for the new path to deliver -- and it belongs
+            # to the same deletion that removes `_is_own_ack`, `STATUS_QUIET`,
+            # `BROADCAST_PAYLOAD_KEYS` and `badge_topic`, which is a separate cut
+            # of ~200 lines of dead branch. Half-rewriting it here would leave
+            # that cut harder to make and its tests (`test_cx9_status_rings`)
+            # asserting a third thing that was never true of either design.
+            if self._is_own_ack(event):
                 self.doorbells_filtered += 1
                 self._emit("ring_filtered",
                            status=self._broadcast_status(event),
@@ -1960,43 +2235,71 @@ class PushLink:
         return status is not None and status in STATUS_QUIET
 
     def _fleet_target_is_me(self, event):
-        """Does this fleet broadcast POSITIVELY name THIS physical badge?
+        """Does this fleet broadcast positively name THIS badge or ``all``?
 
-        THE ONE PREDICATE THE SHARED CHANNEL IS SAFE UNDER, and its direction is
-        the opposite of :meth:`_is_own_ack`'s. Every one of 800 badges receives
-        every publish on `event:doorbell`, so the fail-OPEN rule that is right on
-        a private topic ("anything I cannot identify as my own echo is news") is
-        the herd catastrophe here: one command would pull 800 polls forward and
-        799 of them would find nothing. So this answers True for exactly one
-        shape and False for everything else -- an absent UID, a payload that is
-        not a mapping, a missing or non-string `badge_id`, another badge's id, a
-        keyless or malformed payload, a future event this build has never heard
-        of. All of them are silence.
-
-        FAIL-SAFE BECAUSE POLLING IS THE FLOOR. The asymmetry that decides the
-        direction is the opposite of the private topic's: there, a missed ring
-        cost a command a 30 s wait and a needless ring cost one poll, so ringing
-        was cheap. Here a needless ring costs up to 800 polls in one fan-out
-        window and a missed one still costs this badge exactly one idle cadence,
-        because the command is a durable `badge_commands` row that the next poll
-        collects whatever happens on this channel.
-
-        AND IT READS ONE BIT, so the doorbell is still not a courier. The
-        payload's other three keys (`command_id`, `kind`, `at`) are deliberately
-        not read: nothing is carried out of a broadcast, so a dropped or
-        mangled one can never be a correctness bug.
+        THE BOOLEAN QUESTION, kept because the diagnostics and the negative
+        tests ask it and because one implementation should answer both forms.
+        The live path calls :meth:`_fleet_action_for_me` and uses what comes
+        back.
         """
 
-        if self.target_uid is None:
-            # No injected hardware id means this object CANNOT prove a ring is
-            # its own. A fixture, a probe, or a factory that predates the seam:
-            # every one of them is safer silent than ringing for the fleet.
-            return False
+        return self._fleet_action_for_me(event) is not None
+
+    def _fleet_action_for_me(self, event):
+        """The action this fleet broadcast carries FOR THIS BADGE, or ``None``.
+
+        THE ONE PREDICATE THE SHARED CHANNEL IS SAFE UNDER, and its direction is
+        the opposite of :meth:`_is_own_ack`'s. Every one of ~1,000 badges receives
+        every publish on `event:doorbell`, so the fail-OPEN rule that is right on
+        a private topic ("anything I cannot identify as my own echo is news") is
+        the herd catastrophe here. The positive match is the whole safety
+        argument: this badge's own hardware id, or the reserved ``all`` sentinel,
+        on an exact envelope whose top-level ``id`` equals its ``action_id``.
+        Missing, null, wildcard, malformed and future shapes are silence.
+
+        ⚠ **THE ASYMMETRY THAT CHOSE THIS DIRECTION HAS CHANGED SIDES, AND THE
+        DIRECTION STILL HOLDS.** The old argument was "fail-safe because polling
+        is the floor": a missed ring cost this badge one idle cadence against a
+        durable row the next poll collected anyway, so silence was nearly free.
+        **That sentence is now false.** There is no durable row and no poll
+        behind it, so a dropped ring is a CORRECTNESS loss -- this badge simply
+        misses the show, and the console reports it silent. The direction is
+        unchanged anyway, because the other mistake got worse at the same time
+        and by more: a ring accepted without proof it was addressed is no longer
+        one wasted request, it is ~1,000 badges rendering something nobody chose,
+        and unlike a missed show it cannot be undone by the next broadcast.
+
+        **AND THE LEGACY FALL-THROUGH IS CLOSED.** A payload carrying only
+        ``badge_id`` used to ring unconditionally, for receiver compatibility
+        with the deployed per-row publisher: tightening it would have stranded a
+        valid old producer that durable polling could recover from anyway. Both
+        halves of that reasoning are gone. There is no old producer left to
+        strand -- the queue it published from is deleted -- and there is no
+        durable recovery behind it. What the fall-through would admit NOW is an
+        envelope with no action in it at all, which is either a message from
+        something this firmware does not understand or a truncated one, and
+        neither is a thing to act on. It answers ``None``.
+        """
+
         payload = getattr(event, "payload", None)
         if not isinstance(payload, dict):
-            return False
+            return None
+        if getattr(event, "event", None) != EVENT_DOORBELL_NAME:
+            # The topic admitted the frame; the event name says which publisher
+            # on it spoke. A future event sharing the topic is not this contract.
+            return None
         target = payload.get(FLEET_TARGET_KEY)
-        return isinstance(target, str) and target == self.target_uid
+        if target == RELIABLE_ALL_TARGET:
+            # `all` is self-authenticating only as a SHAPE, not as authority:
+            # the channel's RLS already admitted the producer, and the exact
+            # envelope keeps a typo or future message from becoming a herd.
+            return _reliable_doorbell_payload(payload)
+        if self.target_uid is None or target != self.target_uid:
+            # No injected hardware id means this object cannot prove a targeted
+            # ring is its own. The explicit `all` shape above needs no such
+            # proof, which is why it is tested first.
+            return None
+        return _reliable_doorbell_payload(payload)
 
     def _note_revoked(self, reason):
         """A refused join from a server that had already let this badge in.
@@ -3041,6 +3344,15 @@ class PushService:
         """
 
         return self.link.set_unreachable_sink(sink)
+
+    def set_action_sink(self, sink):
+        """Wire the validated-broadcast handler (see `PushLink`).
+
+        Set ONCE per service by `network_runtime._service_push`, beside the
+        unreachable sink and for the same reason.
+        """
+
+        return self.link.set_action_sink(sink)
 
     @property
     def enabled(self):

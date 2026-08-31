@@ -2,6 +2,15 @@
 
 How the badge software is put together, why it is shaped this way, and where the shape is load-bearing. Read `README.md` first for the lineup; this is the page for someone who is going to have an opinion about the code.
 
+> **Current production boundary.** Exactly six tiles ship: `setup`, `nametag`,
+> `schedule`, `snake`, `flappy`, `settings`. Hidden `menu` and no-entry-point
+> `glyph` complete the eight `/system/apps` roots; Glyph exists only for the
+> launcher's first-wake ceremony and is not a Nametag dependency. The complete
+> BadgeLink runtime ships under `/system/lib`. References below to a dark export,
+> Badgecard/Poster as tiles, a full Glyph viewer, or Pet describe the earlier
+> review package from which this architecture record was cut, not the final
+> install contract.
+
 ---
 
 ## 1. Boot, end to end
@@ -55,7 +64,7 @@ It also produces one non-obvious behaviour worth knowing before you read the lau
 
 The third consequence is that a raise in the **launcher** is a loop: reset, boot, run the same failing code, reset. That app needs a USB cable to recover, which is why the launcher guards `import loading` and `import first_wake` -- a soft dependency that is missing there must degrade, never raise -- and why its commit path is wrapped end to end and returns `None` on any exception.
 
-The launcher is not the only place that guards an import, and section 3 is the reason: `sys.path` holds exactly one entry, so everything optional is imported inside a `try`. That was true when `/system/lib` was absent from this export and it stays true now that `lib/` ships it: whether the library is built is one roster key, a badge can be flashed either way, and an app that assumed it was there would be an app that resets on the badges built without it. **The guarded surface is 59 import sites across 24 files**, every one of them enumerated in `AGENTS.md` -- `main.py`'s BadgeLink block, Settings' `qrcode` and its four `/system/lib` peers (`pairstate`, `pairview`, `store`, and `scorebox` guarded separately from the coupled three so the Scores row still works with no library at all), glyph's optional 2x deck, the staged loading screen's `os` and `loading_sql` in each app that vendors it, the score sink's `scorebox` in each game that records a run, the launcher's two `json` reads of `/state` (the wearer's brightness and the enabled-apps gate, both total and both defaulting rather than raising), and the launcher's two above.
+The launcher is not the only place that guards an import, and section 3 is the reason: `sys.path` holds exactly one entry, so everything optional is imported inside a `try`. That was true when `/system/lib` was absent from this export and it stays true now that `lib/` ships it: whether the library is built is one roster key, a badge can be flashed either way, and an app that assumed it was there would be an app that resets on the badges built without it. **The guarded surface is 58 import sites across 25 files**, every one of them enumerated in `AGENTS.md` -- `main.py`'s BadgeLink block, Settings' `qrcode` and its four `/system/lib` peers (`pairstate`, `pairview`, `store`, and `scorebox` guarded separately from the coupled three so the Scores row still works with no library at all), glyph's optional 2x deck, the staged loading screen's `os` and `loading_sql` in each app that vendors it, the score sink's `scorebox` in each game that records a run, the launcher's two `json` reads of `/state` (the wearer's brightness and the enabled-apps gate, both total and both defaulting rather than raising), and the launcher's two above.
 
 ---
 

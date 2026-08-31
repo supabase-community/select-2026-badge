@@ -613,7 +613,7 @@ ORDER_FILE = "/system/apps/menu/order.txt"
 
 
 def launcher_order(names):
-    """The grid: the roster's order, minus whatever the backend gated off.
+    """The grid: the roster's order.
 
     Called from the pinned base's own scan loop (the ORDER patch — the loop
     header is the one line that cannot live here), so it must NEVER raise: a
@@ -621,27 +621,22 @@ def launcher_order(names):
     Names the roster does not know sort alphabetically AFTER the listed ones,
     so an unlisted app is late in the grid, never missing from it.
 
-    TWO INDEPENDENT STEPS, EACH WITH ITS OWN TOTAL FALLBACK, and that split is
-    the whole safety argument for putting a network-supplied value on the home
-    screen's boot path: ordering that fails still gates, and gating that fails
-    still orders. The worst either half can do is give back the full roster.
+    Ordering has its own total fallback (`_roster_order` -> `sorted(names)`)
+    so the worst a failure can do is give back the full roster, unordered.
+
+    THIS USED TO ALSO APPLY A SERVER-SUPPLIED ENABLED-APPS GATE (removed
+    2026-08-28, owner ruling). Gang-clone provisioning ships every badge an
+    identical JWT, so RLS resolves any read to the fleet floor row: per-badge
+    gating was structurally impossible under frozen firmware, and the half
+    that would have consumed it (`badgelink.enabled_apps.record_from_badge_row`
+    and this reader) had no caller either side. See
+    `docs/engineering-findings.md` for the removal record.
     """
     names = list(names)
     try:
-        ordered = _roster_order(names)
+        return _roster_order(names)
     except Exception:                                        # noqa: BLE001
-        ordered = sorted(names)
-    try:
-        allowed = _gate_allowed()
-        if not allowed:
-            # THE UNGATED BADGE PAYS NOTHING. Returning here rather than letting
-            # `_apply_gate` answer rule 1 keeps `_gate_tile` off the boot path of
-            # every badge that has never been told to gate anything, which is all
-            # of them until a console says otherwise.
-            return ordered
-        return _apply_gate(ordered, allowed, _gate_tile)
-    except Exception:                                        # noqa: BLE001
-        return ordered
+        return sorted(names)
 
 
 def _roster_order(names):
@@ -656,203 +651,6 @@ def _roster_order(names):
         return listed + sorted(n for n in names if n not in listed)
     except Exception:                                        # noqa: BLE001
         return sorted(names)
-
-
-# ---------------------------------------------------------------------------
-# §THE ENABLED-APPS GATE — `public.badges.enabled_apps`, on the grid
-# ---------------------------------------------------------------------------
-#
-# WHAT IT IS. The console can turn apps off per badge. BadgeLink fetches the
-# column in its profile read and writes an allow-list note to `/state`
-# (`badgelink/badge/badgelink/enabled_apps.py`, which owns the format); this
-# reads the note and drops the gated names before the pinned scan ever builds a
-# tile for them.
-#
-# WHY A FILE AND NOT AN IMPORT. `/system/lib` and this launcher are installed by
-# two different steps, so a badge can hold one without the other, and a
-# module-scope import of a file a half-refreshed lib does not carry raises inside
-# `launch()` — `fatal_error` → modal → `machine.reset()` → boot → the same
-# failing import, which is the USB-recovery loop on THE ONE APP WHOSE FAILURE
-# NEEDS USB TO RECOVER. So the two sides share a FILE and this module carries its
-# own reader. `launcher/tests/test_app_gating.py` runs both copies over one table
-# of payloads and fails on any drift. This is the same trade `_read_brightness`
-# already makes for `/state/badgecard.json` further up this file.
-#
-# THE OWNER'S RULE HAS ONE DIRECTION: missing, empty, corrupt or unparseable
-# means ALL-ENABLED, never an empty launcher. A badge that cannot read the
-# setting is a fully working badge. So every branch that cannot produce a
-# trustworthy list answers None, and None means no gate — which makes the
-# cheapest path (one failed `open` on a badge that has never seen a network) the
-# safe one too.
-#
-# GATED APPS DISAPPEAR; THEY ARE NOT DRAWN INERT. Three reasons, in the order
-# they decided it:
-#   1. AN INERT TILE CANNOT BE BUILT HERE. Tile identity, position, colour, the
-#      six-per-page arithmetic and the B-commit launch are all in the PINNED
-#      base (`App.__init__` takes `self.index = len(collection)`;
-#      `draw_pagination` pages on `len(self.apps)`), which this repository owns
-#      no line of and republishes none of. "Inert" means teaching that base a
-#      disabled state — a fifth substitution, against a four-substitution
-#      boundary that exists for licensing and is asserted by a test.
-#   2. A DEAD TILE IS INDISTINGUISHABLE FROM A BROKEN BADGE. The grid has an
-#      icon and a name and no copy channel, so a tile that swallows B cannot say
-#      why. The owner's tie-breaker was "the one that cannot confuse a wearer",
-#      and a badge that ignores its launch key is the more confusing of the two.
-#   3. ABSENCE IS ALREADY THE LAUNCHER'S WORD FOR "NOT HERE". The pinned scan
-#      already omits a directory with no `__init__`, so a badge that shipped
-#      without `pet` shows seven tiles and surprises nobody. Gating rides an
-#      existing, understood presentation instead of inventing one — and
-#      pagination stays correct for free, because it counts what it drew.
-#
-# THE WEARER IS NEVER STRANDED, which is the owner's other hard line. HOME is
-# firmware (`machine.reset()` → boot → the launcher) and nothing here can reach
-# it; the launcher itself is never a tile; and `GATE_PROTECTED` keeps the three
-# names a payload must never be able to take away.
-
-GATE_PATH = "/state/badgelink-enabled-apps.json"
-GATE_SCHEMA = 1
-
-# `enabled_apps` is an unbounded `text[]` server-side. The badge ships 8 apps and
-# the largest roster one has carried is 11, so 32 is ~3x the largest real
-# payload: a list past it did not come from a console configuring this fleet, and
-# it is REFUSED WHOLE rather than truncated (truncating would gate every app past
-# the cut on the strength of a payload we just decided we do not understand).
-GATE_MAX_APPS = 32
-
-# The pre-decode bound. A full 32-slug payload is about 2.2 KB, so 4 KB is twice
-# the largest legitimate file — and the read is capped BEFORE `json.loads`,
-# because the home screen must never spend an unbounded parse on a file anything
-# with filesystem access could have grown.
-GATE_MAX_BYTES = 4096
-
-# THE NAMES A BACKEND PAYLOAD CAN NEVER REMOVE. Each is here because gating it
-# takes away a way BACK rather than a feature:
-#   `menu`     the launcher itself. The pinned scan already skips it when it
-#              builds tiles, so listing it changes nothing a wearer sees — it
-#              makes gating the home screen structurally impossible rather than
-#              incidentally impossible.
-#   `nametag`   the name badge, and the one app reachable WITHOUT the grid: the
-#              1.5 s hold and the idle ladder both launch `POSTER_APP` directly.
-#              Gating its tile would leave a hardware gesture opening an app the
-#              grid says is not installed.
-#   `settings` "a permanent 5th launcher tile" by owner ruling (2026-08-17,
-#              badgelink/OWNER-DECISIONS #2), and the badge's only local control
-#              surface: brightness, sleep, and the network-status view whose job
-#              is to tell a wearer networking has stopped. Gating it with a
-#              payload that arrived over that network is the one failure this
-#              feature can cause and cannot undo.
-# Pinned equal to `enabled_apps.PROTECTED`; that tuple and this one are the knob.
-GATE_PROTECTED = ("menu", "nametag", "settings")
-
-# WHERE THE PINNED SCAN LOOKS, AND THE ONE DIRECTORY IT SKIPS BY NAME. The scan
-# receives its root as an argument (`Apps("/system/apps")`) and this module never
-# sees it, so `_gate_tile` has to name the same tree to ask the same question.
-# Rebindable because the tests point it at a temp tree, exactly as they do with
-# `GATE_PATH` and `ORDER_FILE`.
-APPS_ROOT = "/system/apps"
-LAUNCHER_APP = "menu"
-
-
-def _gate_allowed():
-    """The recorded allow-list, or None for "no gate". TOTAL: never raises.
-
-    DELIBERATELY LAXER THAN THE WRITER, which validates each name against the
-    payload slug class before recording it. Re-validating here would buy nothing
-    a wearer can see: a name that is not a slug cannot match a directory the scan
-    accepted, so it is already inert. The two rules that ARE safety and so live
-    on both sides are the byte cap and `GATE_MAX_APPS`.
-    """
-    try:
-        import json
-        with open(GATE_PATH) as handle:
-            raw = handle.read(GATE_MAX_BYTES + 1)
-        if len(raw) > GATE_MAX_BYTES:
-            return None
-        value = json.loads(raw)
-        # The two key names are `enabled_apps`'s, which owns the format; they are
-        # literals here because the pin test compares the two sides' OUTPUT, so
-        # a rename over there fails this suite rather than silently reading None.
-        if not isinstance(value, dict) or value.get("schema") != GATE_SCHEMA:
-            return None
-        apps = value.get("apps")
-        if not isinstance(apps, list) or len(apps) > GATE_MAX_APPS:
-            return None
-        allowed = [name for name in apps if isinstance(name, str) and name]
-        return allowed or None
-    except Exception:                                        # noqa: BLE001
-        return None
-
-
-def _gate_tile(name):
-    """Would the pinned scan turn this name into a TILE? Never raises.
-
-    RULE 2 COUNTS TILES BECAUSE AN EMPTY GRID IS A CRASH, and counting NAMES let
-    a well-formed payload reach it (fixed 2026-08-26). `os.listdir` returns two
-    classes of name the scan then throws away: `menu`, which it skips by name,
-    and any directory with no `__init__.py`/`.mpy`, which is what an interrupted
-    Deploy leaves. So `{"schema": 1, "apps": ["menu"]}` against a tree whose
-    `nametag/` and `settings/` were half-copied "matched" on `menu`, kept the
-    three protected names, and drew NOTHING — and the pinned base's
-    `Apps.active` is `self.apps[self.active_index]`, read on the launcher's first
-    frame, so zero tiles is an `IndexError` inside `launch()`: `fatal_error` →
-    modal → `machine.reset()` → boot → the same note → the same raise. The
-    USB-recovery loop, on the one app that needs a cable.
-
-    THE PREDICATE IS THE SCAN'S, TRANSCRIBED: `path != "menu"` and either entry
-    file. BOTH extensions matter — a deployed badge runs `.mpy` and only the
-    playground and a hand-copied tree carry `.py`, so a `.py`-only check would
-    silently take the "nothing matched" branch on every real badge and turn
-    gating off. `_commit`'s `_ready` carries a comment about the same trap.
-
-    IT COSTS STATS ONLY ON A GATED BADGE. A badge with no note never gets here
-    (`launcher_order` returns before the call), and a badge with one stops at the
-    first match — one or two `stat` calls in front of the first grid frame.
-    """
-    if name == LAUNCHER_APP:
-        return False
-    base = APPS_ROOT + "/" + name
-    return (_installed(base + "/__init__.py")
-            or _installed(base + "/__init__.mpy"))
-
-
-def _apply_gate(ordered, allowed, tile=None):
-    """The names that survive the gate, in the order they arrived.
-
-    Byte-different from and behaviour-identical to `enabled_apps.gate`; the pin
-    test is the contract, because the import is impossible (see §THE
-    ENABLED-APPS GATE). Three rules, each a fail-soft direction:
-
-    1. No allow-list is no gate.
-    2. AN ALLOW-LIST THAT MATCHES NO INSTALLED TILE IS DISCARDED. It describes
-       some other badge — a fleet-wide list for a different lineup, or a list of
-       typos — and honouring it would leave a launcher holding only
-       `GATE_PROTECTED`. This is also the second half of "a payload disabling
-       everything is refused": `[]` is caught by rule 1, `["typo"]` here.
-    3. `GATE_PROTECTED` survives any list.
-
-    `tile` ANSWERS "could this name become a tile", and None means "assume every
-    one can" — the pure-algorithm reading, which is the only thing a caller with
-    no filesystem can say and what `enabled_apps.gate` documents. THE LAUNCHER
-    ALWAYS PASSES `_gate_tile`; see it for why the difference is a crash and not
-    a nicety.
-
-    WHAT THIS GUARANTEES, precisely: the GATE can never reduce the grid to zero
-    tiles. Rule 2 needs a match the scan will actually draw, and that name is in
-    the kept list. It does NOT promise a non-empty grid — a badge with nothing
-    installed has an empty one, and that is the stock launcher's own landmine
-    with no payload involved.
-    """
-    if not allowed:
-        return ordered
-    matched = False
-    for name in ordered:
-        if name in allowed and (tile is None or tile(name)):
-            matched = True
-            break
-    if not matched:
-        return ordered
-    return [name for name in ordered
-            if name in allowed or name in GATE_PROTECTED]
 
 
 def commit(default):

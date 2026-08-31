@@ -19,9 +19,8 @@ paper badge with their real name on it -- so a crash is unacceptable and
 legibility is a nice-to-have rather than the product.  That ordering decides the
 `_try` wrapper below and the plain-name painter of last resort.
 
-    at rest      the badge.  Zero chrome, one name (D1).
-    any press    the menu.  NAME, SKIN, STICKERS, EFFECT, SAVE TO HOME,
-                 RESET BADGE.
+    unnamed      the Name editor, then guided Skin -> Stickers -> Done.
+    named        the menu.  NAME, SKIN, STICKERS, EFFECT, DONE, RESET BADGE.
     HOME         the launcher.  `on_exit` runs first, so nothing is lost.
 
 HOW IT ARRIVES, and this file's shape is that answer.  Threads are compiled out
@@ -223,6 +222,8 @@ panel = idle.Panel(_light, time.ticks_ms, state["brightness"],
                    backlight.IDLE_PERCENT,
                    dim_ms=idle.CARD_DIM_MS, poster_ms=None)
 panel.restore()
+_return_idle = idle.ReturnToNametag(time.ticks_ms)
+_next_app = None
 
 app = card_app.CardApp(
     state, _write,
@@ -396,18 +397,28 @@ def on_exit():
     cache.abandon()
     print("CARD_EXIT frames=%d writes=%d cached=%d failed=%s"
           % (app.frames, _writes, cache.writes, failed or "-"))
+    return _next_app
 
 
 def update():
     """One frame: input, then state, then pixels.  Never raises."""
-    global plain, _view_name
+    global plain, _view_name, _next_app
     # THE IDLE CLOCK, FIRST AND ON EVERY PATH INCLUDING THE FALLBACK PAINTER: a
     # badge that lost its renderer still dims, because the dim is the wearer's
     # only signal that nothing is wrong beyond the picture.  A WAKE press is
     # CONSUMED (D1's "the first press wakes ... and does nothing else"), and
     # returning here is the whole consume: `default_clear` is None, so the panel
     # keeps the frame it already has and no key reaches the controller.
-    if panel.frame(bool(badge.held())) == idle.WAKE:
+    held = bool(badge.held())
+    panel_signal = panel.frame(held)
+    timeout_ms = (idle.DRAFT_RETURN_MS if app.idle_draft()
+                  else idle.APP_RETURN_MS)
+    if _return_idle.frame(held, busy=app.idle_busy(),
+                          timeout_ms=timeout_ms):
+        app.abandon_idle()
+        _next_app = idle.NAMETAG_APP
+        return "idle"
+    if panel_signal == idle.WAKE:
         return None
     if plain or view is None:
         # NO EXIT KEY HERE EITHER.  HOME is the labelled route to the launcher
@@ -418,6 +429,8 @@ def update():
         _plain_badge()
         return None
     plan = app.frame(time.ticks_ms(), buttons)
+    if plan["next_app"]:
+        _next_app = plan["next_app"]
     if plan["view"] != _view_name:
         _view_name = plan["view"]
         print("CARD_VIEW %s" % _view_name)

@@ -14,29 +14,38 @@ DEVICE-VERIFIED (Card E, Badgeware v3.0.1):
 * the ~720 ms first-request handshake actually lands inside ``open`` (the tolerant
   CONNECTING moment) and every post-first ``pump`` stays ≤34 ms (B2 probe 1).
 
-Design note — why ``open`` does a full first poll and stashes it. The frozen
-client defers the TLS handshake to the first write, so there is no handshake-only
-call: the socket is warmed by a real request. That first request MUST be the poll
-(it re-fetches desired state on every (re)connect), and its result MUST NOT be
-discarded — the poll RPC increments ``delivery_attempts`` against the 5-attempt
-redelivery cap, so a thrown-away warm-up poll would burn a delivery attempt for
-every queued command. So ``open`` runs the poll to completion, stashes the parsed
-result, and the transport's first ``begin("poll")`` serves the stash.
+Design note — why ``open`` runs a full request and stashes it. The frozen client
+defers the TLS handshake to the first write, so there is no handshake-only call:
+the socket is warmed by a real request, and ``open`` runs it to completion behind
+the connecting screen.
+
+WHICH request that is changed on 2026-08-29, and the reason is worth keeping.
+It used to be the command poll, which quietly made ``badgelink_badge_poll_self``
+load-bearing for the SOCKET rather than for commands. The rebuild deletes that
+RPC, so the warm-up became ``GET /rest/v1/fleet_settings?select=…&limit=1`` —
+buildable from constants alone, which matters because this module holds no
+Badgeware and could not assemble the heartbeat's row (battery, ``os.uname()``,
+wearer name) without inverting the dependency.
+
+The result is still stashed and still served rather than discarded, but for a
+different reason than before. The old one was a redelivery cap: the poll RPC
+incremented ``delivery_attempts`` against a 5-attempt limit, so a thrown-away
+warm-up burned a delivery attempt for every queued command. There is no queue
+now. The new reason is that the settings read IS the fleet's catch-up mechanism,
+so serving it to the first ``fleet_settings`` errand means a badge knows
+``push_enabled``, ``backlight`` and its cadence at BOOT instead of up to five
+minutes later.
 """
 
 import time
+
+import rpc_contract
 
 from postgrest import (
     AccessRevoked,
     AuthRejected,
     PostgrestError,
-    ack_request,
-    parse_ack_row,
-    parse_policy_row,
-    parse_poll_rows,
     parse_response,
-    policy_request,
-    poll_request,
     rpc_request,
     table_request,
 )
@@ -50,7 +59,6 @@ from polltransport import (
 )
 
 
-DEFAULT_POLL_LIMIT = 16
 # A single request must not spin the frame loop forever. On hardware a warm
 # request completes in a handful of updates; this bounds a silently-stalled one
 # into a missed-ack instead of an infinite pump.
@@ -206,6 +214,48 @@ COLD_OPEN_NO_PROGRESS_MS = COLD_OPEN_BUDGET_MS
 #: mechanism as `worker._addr_info`: the frozen `AsyncFetch` has no accessor for
 #: its own `timeout`, and asking for one would be a firmware change.
 WORKER_BUDGET_ATTR = "_open_budget_ms"
+
+
+def _is_settings_read(payload):
+    """Is this errand the same fleet-settings GET that ``open()`` already ran?
+
+    Total by construction: a payload that is not a dict, or whose fields are not
+    what they should be, is simply NOT the settings read, and the caller issues a
+    real request. There is no failure mode here worth raising for -- guessing
+    wrong in the false direction costs one round trip, and guessing wrong in the
+    true direction would fabricate a response, which is why the test is on the
+    two fields that identify the request rather than on the whole payload.
+    """
+
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("table") != rpc_contract.TABLE_FLEET_SETTINGS:
+        return False
+    return payload.get("method", "POST") == "GET"
+
+
+def _warm_rows(decoded):
+    """The warm-up GET's body, normalised to a list, never raising.
+
+    PostgREST answers a table GET with a JSON ARRAY -- one element here, because
+    the request pins ``limit=1``. This exists rather than using the decoded body
+    directly for two reasons, both about the OPEN and not about the settings:
+
+    * ``open()`` reports ``primed=len(...)`` in its ``opened`` event, and a badge
+      whose server returned ``null`` or a bare object would raise a ``TypeError``
+      out of the emit -- turning a successful handshake into an unclassified
+      fault on the one path that must not have one.
+    * A malformed body must not fail the OPEN. The socket is proven either way;
+      what came back is the settings lane's problem, and the settings lane fails
+      OPEN by design (``postgrest.parse_policy_row``). An empty list is exactly
+      what "no row I could read" should look like to that consumer.
+
+    A non-list is therefore DISCARDED, not raised on. The adjudication that does
+    matter -- 401, 403, a non-2xx -- has already happened in ``parse_response``
+    above every caller of this function.
+    """
+
+    return decoded if isinstance(decoded, list) else []
 
 
 def _worker_no_progress_ms(worker):
@@ -375,7 +425,6 @@ class DeviceLink:
         worker_factory,
         shim,
         addr_info=None,
-        poll_limit=DEFAULT_POLL_LIMIT,
         event_sink=None,
         addresses=None,
         self_badge_id=None,
@@ -418,7 +467,6 @@ class DeviceLink:
         #: the ``wifi_lost`` edge; a link built without one carries ``None`` and
         #: the doorbell falls back to connecting by name.
         self.addresses = addresses
-        self._poll_limit = int(poll_limit)
         self._event_sink = event_sink
         self._worker = None
         self._inflight_kind = None
@@ -428,7 +476,7 @@ class DeviceLink:
         # terminal-update frame.
         self._response_ready = False
         self._pump_count = 0
-        self._primed_poll = None  # stashed first-poll result from open()
+        self._primed_settings = None  # stashed first-poll result from open()
         #: WHERE THE LAST ``open()``'s MILLISECONDS WENT. See `_OPEN_PHASE_KEYS`.
         #: Replaced (never mutated in place) once per open, so a probe reading it
         #: between opens sees one whole record; ``None`` before the first open.
@@ -457,8 +505,8 @@ class DeviceLink:
             phases["open_deadline_ms"] = no_progress_ms
             # Warm the socket by running the first poll to completion. The
             # handshake cost lives here, behind the connecting screen.
-            self._primed_poll = self._run_blocking(
-                self._poll_request(), parse_poll_rows,
+            self._primed_settings = self._run_blocking(
+                self._warm_request(), _warm_rows,
                 phases=phases, no_progress_ms=no_progress_ms,
             )
         except LinkError as exc:
@@ -475,7 +523,7 @@ class DeviceLink:
             raise
         self._finalize_phases(phases, started, "opened", parked=False)
         self._publish_phases(phases)
-        self._emit("opened", primed=len(self._primed_poll))
+        self._emit("opened", primed=len(self._primed_settings))
 
     def open_step(self, now, budget_ms, generation=None):
         """Advance a first poll until a real socket wait or busy budget.
@@ -556,7 +604,7 @@ class DeviceLink:
 
         phases = self._parked_phases
         if self._parked_response_ready:
-            self._primed_poll = self._finish_parked_response()
+            self._primed_settings = self._finish_parked_response()
             return _OPEN_FINISHED
 
         entered_updates = self._parked_updates
@@ -636,7 +684,7 @@ class DeviceLink:
         self._parked_no_progress_ms = _worker_no_progress_ms(self._worker)
         phases["open_deadline_ms"] = self._parked_no_progress_ms
         entered = _ticks_ms()
-        self._start_request(self._worker, self._poll_request())
+        self._start_request(self._worker, self._warm_request())
         phases["start_ms"] = _span_ms(entered)
 
     def _finish_parked_response(self):
@@ -654,9 +702,9 @@ class DeviceLink:
             raise LinkError("bad open response: {}".format(exc))
         finally:
             phases["finish_ms"] = _span_ms(entered)
-        # Keep the current raw-parser escape taxonomy: `parse_poll_rows` is one
+        # Keep the current raw-parser escape taxonomy: `_warm_rows` is one
         # line outside the adjudication try in the blocking path too.
-        return parse_poll_rows(decoded)
+        return _warm_rows(decoded)
 
     def _reset_worker_io(self):
         sock = self._worker_socket()
@@ -702,7 +750,7 @@ class DeviceLink:
         if phases is None:
             return False
         started = self._parked_started
-        primed = self._primed_poll if outcome == "opened" else None
+        primed = self._primed_settings if outcome == "opened" else None
         # Invalidate before publishing or closing. Worker reset may make a
         # callback ready, and no continuation from this generation may observe
         # an active owner once terminal cleanup has begun.
@@ -714,7 +762,7 @@ class DeviceLink:
         if outcome != "opened":
             try:
                 self._teardown_worker()
-                self._primed_poll = None
+                self._primed_settings = None
             finally:
                 # Cancellation is a BaseException on this stack. Restoration is
                 # ownership cleanup and may never depend on Exception taxonomy.
@@ -746,8 +794,17 @@ class DeviceLink:
             raise LinkError("begin without an open socket")
         if self._inflight_kind is not None:
             raise LinkError("a request is already in flight")
-        if kind == "poll" and self._primed_poll is not None:
-            # Serve the stashed first-poll result rather than a fresh round trip.
+        if (kind == "table" and self._primed_settings is not None
+                and _is_settings_read(payload)):
+            # Serve the stash from `open()` rather than a fresh round trip.
+            #
+            # THE MATCH IS NARROW ON PURPOSE. It used to be `kind == "poll"`,
+            # which could only ever mean one request; `table` means four, and
+            # answering a heartbeat POST or a receipt with a stashed settings
+            # body would be a silent, invented success for a write that never
+            # left the badge. So the payload must be the settings GET
+            # specifically -- same table, same method -- and anything else falls
+            # through to a real request.
             self._inflight_kind = "primed"
             self._response_ready = False
             return
@@ -763,9 +820,16 @@ class DeviceLink:
             raise LinkError("pump without an in-flight request")
         if kind == "primed":
             self._inflight_kind = None
-            result = self._primed_poll
-            self._primed_poll = None
-            return {"commands": result}
+            result = self._primed_settings
+            self._primed_settings = None
+            # THE ERRAND SHAPE, because that is what the caller asked for. It
+            # used to be `{"commands": ...}`, which was right when the only
+            # thing that could be primed was a poll. The stash now answers a
+            # `table` errand, and `_finish` gives every errand `{"data": ...}`,
+            # so a served stash has to be indistinguishable from a real round
+            # trip to `_finish_errand` -- otherwise the settings sink would get
+            # a shape it does not parse on exactly the first read of every boot.
+            return {"data": result}
         if self._response_ready:
             # Clear first so a 401/403 or malformed body cannot strand the link
             # in a permanently-busy state. No worker update belongs to this
@@ -793,7 +857,7 @@ class DeviceLink:
     def close(self):
         self.abort_open(reason="close")
         self._teardown_worker()
-        self._primed_poll = None
+        self._primed_settings = None
         self._inflight_kind = None
         self._response_ready = False
         self._shim.restore()
@@ -846,44 +910,66 @@ class DeviceLink:
         except Exception as exc:
             raise LinkError("connect setup failed: {}".format(exc.__class__.__name__))
 
-    def _poll_request(self):
-        """The self-addressed poll, with the builder's refusal mapped to LinkError.
+    def _warm_request(self):
+        """THE REQUEST THAT PROVES THE SOCKET. Formerly the self-addressed poll.
 
-        ONE MAPPING FOR THE WHOLE FAMILY, and it is new with the ``_self`` RPCs.
-        `poll_request` now refuses a missing or malformed ``p_badge_id``, and a
-        raw `PostgrestError` escaping `open()` would reach `NetworkService.poll`'s
-        containment as an unclassified fault -- a radio-generation bump and a
-        backend rebuild for what is one bad request. Mapped here it travels the
-        proven `LinkError` route the table and rpc errand kinds already use: one
-        failed poll, the existing backoff ladder, nothing else disturbed.
+        *** THIS IS THE OPEN, NOT A CADENCE. *** Until 2026-08-29 `open()` warmed
+        the TLS session by running the command poll to completion, and that made
+        the poll RPC load-bearing for something that had nothing to do with
+        commands: delete the RPC and `open()` has no request to open with, so the
+        heartbeat, the settings read, the score drain, the schedule sync and the
+        doorbell all die together and the badge is indistinguishable from one with
+        no radio. The rebuild drops `badgelink_badge_poll_self`
+        (`migrations/20260829060000_badge_rebuild_v2.sql` §6a), so the warm-up had
+        to become a request that survives it.
+
+        WHY THE FLEET-SETTINGS GET AND NOT THE HEARTBEAT POST. The heartbeat was
+        the obvious candidate -- it must fire on every boot anyway -- but it
+        cannot be built here. This module holds no Badgeware: the row needs a
+        battery read, `os.uname()` and the wearer name, all of which live in
+        `network_runtime`, and reaching for them would either invert the
+        dependency or force an injected callable into a constructor whose
+        signature is fixed by the generated `/system/main.py` on every badge.
+        The settings GET is built from CONSTANTS ALONE, exactly as the poll was
+        built from credentials alone, so the open stays self-contained.
+
+        IT ALSO EARNS ITS PLACE TWICE. The response is stashed and served to the
+        first `fleet_settings` errand (see :meth:`begin`), so the round trip is
+        not wasted -- and it means a badge knows `push_enabled`, `backlight` and
+        the cadence AT BOOT rather than up to five minutes later. The catch-up
+        read was already the mechanism by which a badge that was switched off
+        rejoins the fleet's state; running it at open makes that immediate.
+
+        A builder refusal is mapped to `LinkError` for the same reason the poll's
+        was: a raw `PostgrestError` escaping `open()` reaches
+        `NetworkService.poll`'s containment as an unclassified fault -- a
+        radio-generation bump and a backend rebuild for what is one bad request.
         """
 
         try:
-            return poll_request(self._credentials, self._poll_limit,
-                                self_badge_id=self.self_badge_id)
+            return table_request(
+                self._credentials,
+                rpc_contract.TABLE_FLEET_SETTINGS,
+                "GET",
+                query=rpc_contract.FLEET_SETTINGS_QUERY,
+                self_badge_id=self.self_badge_id,
+            )
         except PostgrestError as exc:
-            raise LinkError("bad poll request: {}".format(exc))
+            raise LinkError("bad warm request: {}".format(exc))
 
     def _request_for(self, kind, payload):
-        if kind == "poll":
-            return self._poll_request()
-        if kind == "policy":
-            return policy_request(self._credentials,
-                                  self_badge_id=self.self_badge_id)
-        if kind == "ack":
-            try:
-                return ack_request(
-                    self._credentials,
-                    payload.get("id"),
-                    payload.get("status"),
-                    payload.get("result"),
-                    self_badge_id=self.self_badge_id,
-                )
-            except PostgrestError as exc:
-                raise LinkError("bad ack request: {}".format(exc))
-        # THE TWO ERRAND KINDS (Card FT-B). Everything above is a fixed request
-        # this module builds from the credentials alone; these two are built from
-        # the caller's payload, which is why they are the only kinds whose
+        # THE TWO ERRAND KINDS ARE NOW THE ONLY KINDS. `poll`, `ack` and `policy`
+        # were deleted on 2026-08-29 with the RPCs behind them
+        # (`migrations/20260829060000_badge_rebuild_v2.sql` §6a drops
+        # `badgelink_badge_poll_self`, `badgelink_badge_ack_command_self` and
+        # `badgelink_badge_transport_policy`). Keeping a kind whose endpoint no
+        # longer exists would not fail loudly -- PostgREST answers PGRST202,
+        # `parse_response` calls that retryable, and a fleet whose delivery path
+        # is dead would look exactly like a quiet event. So the kinds go with
+        # their endpoints, and an accidental caller gets the raise at the bottom.
+        #
+        # Both surviving kinds are built from the CALLER'S PAYLOAD rather than
+        # from the credentials, which is why they are the only kinds whose
         # arguments can be wrong. Every failure mode is a `PostgrestError` from
         # the builder, mapped to `LinkError` below, so a malformed errand is one
         # failed errand and never a broken socket.
@@ -932,17 +1018,13 @@ class DeviceLink:
             raise LinkRevoked("badge access revoked (403)")
         except PostgrestError as exc:
             raise LinkError("bad response: {}".format(exc))
-        if kind == "poll":
-            return {"commands": parse_poll_rows(decoded)}
-        if kind == "policy":
-            return {"policy": parse_policy_row(decoded)}
         if kind == "table" or kind == "rpc":
             # UNPARSED, deliberately. An errand's requester knows what it asked
             # for and this module does not; adding a parser per errand would put
             # every future feature's response shape into the transport. `None` is
             # a legitimate answer (a `return=minimal` 204 has no body).
             return {"data": decoded}
-        return {"ack": parse_ack_row(decoded)}
+        raise LinkError("unknown response kind: {}".format(kind))
 
     def _charge(self, phases, label, span):
         """Charge one bracketed ``update()`` to the phase the firmware named."""

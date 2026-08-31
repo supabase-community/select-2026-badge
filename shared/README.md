@@ -21,7 +21,7 @@ This export additionally proves it for the shipping subset: its `gate_vendored_c
 | `identity_faces.py` | *not here* | `nametag`, `setup` |
 | `identity_keyboard.py` | *not here* | `setup` |
 | `identity_marks.py` | *not here* | `nametag`, `setup` |
-| `idle.py` | `shared/idle.py` | `menu`, `setup` |
+| `idle.py` | `shared/idle.py` | `flappy`, `menu`, `schedule`, `settings`, `setup`, `snake` |
 | `kb_shell.py` | `shared/kb_shell.py` | `setup` |
 | `kbqwerty_board.py` | *not here* | `setup` |
 | `loading.py` | `shared/loading.py` | `flappy`, `menu`, `schedule`, `setup`, `snake` |

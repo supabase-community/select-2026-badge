@@ -4,6 +4,8 @@ Source to bytecode to badge, with nothing missing. Two commands and a file copy.
 
 Everything here assumes you are inside this export directory.
 
+**Current production contract.** The visible launcher tiles are exactly `setup`, `nametag`, `schedule`, `snake`, `flappy`, `settings`, in that order. Those six plus hidden `menu` and no-entry-point `glyph` are the complete eight `/system/apps` roots. `glyph` is a pruned support payload used only by the launcher's first-wake ceremony; Setup and Nametag carry their own glyph packs. BadgeLink is not an app root: its complete networking, broadcast, schedule and score runtime ships under `/system/lib`. In the source repository, the `device` roster is for development review and is never a final or golden install target; this export's `apps-roster.json` is the flattened production contract.
+
 ---
 
 ## 0. The firmware on the badge, before anything else
@@ -116,9 +118,9 @@ Output lands in `build/system/`, shaped exactly like the badge's `/system`.
 
 **`--check` does NOT populate `build/system`.** It compiles the whole tree twice into temporary directories, hashes both, and asserts byte-identical output, then deletes them. So it is two commands rather than one: a normal build creates the install tree, and a separate `--check` proves the build reproducible. Run it before any install you intend to verify, because an install proves itself by SHA-256 equality and bytecode breaks that claim unless the build is reproducible. The comparison is a pure-Python hash walk, so no `diff` executable is needed.
 
-### 2.1 What compiles: the roster, not the directory listing
+### 2.1 What compiles: the production roster, not the directory listing
 
-`tools/build.py` reads `apps-roster.json` at the export root and compiles the apps it names, in the grid order it names them in. **A directory under `apps/` that the roster does not name is a refusal, not an app.** That matters more than it sounds: without it, a lab tile or a half-finished experiment copied into the tree would compile into a shipping app with an icon on a wearer's grid, silently, 800 times. `--allow-unrostered` overrides it and prints what it took.
+`tools/build.py` reads the flattened `apps-roster.json` at the export root. It compiles the six names in `apps` in grid order, assembles the hidden `launcher`, and applies each `payload_only` keep list without adding an entry point. The exporter derives those keys from the source repository's `production.apps`, hidden menu and `production.payload_only`; the development `device` list never enters this file. **A directory under `apps/` that the production contract does not carry is a refusal, not an app.** That matters more than it sounds: without it, a lab tile or a half-finished experiment copied into the tree would compile into a shipping app with an icon on a wearer's grid, silently, 800 times. `--allow-unrostered` overrides it and prints what it took.
 
 ### 2.2 Two things the build refuses to do
 
@@ -153,7 +155,7 @@ Without `--stock-fonts` the build **stops**. `--no-stock-fonts` overrides that a
 
 The build emits `build/system/secrets.py`: eight provisioning slots, **every value empty**. Badgeware's frozen `secrets` helper reads `/secrets.py` first and falls back to `/system/secrets.py`, so this is what an unprovisioned badge reads, and an empty string is a better answer than an `ImportError`.
 
-**Nothing in this build reads any of them.** The network runtime is not part of this package (`apps-roster.json` records the decision as `system_lib.ship: false`), so the slots exist for parity with the release artifact and for the day the radio is turned on. The eight are: the venue network name and its password, a two-letter Wi-Fi regulatory domain, an IANA timezone, a per-badge ES256 identity token, the project's publishable API key, the realtime host that drives SNI and TLS verification, and an optional pre-resolved IPv4.
+**The shipped BadgeLink runtime reads these slots, but this build never populates them.** `apps-roster.json` records `system_lib.ship: true`, so `network_runtime` and its complete flat/package/CA payload are compiled into `/system/lib`; an unprovisioned unit still fails closed because every value in the generated template is empty. The eight are: the venue network name and its password, a two-letter Wi-Fi regulatory domain, an IANA timezone, a per-badge ES256 identity token, the project's publishable API key, the realtime host that drives SNI and TLS verification, and an optional pre-resolved IPv4.
 
 Two rules on it, and both are now ENFORCED rather than promised:
 
@@ -183,13 +185,13 @@ Temporary file plus rename, then read it back to confirm without printing it. `/
 
 | | source form | bytecode form |
 |---|---:|---:|
-| the modules | 2,647,922 B | 479,693 B (18%) |
-| plus assets and the two files that stay source | +979,886 B | +979,886 B |
-| **staged `/system`** | **3,627,808 B** | **1,459,579 B** |
-| of the 12 MB FAT allocation | 29% | 12% |
+| the modules | 2,934,016 B | 502,576 B (17%) |
+| plus assets and the two files that stay source | +980,312 B | +980,312 B |
+| **staged `/system`** | **3,914,328 B** | **1,482,888 B** |
+| of the 12 MB FAT allocation | 31% | 12% |
 
-1. **Headroom.** Source form fits today. It fits with 8.5 MB in hand against 0.9 MB, and the assets are the part that grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
-2. **First-open latency, which is the one a wearer feels.** Every app exit is a full reset (`ARCHITECTURE.md` section 2), so *every* open is a cold open. The badge parses and compiles each `.py` it imports as one uninterruptible native call per module: nothing of ours can paint the panel while that runs, which is why a heavy app freezes its own loading animation. The largest module in this tree is `apps/badgecard/skins.py` at 326,156 B of source, which compiles to a 102,465 B `.mpy` that **still costs 630-765 ms to import cold on device** (a measured band across several runs, not a point estimate). Shipping the source would add the parse to that, on every open, forever.
+1. **Headroom.** Source form fits today. It fits with 8.3 MB in hand against 0.9 MB, and the assets are the part that grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
+2. **First-open latency, which is the one a wearer feels.** Every app exit is a full reset (`ARCHITECTURE.md` section 2), so *every* open is a cold open. The badge parses and compiles each `.py` it imports as one uninterruptible native call per module: nothing of ours can paint the panel while that runs, which is why a heavy app freezes its own loading animation. The largest module in this tree is `apps/setup/skins.py` at 326,156 B of source, which compiles to a 102,017 B `.mpy` that **still costs 630-765 ms to import cold on device** (a measured band across several runs, not a point estimate). Shipping the source would add the parse to that, on every open, forever.
 3. **A stray `.py` beside its own `.mpy` silently wins.** MicroPython stats the source first, so a badge holding both runs the source: no speed-up, possibly stale code, no error anywhere. That is the failure mode a mixed drag-and-drop-plus-build workflow produces, and it is exactly what `--verify-mount` reports as a stray.
 
 So: develop by drag and drop, ship the build. If you drop a source app onto a badge that carries this build, clear that app's directory first and run `--verify-mount` before you conclude anything about performance.
@@ -198,7 +200,7 @@ So: develop by drag and drop, ship the build. If you drop a source app onto a ba
 
 ---
 
-**One honest caveat about reproducibility.** `mpy-cross` embeds the source name it is handed as the traceback filename, so bytecode built from this export carries `apps/badgecard/card_app.py` where bytecode built from the full repository carries `badgecard/badge/badgecard/card_app.py`. Both are reproducible; they are not byte-identical to each other. If you want to compare an artifact against one of ours, compare a build of *this* tree against a build of *this* tree.
+**One honest caveat about reproducibility.** `mpy-cross` embeds the source name it is handed as the traceback filename, so bytecode built from this export carries `apps/setup/card_app.py` where bytecode built from the full repository carries `setup/badge/setup/card_app.py`. Both are reproducible; they are not byte-identical to each other. If you want to compare an artifact against one of ours, compare a build of *this* tree against a build of *this* tree.
 
 ---
 
@@ -240,7 +242,7 @@ The wearer-facing path. It is a file copy onto a USB volume.
 2. **Mind the path translation.** Badgeware's logical `/system/apps` and `/system/assets` appear at the mounted volume's **top level**:
 
    ```
-   /system/apps/badgecard   ->   $MOUNT/apps/badgecard
+   /system/apps/setup       ->   $MOUNT/apps/setup
    /system/main.py          ->   $MOUNT/main.py
    /system/assets/fonts     ->   $MOUNT/assets/fonts
    ```
@@ -274,6 +276,8 @@ The wearer-facing path. It is a file copy onto a USB volume.
    ```
 
    That is the same check on its own, read-only, for when you want to ask the question again without reinstalling. Either way it replaces a hand checklist of the same seven things, and at 800 units the checklist is the failure mode, not the check.
+
+   For the current production build, a pass includes an exact app-root check: `menu`, `setup`, `nametag`, `schedule`, `snake`, `flappy`, `settings`, `glyph`; only the six rostered tiles are discoverable as wearer-facing tiles (`menu` is the hidden boot host and `glyph` has no entry point). It also requires the complete `/system/lib` payload. A review-only root such as `breakout`, `pacman`, `pong`, or `pet` is therefore an extra and fails.
 
    One finding is worth knowing about before you see it: a stale app directory is a live tile pointing at code that no longer exists, which in one real case was 3.82 MB of it.
 

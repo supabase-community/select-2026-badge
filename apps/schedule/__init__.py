@@ -46,6 +46,7 @@ _load = loading.begin(4)
 # nothing to import below `_load`; that is still true, and there is simply
 # nothing left that needs it.
 import backlight  # noqa: E402
+import idle  # noqa: E402
 from schedule_model import (  # noqa: E402
     CLOCK_TRUSTED,
     CLOCK_UNSET,
@@ -71,9 +72,11 @@ _load.step("-- 5 modules imported")
 
 display.backlight(backlight.fraction(backlight.NORMAL))
 badge.caselights(0)
+_return_idle = idle.ReturnToNametag(time.ticks_ms)
+_next_app = None
 
 
-def _unavailable(detail, notice=None):
+def _unavailable(detail, notice=None, idle_step=None):
     """The screen for a badge whose agenda cannot be read, and it never returns.
 
     WHY THIS EXISTS AT ALL.  `normalize` is deliberately strict, this call is at
@@ -159,6 +162,11 @@ def _unavailable(detail, notice=None):
     # Those helpers now slice on top-level definition boundaries and assert the
     # block is non-empty, which is what caught this comment's own first draft.
     def _frame():
+        # This module-scope modal cannot return through `launch`; the exact
+        # sentinel is caught by the generated main while every other
+        # SystemExit remains an error/reset path.
+        if idle_step is not None and idle_step():
+            raise SystemExit("/system/apps/nametag")
         try:
             _paint()
         except Exception as error:  # noqa: BLE001
@@ -191,7 +199,11 @@ def _unavailable(detail, notice=None):
  _cached_schedule, _cache_error) = load_with_cache()
 if schedule is None:
     gc.collect()
-    _unavailable(_schedule_error, _schedule_notice)
+    _unavailable(
+        _schedule_error,
+        _schedule_notice,
+        lambda: _return_idle.frame(bool(badge.held())),
+    )
 if _schedule_notice:
     print("SCHEDULE_OVERRIDE {}".format(_schedule_notice))
 if _cache_error:
@@ -480,6 +492,7 @@ def on_exit():
     """
 
     _network_active(False)
+    return _next_app
 
 
 def _advance_schedule_refresh():
@@ -537,6 +550,10 @@ def _advance_schedule_refresh():
 
 
 def update():
+    global _next_app
+    if _return_idle.frame(bool(badge.held())):
+        _next_app = idle.NAMETAG_APP
+        return "idle"
     # IDEMPOTENT AND PER FRAME. `set_active` raises MOMENT_VIEW_TRANSITION on
     # the False->True edge only, so after the first frame this is an attribute
     # lookup and a bool compare -- and doing it per frame is what survives a

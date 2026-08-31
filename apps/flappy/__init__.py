@@ -45,6 +45,7 @@ import loading  # noqa: E402
 _load = loading.begin(3)
 
 import backlight  # noqa: E402
+import idle  # noqa: E402
 from flappy_model import (  # noqa: E402
     STEP_MS,
     MAX_LEVEL,
@@ -95,8 +96,19 @@ display.backlight(backlight.fraction(backlight.NORMAL))
 badge.caselights(0)
 view = FlappyView(screen, image, color, font, vec2)
 _load.step("-- view built, 1 mark sheet decoded")
-high_score, load_status = load()
+high_score, plays, load_status = load()
 _load.step("-- 1 row from /state/flappy.json")
+# HOW MANY RUNS OF THIS GAME HAVE BEEN FINISHED, and it is DURABLE: it comes out
+# of `/state/flappy.json` with the high score and goes back in with it on every
+# completed run.  It prices the leaderboard row -- a score is unique in the
+# database as `(badge_id, game, play_number, score)` -- which is what replaced
+# the random idempotency key, and it is also the only way to recover how many
+# times a wearer played: the badge keeps just its HIGHEST pending score per game,
+# so `max(play_number)` is the count and `count(*)` is not.
+#
+# `settings`' "Erase scores" deletes this file and therefore resets this counter.
+# That is deliberate rather than a leak: the SCORE is in the database key too, so
+# replaying to the same index with a different score still creates a row.
 phase = INTRO
 game = None
 # The default LEVEL is 4, and it is zero-based here, so 3.  The owner chose 4
@@ -125,6 +137,7 @@ best = False
 # the card claims a bank that is not there, so it outlives the frame that set
 # it and reaches the view.
 save_failed = False
+saving = False
 light_kind = None
 light_until = last_step
 frame = 0
@@ -133,6 +146,8 @@ confirm_quit = False
 # launcher already consumed its own press, and an app whose whole claim is
 # "instant to start" must not dead-key the first thing the player does.
 armed_at = last_step
+_return_idle = idle.ReturnToNametag(time.ticks_ms)
+_next_app = None
 
 print(
     "FLAPPY_OPEN high={} status={} step_ms={} heap_free={}".format(
@@ -185,14 +200,26 @@ def set_light(kind, now, duration_ms):
 
 
 def finish_game(now):
-    global phase, high_score, save_failed
+    global phase, high_score, save_failed, plays, saving
     phase = FINISHED
-    arm_input(now)
+    saving = True
     # Fire the lights BEFORE the atomic save.  There is no audio on this badge,
     # so four case lights are the only instantaneous feedback channel, and a
     # direct write is 252 us median against a save that is 7-130 ms median and
     # 185 ms at the tail.  The screen can lag; the flash cannot.
     badge.caselights(0.85)
+    # THE COUNTER MOVES FIRST, IN RAM, WHERE IT CANNOT FAIL.  The order at
+    # game-over is not negotiable: increment, then the atomic save that makes it
+    # durable, then the submission that carries it.
+    #
+    # GAME FILE BEFORE SPOOL, AND THAT DIRECTION IS THE ONE THAT MATTERS.  A
+    # power cut between the two costs this run's leaderboard row -- the same loss
+    # an un-landed spool write always had.  Reversed, a spooled score would claim
+    # play N while the disk still said N-1, the next run would mint N again, and
+    # `max(play_number)` -- the only way anyone can recover how many times this
+    # wearer played -- would under-count.  The score is in the database key, so
+    # the collision itself corrupts nothing; the count is what would lie.
+    plays += 1
     # A death must never reset the badge.  `ScoreSink.write` raises whatever
     # the filesystem raises -- the right choice THERE -- but an `OSError`
     # escaping `update()` reaches the firmware's `fatal_error()` and
@@ -204,7 +231,8 @@ def finish_game(now):
     # raises, and open/flush/os.sync/os.rename raise nothing else, so catching
     # wider would hide a real defect in the model.
     try:
-        high_score, changed = update_high_score(game["score"], high_score)
+        high_score, changed = update_high_score(game["score"], high_score,
+                                                plays)
         # Cleared on every success, not only set on failure: the card this
         # feeds renders one frame later and must describe THIS commit, not a
         # stale one from an earlier run in the same session.
@@ -233,18 +261,43 @@ def finish_game(now):
     # `spool` from a build that broke its own contract -- both a reset if they
     # escape.  The print is what stops the guard from hiding a real defect: the
     # serial log names the class, and a silent `pass` here would not.
+    #
+    # `end` NAMES THE DOOR THE RUN LEFT BY, and it is evidence rather than a
+    # verdict: a score of 0 here is a REAL death (the owner has one), so nothing
+    # on this badge may drop it -- what the leaderboard needs is to tell it apart
+    # from a walk-away, which score and duration provably cannot do.  See
+    # `scorebox`'s docstring for the row that proved it.
     try:
-        spool("flappy", game["score"],
-              time.ticks_diff(now, run_started))
+        spool("flappy", game["score"], plays,
+              time.ticks_diff(now, run_started),
+              end="finish")
     except Exception as error:  # noqa: BLE001 - a reset is the alternative
         print("FLAPPY_SPOOL_ERROR score={} err={}".format(
             game["score"], repr(error)))
+    # ARMED AFTER THE SAVE, AND OFF A FRESH TICK -- both halves matter, and this
+    # line used to sit at the top of this function with the frame's `now`.
+    #
+    # `now` is stamped at the TOP of the frame, and everything between it and
+    # here is the most expensive thing this app does on purpose: the atomic save
+    # at 7-130 ms median with a 185 ms tail, plus the spool's append and
+    # `os.sync`.  Armed from `now`, the 90 ms window had usually EXPIRED ALREADY
+    # by the time the post-mortem read input, so the press that was in flight
+    # when the run ended answered a screen the player had not read yet -- the one
+    # thing ARM_MS exists to prevent.
+    #
+    # ALL FIVE GAMES SHARED THIS ORDERING and it was found in snake, where the
+    # restarted run it produces can be banked by HOME as a phantom `score 0` row.
+    # This app has no `on_exit`, so here it costs only the post-mortem; it is
+    # fixed anyway, because the five games' input doctrine is one doctrine and a
+    # rule that holds in four of them is folklore in the fifth.
+    arm_input(time.ticks_ms())
     set_light("refused", now, 1400)
     print(
         "FLAPPY_FINISH score={} level={} cause={} high={} saved={}".format(
             game["score"], game["level"], game["cause"], high_score, changed
         )
     )
+    saving = False
 
 
 def handle_intro(now):
@@ -293,9 +346,23 @@ def quit_game(now):
     committed on the way out.  The write happens with play stopped, which is
     the same position as the save on a refused connection.
     """
-    global phase, high_score, light_kind, confirm_quit, save_failed
+    global phase, high_score, light_kind, confirm_quit, save_failed, plays, saving
+    saving = True
+    # THE COUNTER MOVES FIRST, IN RAM, WHERE IT CANNOT FAIL.  The order at
+    # game-over is not negotiable: increment, then the atomic save that makes it
+    # durable, then the submission that carries it.
+    #
+    # GAME FILE BEFORE SPOOL, AND THAT DIRECTION IS THE ONE THAT MATTERS.  A
+    # power cut between the two costs this run's leaderboard row -- the same loss
+    # an un-landed spool write always had.  Reversed, a spooled score would claim
+    # play N while the disk still said N-1, the next run would mint N again, and
+    # `max(play_number)` -- the only way anyone can recover how many times this
+    # wearer played -- would under-count.  The score is in the database key, so
+    # the collision itself corrupts nothing; the count is what would lie.
+    plays += 1
     try:
-        high_score, changed = update_high_score(game["score"], high_score)
+        high_score, changed = update_high_score(game["score"], high_score,
+                                                plays)
         save_failed = False
     except OSError as error:
         # Same guard as finish_game's, same WHY: an escaping OSError reaches
@@ -321,9 +388,16 @@ def quit_game(now):
     # `spool` from a build that broke its own contract -- both a reset if they
     # escape.  The print is what stops the guard from hiding a real defect: the
     # serial log names the class, and a silent `pass` here would not.
+    #
+    # LABELLED `quit`, which is the whole point of the key: this door is the one
+    # the player chose, so a low score behind it is a walk-away the wearer meant,
+    # and that is a different fact from a death at the same score.  This app has
+    # only these two doors -- `exit` belongs to snake, the one game with an
+    # `on_exit`.  The row is still SENT; the badge labels and SQL decides.
     try:
-        spool("flappy", game["score"],
-              time.ticks_diff(now, run_started))
+        spool("flappy", game["score"], plays,
+              time.ticks_diff(now, run_started),
+              end="quit")
     except Exception as error:  # noqa: BLE001 - a reset is the alternative
         print("FLAPPY_SPOOL_ERROR score={} err={}".format(
             game["score"], repr(error)))
@@ -337,6 +411,7 @@ def quit_game(now):
             game["score"], game["level"], high_score, changed
         )
     )
+    saving = False
 
 
 def handle_paused(now):
@@ -463,8 +538,16 @@ def render():
 
 
 def update():
-    global frame
+    global frame, _next_app
     now = time.ticks_ms()
+    # A live run can advance without button input, and persistence must finish
+    # once begun.  Only the menu, result and frozen pause card are idle screens.
+    if _return_idle.frame(
+            bool(badge.held()), busy=phase == PLAYING or saving):
+        if phase == PAUSED:
+            quit_game(now)
+        _next_app = idle.NAMETAG_APP
+        return "idle"
     # Input is dispatched once, on the phase this frame started in, and the
     # render then follows whatever phase that left behind.  A handler must
     # never run against a phase another handler just entered, or the frame that
@@ -483,6 +566,13 @@ def update():
     render()
     update_lights(now)
     frame += 1
+
+
+def on_exit():
+    """Restore hardware state and expose only an explicit app handoff."""
+
+    badge.caselights(0)
+    return _next_app
 
 
 _load.end()

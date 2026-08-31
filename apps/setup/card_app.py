@@ -46,6 +46,17 @@ SETTLE_MS = 180
 # short enough that it is gone before the next press lands.
 TOAST_MS = 1200
 
+# The chooser is paged in 24-sticker panels.  Six by four fits the existing
+# 36 px authored marks at HIRES while leaving the header and action row clear;
+# the catalogue remains complete and a row-edge press advances the page.
+PICK_COLS = 6
+PICK_ROWS = 4
+PICK_PAGE_SIZE = PICK_COLS * PICK_ROWS
+
+# `on_exit()` is the only app-launch handoff seam.  Keeping the destination in
+# the plan lets the pure controller request Nametag without importing Badgeware.
+NAMETAG_APP = "/system/apps/nametag"
+
 # The wearer-facing sentences.  Here rather than in the view because the
 # controller is what decides WHICH one, and a string constant beside the branch
 # that raises it is one the browser lane can assert on.
@@ -65,6 +76,13 @@ HOME_FAILED = "COULD NOT SAVE"
 
 # The five keys, in the order the drain checks them.
 KEYS = ("A", "B", "C", "UP", "DOWN")
+
+# These screens hold choices that have not crossed their explicit commit key.
+# They still expire, because an abandoned editor must not strand the badge away
+# from fleet notices, but the longer window prevents an ordinary thinking pause
+# from silently throwing away work.
+_IDLE_DRAFT_VIEWS = (model.NAME, model.SKIN, model.EFFECT,
+                     model.PICK, model.PLACE)
 
 
 class CardApp:
@@ -105,8 +123,8 @@ class CardApp:
         self.logical_w = logical[0] or _DEFAULT_LOGICAL[0]
         self.logical_h = logical[1] or _DEFAULT_LOGICAL[1]
 
-        self.view = model.BADGE
-        self.previous = model.BADGE
+        self.view = model.MENU
+        self.previous = model.MENU
         self.index = 0
         self.exit = False
         self.frames = 0
@@ -144,6 +162,8 @@ class CardApp:
         self.settled = True
         self.restore = ""
         self.pick = 0
+        # -1 means the grid; 0 is the catalogue's bottom BACK action.
+        self.pick_action = -1
         self.place_x = model.RECIPE_UNITS // 2
         self.place_y = model.RECIPE_UNITS // 2
         self.editing = -1
@@ -155,6 +175,8 @@ class CardApp:
         # _cannot_delete` existed for exactly that failure; the field it guarded
         # is gone, so the failure is unrepresentable rather than merely tested.
         self.job = None
+        self.finish_after_bake = False
+        self.next_app = ""
         # THE EFFECT BEING PREVIEWED, and the one to put back on BACK.  A pair
         # of its own rather than a reuse of `choice`/`restore`: those hold a
         # background entry id, the two browsers can be entered one after the
@@ -177,6 +199,14 @@ class CardApp:
         # answer that is already known.
         self._recipe_parts = None
         self._recipe_value = 0
+
+        # The saved name is the whole first-run marker.  A second persisted
+        # completion flag would drift from Reset Badge, which deliberately
+        # restores the empty-name state.  Named badges start at the menu;
+        # unnamed badges start inside the existing keyboard immediately.
+        self.guided = not bool(self.badge()["name"])
+        if self.guided:
+            self._edit_name()
 
         # A store that did not load cleanly is written back at once, so the next
         # boot reads a good file rather than recovering again.  A milestone,
@@ -255,6 +285,26 @@ class CardApp:
             return
         self.index = (self.index + step) % total
 
+    # -- inactivity ---------------------------------------------------------
+
+    def idle_busy(self):
+        """True only while the incremental wallpaper bake owns the frame."""
+        return self.view == model.BAKING
+
+    def idle_draft(self):
+        """Whether timeout must use the editor's longer abandonment window."""
+        return self.view in _IDLE_DRAFT_VIEWS
+
+    def abandon_idle(self):
+        """Drop scratch exactly as BACK would, without writing anything."""
+        if self.view == model.SKIN:
+            self.choice = self.restore
+            self.settled = True
+        elif self.view == model.EFFECT:
+            self.effect = self.effect_was
+        self.board = None
+        self.editing = -1
+
     # -- the wallpaper's staleness ------------------------------------------
 
     def home_recipe(self):
@@ -306,7 +356,9 @@ class CardApp:
 
         view = self.view
         if view == model.BADGE:
-            self._route_badge(now_ms, buttons)
+            # BADGE remains a staged-arrival composition used by the seam, but
+            # no controller route enters it after the Setup UX simplification.
+            self._goto(model.MENU)
         elif view == model.MENU:
             self._route_menu(now_ms, buttons)
         elif view == model.NAME:
@@ -348,9 +400,8 @@ class CardApp:
         step = self._scroll(now_ms, buttons)
         if step:
             self._move(step, len(model.MENU_ITEMS))
-        if buttons.pressed("A"):
-            self._goto(model.BADGE)
-            return
+        # HOME is the route to the launcher.  A is intentionally inert at the
+        # menu root so it cannot masquerade as a second, unlabelled exit.
         if (buttons.pressed("C")
                 and model.MENU_ITEMS[self.index] == model.MENU_HOME):
             # CLEAR, on the row's own C key.  No confirmation, and that is B7
@@ -380,7 +431,7 @@ class CardApp:
         # on 2026-08-24: the row that a fall-through would reach LAST is the one
         # that resets the badge, so an unhandled row must land nowhere at all.
         elif row == model.MENU_HOME:
-            self._save_home(now_ms)
+            self._finish_setup(now_ms)
         elif row == model.MENU_RESET:
             # OPENING A QUESTION, NOT ANSWERING ONE.  Every other destructive
             # thing in this app is one press from done; this is the one that is
@@ -392,16 +443,13 @@ class CardApp:
     # -- the name ------------------------------------------------------------
 
     def name_cap(self):
-        """How many characters the CURRENT skin's face fits, capped at 12.
+        """The stored-name cap, independent of the selected skin.
 
-        The owner's ruling made visible in the one place a wearer meets it: pick
-        a skin whose face is `futile` (widest glyph 19 px) and the field holds
-        eight characters; pick one whose face is `winds` (6 px) and it holds the
-        full twelve.  The name is not being arbitrarily shortened -- it is being
-        held to what will actually fit on the badge at a readable size.
+        A skin is presentation, not identity.  It may render the same saved
+        name more compactly, but neither opening the editor nor changing skins
+        may silently rewrite the full name the wearer entered.
         """
-        return faces.cap_for(self.badge()["background"], self.logical_w,
-                             ceiling=model.NAME_MAX)
+        return model.NAME_MAX
 
     def _edit_name(self):
         # BUILT FROM THE STORED TEXT, so BACK genuinely abandons: nothing in
@@ -424,7 +472,10 @@ class CardApp:
             # There is no legitimate route here without a board, but a screen
             # that raises `AttributeError` is a screen with no way out at all,
             # and I2 is not conditional on the app being correct.
-            self._goto(model.MENU)
+            if self.guided:
+                self._edit_name()
+            else:
+                self._menu_at(model.MENU_NAME)
             return
         step = self._scroll(now_ms, buttons)
         if step:
@@ -439,11 +490,18 @@ class CardApp:
         if outcome == keyboard.COMMITTED:
             self.badge()["name"] = board.text
             self._commit(milestone=True)
-            self._goto(model.MENU)
-            self._toast_now(now_ms, SAVED)
+            if self.guided:
+                self._browse_skin()
+            else:
+                self._menu_at(model.MENU_NAME)
+                self._toast_now(now_ms, SAVED)
         elif outcome == keyboard.ABANDONED:
-            # I2's route out that COMMITS NOTHING.
-            self._goto(model.MENU)
+            # First run has no intermediate menu.  HOME remains the global
+            # escape; BACK simply restores the saved text in the same editor.
+            if self.guided:
+                self._edit_name()
+            else:
+                self._menu_at(model.MENU_NAME)
         elif outcome == keyboard.REFUSED:
             # The one outcome the wearer has to be told about: a full field that
             # silently eats presses is how a name is truncated without anybody
@@ -509,7 +567,10 @@ class CardApp:
             # it back would look like a commit that did not save.
             self.choice = self.restore
             self.settled = True
-            self._goto(model.MENU)
+            if self.guided:
+                self._edit_name()
+            else:
+                self._menu_at(model.MENU_SKIN)
             return
         if not buttons.pressed("B"):
             # SETTLE.  The choice moved, then the wearer stopped; only now is it
@@ -522,15 +583,17 @@ class CardApp:
         # THE FACE FOLLOWS THE SKIN.  The owner's ruling, applied at the one
         # point it can be applied: the moment the skin is chosen.
         badge["face"] = faces.face_of(self.choice)
-        # AND THE NAME IS RE-CAPPED, because the new face may be wider.  Cutting
-        # it here rather than at draw time is what stops the badge and the
-        # editor disagreeing about what the wearer's name is.
-        cap = self.name_cap()
-        if len(badge["name"]) > cap:
-            badge["name"] = badge["name"][:cap]
+        # A skin may fit the full name differently, but it never rewrites the
+        # wearer's saved text.  The preview/rendering layer owns visual fitting.
         self._commit(milestone=True)
-        self._goto(model.MENU)
-        self._toast_now(now_ms, SAVED)
+        if self.guided:
+            # The placed-sticker list is the hub: it lets a first-run wearer
+            # add zero or many stickers before choosing DONE, instead of making
+            # the catalogue itself carry flow-level completion controls.
+            self._goto(model.MARKS)
+        else:
+            self._menu_at(model.MENU_SKIN)
+            self._toast_now(now_ms, SAVED)
 
     def _retarget(self, now_ms):
         entry = catalogue.ENTRIES[self.index][0]
@@ -593,15 +656,22 @@ class CardApp:
     # -- the stickers --------------------------------------------------------
 
     def mark_rows(self):
-        """One ADD row, then one row per sticker on the badge."""
-        return len(self.badge()["stickers"]) + 1
+        """One ADD row, one per sticker, then the flow-level DONE action."""
+        return len(self.badge()["stickers"]) + 2
+
+    def _open_picker(self):
+        self.pick_action = -1
+        self._goto(model.PICK)
 
     def _route_marks(self, now_ms, buttons):
         step = self._scroll(now_ms, buttons)
         if step:
             self._move(step, self.mark_rows())
         if buttons.pressed("A"):
-            self._goto(model.MENU)
+            if self.guided:
+                self._browse_skin()
+            else:
+                self._menu_at(model.MENU_MARKS)
             return
         stickers = self.badge()["stickers"]
         if buttons.pressed("B"):
@@ -611,7 +681,15 @@ class CardApp:
                     return
                 self.editing = -1
                 self.pick = 0
-                self._goto(model.PICK)
+                self._open_picker()
+            elif self.index == len(stickers) + 1:
+                # DONE has one meaning within each entry mode: finish guided
+                # setup, or return to the maintenance menu without a hidden
+                # write.  Saving HOME remains the guided finish operation.
+                if self.guided:
+                    self._finish_setup(now_ms)
+                else:
+                    self._menu_at(model.MENU_MARKS)
             else:
                 self.editing = self.index - 1
                 mark = stickers[self.editing]
@@ -619,7 +697,8 @@ class CardApp:
                 self.place_y = model.units(mark["y"])
                 self._goto(model.PLACE)
             return
-        if buttons.pressed("C") and self.index > 0:
+        if (buttons.pressed("C") and self.index > 0
+                and self.index <= len(stickers)):
             # NO CONFIRMATION, and that is a judgement rather than an oversight.
             # B7 puts irreversible actions behind one; removing one sticker from
             # a badge that still has the other twenty-three is a press to undo,
@@ -633,17 +712,77 @@ class CardApp:
             self._toast_now(now_ms, MARK_GONE)
 
     def _route_pick(self, now_ms, buttons):
-        step = self._scroll(now_ms, buttons)
-        if step:
-            self.pick = (self.pick + step) % marks.COUNT
-        if buttons.pressed("A"):
+        # A/C are left/right.  A page is the horizontal unit: wrapping into the
+        # next row made six RIGHT presses look like no page navigation at all.
+        if self.pick_action < 0:
+            if buttons.pressed("A"):
+                self._pick_horizontal(-1)
+            if buttons.pressed("C"):
+                self._pick_horizontal(1)
+
+            step = self._scroll(now_ms, buttons)
+            if step < 0:
+                self._pick_vertical(-1)
+            elif step > 0:
+                self._pick_vertical(1)
+        else:
+            # UP returns to the last grid focus.  DOWN stays on the action row.
+            if self._up.step(buttons.held("UP"), now_ms):
+                self.pick_action = -1
+            self._down.step(buttons.held("DOWN"), now_ms)
+
+        if not buttons.pressed("B"):
+            return
+        if self.pick_action == 0:
             self._goto(model.MARKS)
             return
-        if buttons.pressed("B"):
-            self.editing = -1
-            self.place_x = model.RECIPE_UNITS // 2
-            self.place_y = model.RECIPE_UNITS // 2
-            self._goto(model.PLACE)
+        self.editing = -1
+        self.place_x = model.RECIPE_UNITS // 2
+        self.place_y = model.RECIPE_UNITS // 2
+        self._goto(model.PLACE)
+
+    def _pick_horizontal(self, direction):
+        """Move within a grid row; crossing its edge changes page."""
+        page_count = (marks.COUNT + PICK_PAGE_SIZE - 1) // PICK_PAGE_SIZE
+        page = self.pick // PICK_PAGE_SIZE
+        offset = self.pick % PICK_PAGE_SIZE
+        row = offset // PICK_COLS
+        column = offset % PICK_COLS
+        page_end = min((page + 1) * PICK_PAGE_SIZE, marks.COUNT)
+
+        if direction > 0:
+            if column < PICK_COLS - 1 and self.pick + 1 < page_end:
+                self.pick += 1
+                return
+            next_page = (page + 1) % page_count
+            target = next_page * PICK_PAGE_SIZE + row * PICK_COLS
+            next_end = min((next_page + 1) * PICK_PAGE_SIZE, marks.COUNT)
+            self.pick = target if target < next_end else next_page * PICK_PAGE_SIZE
+            return
+
+        if column > 0:
+            self.pick -= 1
+            return
+        previous_page = (page - 1) % page_count
+        previous_end = min((previous_page + 1) * PICK_PAGE_SIZE, marks.COUNT)
+        row_start = previous_page * PICK_PAGE_SIZE + row * PICK_COLS
+        if row_start >= previous_end:
+            row_start = previous_page * PICK_PAGE_SIZE
+        self.pick = min(row_start + PICK_COLS - 1, previous_end - 1)
+
+    def _pick_vertical(self, direction):
+        """Move one row inside the current page, or reach the action row."""
+        page_start = (self.pick // PICK_PAGE_SIZE) * PICK_PAGE_SIZE
+        page_end = min(page_start + PICK_PAGE_SIZE, marks.COUNT)
+        target = self.pick + direction * PICK_COLS
+        if direction < 0:
+            if target >= page_start:
+                self.pick = target
+            return
+        if target < page_end:
+            self.pick = target
+            return
+        self.pick_action = 0
 
     def place_step(self, speed, span):
         """Ten-thousandths of the canvas per step, ramping with the hold.
@@ -692,7 +831,7 @@ class CardApp:
         self.editing = -1
         self._commit(milestone=True)
         # LANDS ON THE MARK LIST WITH THE PLACED MARK SELECTED, which is the
-        # whole mitigation for `PLACE` having no labelled cancel: `DROP` is
+        # whole mitigation for `PLACE` having no labelled cancel: `PUT` is
         # non-destructive and `DEL` is one press away on the row it lands on.
         self._goto(model.MARKS)
         self.index = landed
@@ -707,7 +846,7 @@ class CardApp:
         the menu ON THE ROW THAT ASKED -- not the top of it.  `_goto` resets the
         selection to 0, which would land a wearer who declined a reset on NAME,
         with a modal's worth of adrenaline and no idea what they just did.
-        `_back_to_the_row` learned this on SAVE TO HOME and `_route_effect`
+        `_back_to_the_row` learned this on the home-film bake and `_route_effect`
         learned it again; this is the third screen to need it.
         """
         if buttons.pressed("A"):
@@ -786,7 +925,7 @@ class CardApp:
 
     # -- save to home, from the menu row itself -------------------------------
 
-    def _save_home(self, now_ms):
+    def _save_home(self, now_ms, finish=False):
         """SELECT IT, DONE -- the owner's ruling of 2026-08-21.
 
         There is no preview screen and no confirmation between this and the
@@ -800,10 +939,22 @@ class CardApp:
         the wearer pressed the key to find out.  The recipe stamp is what makes
         this answerable without drawing anything (`card_bake.recipe_of`).
         """
+        self.finish_after_bake = finish
         if self.home_installed() and not self.home_stale():
+            if finish:
+                self._finish_to_nametag()
+                return
             self._toast_now(now_ms, HOME_ON)
             return
         self._start_bake(now_ms)
+
+    def _finish_setup(self, now_ms):
+        """Save the launcher film, then hand the one result to Nametag."""
+        self._save_home(now_ms, finish=True)
+
+    def _finish_to_nametag(self):
+        self.next_app = NAMETAG_APP
+        self.exit = True
 
     def _clear_home(self, now_ms):
         if not self.home_installed():
@@ -820,10 +971,12 @@ class CardApp:
 
     def _start_bake(self, now_ms):
         if self._bake is None:
+            self.finish_after_bake = False
             self._toast_now(now_ms, HOME_FAILED)
             return
         self.job = self._bake(self.state)
         if self.job is None:
+            self.finish_after_bake = False
             self._toast_now(now_ms, HOME_FAILED)
             return
         # A DECLARED MODAL STATE, stepped one unit per rendered frame.  The bake
@@ -853,12 +1006,17 @@ class CardApp:
             self.state["home"]["on"] = True
             self.state["home"]["recipe"] = job.recipe
             self._commit(milestone=True)
+            if self.finish_after_bake:
+                self.finish_after_bake = False
+                self._finish_to_nametag()
+                return
             self._back_to_the_row(now_ms, HOME_ON)
             return
+        self.finish_after_bake = False
         self._back_to_the_row(now_ms, job.note or HOME_FAILED)
 
     def _back_to_the_row(self, now_ms, message):
-        """Return to SAVE TO HOME with the bake's verdict.  See `_menu_at`."""
+        """Return to DONE with the bake's verdict.  See `_menu_at`."""
         self._menu_at(model.MENU_HOME)
         self._toast_now(now_ms, message)
 
@@ -903,7 +1061,9 @@ class CardApp:
             rows = 0
         return {
             "view": view,
-            "labels": model.softkeys(view, self.index, installed),
+            "labels": model.softkeys(view, self.index, installed,
+                                      self.pick_action,
+                                      len(badge["stickers"])),
             "state": self.state,
             "badge": badge,
             "index": self.index,
@@ -918,6 +1078,7 @@ class CardApp:
             "effect": (self.effect if view == model.EFFECT
                        else badge["effect"]),
             "pick": self.pick,
+            "pick_action": self.pick_action,
             "place": (self.place_x / float(model.RECIPE_UNITS),
                       self.place_y / float(model.RECIPE_UNITS)),
             "editing": self.editing,
@@ -937,6 +1098,8 @@ class CardApp:
             "progress": self.job.progress if self.job is not None else 0.0,
             "stage": self.job.stage if self.job is not None else "",
             "exit": self.exit,
+            "next_app": self.next_app,
+            "guided": self.guided,
         }
 
 

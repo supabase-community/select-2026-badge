@@ -1,6 +1,6 @@
 # Supabase Select 2026 badge software -- source export
 
-This is the software that would ship to the ~800 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `599cea74de2a` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
+This is the software that would ship to the ~800 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `646cc39dcbbc` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
 
 ## Status
 
@@ -36,7 +36,7 @@ Badgeware runs source `.py` directly, so to hack on one app you drag its directo
 
 This is development-only, and you drag individual apps rather than the whole tree, for four honest reasons:
 
-1. **The whole source tree does not fit the volume at once.** In source form the staged `/system` is 29% of the 12 MB FAT against 12% as bytecode (`BUILDING.md` section 2.5 has the table), and with everything uncompiled it overflows. So you drag only the apps you want to hack on, not the whole lineup.
+1. **The whole source tree does not fit the volume at once.** In source form the staged `/system` is 31% of the 12 MB FAT against 12% as bytecode (`BUILDING.md` section 2.5 has the table), and with everything uncompiled it overflows. So you drag only the apps you want to hack on, not the whole lineup.
 2. **The two stock fonts must already be on the badge.** `DynaPuff` and `IndieFlower` ship with the firmware. Dragging an app does not touch them, but do not wholesale-replace `/system/assets/fonts`: that would remove them.
 3. **Each app carries its own copy of the shared layer.** The shared modules an app imports already sit inside that app's own directory in this tree, so dropping a WHOLE app directory is self-contained. A partial drop that leaves those files behind breaks the app.
 4. **A stray `.py` beside its own `.mpy` silently wins.** Do not drop a source app on top of a bytecode install without clearing that app's directory first, or the badge runs stale source with no error anywhere. `BUILDING.md` section 2.5 covers this.
@@ -98,17 +98,17 @@ It does, and that is the right development loop: your own README's "Installing A
 
 We precompile the thing we hand you for three measured reasons:
 
-1. **Headroom.** The modules here are 2,647,922 B as source and 479,693 B as bytecode, 18%. With assets, the installed tree is 1,459,579 B, 12% of the 12 MB volume; as source it would be 3,627,808 B, 29%. Both fit today. The assets are what grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
-2. **First-open latency, which is the one a wearer feels.** MicroPython compiles each `.py` at import, as one uninterruptible native call per module, and every app exit resets the badge, so every open is a cold open. The largest module here is 326,156 B of source; even precompiled to a 102,465 B `.mpy`, its cold import measures 630-765 ms on device. Shipping source adds the parse to that, on every open.
+1. **Headroom.** The modules here are 2,934,016 B as source and 502,576 B as bytecode, 17%. With assets, the installed tree is 1,482,888 B, 12% of the 12 MB volume; as source it would be 3,914,328 B, 31%. Both fit today. The assets are what grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.
+2. **First-open latency, which is the one a wearer feels.** MicroPython compiles each `.py` at import, as one uninterruptible native call per module, and every app exit resets the badge, so every open is a cold open. The largest module here is 326,156 B of source; even precompiled to a 102,017 B `.mpy`, its cold import measures 630-765 ms on device. Shipping source adds the parse to that, on every open.
 3. **Fleet integrity.** 800 badges get a byte-identical, hash-verified install, and a stray `.py` beside its own `.mpy` silently wins: no speed-up, possibly stale code, no error. That is the failure `tools/build.py --verify-mount` exists to catch.
 
 `BUILDING.md` section 2.5 is the full treatment, including how to mix the two safely.
 
 Full detail, pins, and troubleshooting: **`BUILDING.md`**. It carries the pins with their one open caveat, `--check` (build twice, prove byte-identical output), a build without the release clone (`--skip-menu`, `--no-stock-fonts`), firmware flashing, and the refusals the build will not budge on.
 
-It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **186 files, 5,541,440 bytes**.
+It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **191 files, 6,058,265 bytes**.
 
-Those two numbers are the PAYLOAD: everything in this tree except this README and `MANIFEST.json`, the two files that cannot quote a total including themselves without changing it. `MANIFEST.json` lists 187 rows (the payload plus this README) and does not hash itself; its `totals.payload` repeats the two numbers above, and the exporter's `readme-matches-manifest` gate reads this paragraph back and fails the build if any of the three disagrees.
+Those two numbers are the PAYLOAD: everything in this tree except this README and `MANIFEST.json`, the two files that cannot quote a total including themselves without changing it. `MANIFEST.json` lists 192 rows (the payload plus this README) and does not hash itself; its `totals.payload` repeats the two numbers above, and the exporter's `readme-matches-manifest` gate reads this paragraph back and fails the build if any of the three disagrees.
 
 ## Start here
 
@@ -131,7 +131,7 @@ The order is the launcher's grid order and it comes from `apps-roster.json`, **w
 | app | installs at | what it is |
 |---|---|---|
 | `setup` | `/system/apps/setup` | the badge editor and the worn badge itself: name, skin, stickers, effect |
-| `nametag` | `/system/apps/nametag` | the worn badge as a read-only full-screen poster, opened in 14 modules instead of 27 |
+| `nametag` | `/system/apps/nametag` | the worn badge as a read-only full-screen nametag, opened in 14 modules instead of 27 |
 | `schedule` | `/system/apps/schedule` | the offline conference agenda: two stage tabs, 26 rendered rows, no network |
 | `snake` | `/system/apps/snake` | Snake on an 8 px grid where the food is the Supabase mark; nine levels trade pace for payout |
 | `flappy` | `/system/apps/flappy` | tap-to-fly where you are a client connection and the pipes are a pooler's slots |
