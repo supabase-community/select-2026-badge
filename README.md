@@ -1,6 +1,6 @@
 # Supabase Select 2026 badge software -- source export
 
-This is the software that would ship to the ~1,000 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `bd04175ec043` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
+This is the software that would ship to the ~1,000 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `09a351a13e83` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
 
 ## Status
 
