@@ -465,18 +465,18 @@
       "sha256": "d73e0f3ce429961ef072d8197820b0a9e115c67c826300f035eef5ec29c3ecbd"
     },
     {
-      "bytes": 8943,
+      "bytes": 8991,
       "generated": true,
       "note": "export-only: orientation for AI agents reading this package",
       "path": "AGENTS.md",
-      "sha256": "cb4037933302c1bd35207e28f787d7e67d7271f831e2d0905672ef4f2c022611"
+      "sha256": "fe1c9673598c32b5c533ee3e4a100346cf15e2676a49adfdd6260f680c26d62b"
     },
     {
-      "bytes": 22735,
+      "bytes": 22792,
       "note": "export-only",
       "origin": "docs/source-export/ARCHITECTURE.md",
       "path": "ARCHITECTURE.md",
-      "sha256": "3ea4f16e1be4d433f967ca524cb8c9a4d3a27f55d56b0a58b8b5265ad12869f9"
+      "sha256": "d6f59b15436fed5533f895b7e4fcf656eb3060e56423ec02af0a756ecf82f8ee"
     },
     {
       "bytes": 28084,
@@ -504,7 +504,7 @@
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "4ed6b53e55b9e4ca648dd3691d55e6a5958d94b8ef9391f79b85a1c344611ccb"
+      "sha256": "f3e5a68543485ca793852123abd6064e55efdd9243551699594c7e2335fb69d2"
     },
     {
       "bytes": 9189,
@@ -1440,11 +1440,11 @@
       "sha256": "80f249394d111cdf6640466736143487321c7b87c938b34e2e60062427df5a1c"
     },
     {
-      "bytes": 519613,
+      "bytes": 521685,
       "note": "the network runtime; tools/build.py compiles it to /system/lib",
       "origin": "badgelink/badge/badgelink/network_runtime.py",
       "path": "lib/network_runtime.py",
-      "sha256": "37ab0496c73052b360d969d3a91c4ffd2d9411b3e37c5124bd5b7ce17bf77b10"
+      "sha256": "2a9f8d1350f8a0ef8f91f3a17242bff35fe5e96fcf32bcda21f0f55c0de1fc06"
     },
     {
       "bytes": 5225,
@@ -1489,11 +1489,11 @@
       "sha256": "d846ba41e4bbe2338229e18eb5e805c710ee2220d318665f9603604157898ecc"
     },
     {
-      "bytes": 171108,
+      "bytes": 170608,
       "note": "the network runtime; tools/build.py compiles it to /system/lib",
       "origin": "badgelink/badge/badgelink/pushlink.py",
       "path": "lib/pushlink.py",
-      "sha256": "62ba38dfe5c878359eb666f61de03e5c4175d4ac7eb2531e243bcf1404a24213"
+      "sha256": "d32ca81cddd4506cfb70f9d191924569526bc23e0c86f05b23308beb869aa1e8"
     },
     {
       "bytes": 1060,
@@ -1803,7 +1803,7 @@
       "ok": true
     },
     {
-      "detail": "the README's 191 payload files / 6,064,382 bytes and 192 manifest rows all match the manifest",
+      "detail": "the README's 191 payload files / 6,066,059 bytes and 192 manifest rows all match the manifest",
       "gate": "readme-matches-manifest",
       "offenders": [],
       "ok": true
@@ -1838,7 +1838,7 @@
     },
     {
       "bytecode_verified": true,
-      "detail": "36 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 58 guarded import sites across 25 files, 3 launcher `badge.mode` call site(s), nothing debounced, one install procedure, a 1,483,941 B staged /system, no automation-enforcement claim, 503,629 B of bytecode measured from 90 modules, within 128 B of the pin",
+      "detail": "36 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 59 guarded import sites across 25 files, 3 launcher `badge.mode` call site(s), nothing debounced, one install procedure, a 1,483,941 B staged /system, no automation-enforcement claim, 503,629 B of bytecode measured from 90 modules, within 128 B of the pin",
       "gate": "doc-claims-verified",
       "offenders": [],
       "ok": true
@@ -1913,7 +1913,7 @@
     }
   ],
   "provenance": {
-    "commit": "edfbdb43a741dd532370b9af225bad534ab6d306",
+    "commit": "d9f7f20ec2436203188ab47dd5eb071a78ebfc76",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1972,10 +1972,10 @@
     "version": "v3.0.2"
   },
   "totals": {
-    "bytes": 6093481,
+    "bytes": 6095158,
     "files": 192,
     "payload": {
-      "bytes": 6064382,
+      "bytes": 6066059,
       "excludes": [
         "README.md",
         "MANIFEST.json"
@@ -1983,7 +1983,7 @@
       "files": 191
     }
   },
-  "tree_hash": "b7c1224cfa361d649c56d8fb6940b22b93ef33603344ad32c3917396f8104a7e",
+  "tree_hash": "aac2601c6790ea9fdbd1e80d9a732f7471472467d2c4b5192d312b33fae49243",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",

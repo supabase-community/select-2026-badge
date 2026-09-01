@@ -368,7 +368,8 @@ DEMOTE_AFTER_SESSIONS = 3
 #: reconnects instead of assuming.
 STARVATION_CEILING_MS = 25000
 
-#: How often the badge forces a fresh socket and private-channel join. Realtime
+#: HISTORICAL: how often the badge forced a fresh socket and private-channel
+#: join before the 2026-08-31 hardware freeze diagnosis. Realtime
 #: calculates private-channel authorization when the channel is joined; the real
 #: D9 run proved that re-pushing the same valid long-lived ``access_token`` on
 #: an already joined channel does NOT make the hosted service re-read a revoked
@@ -379,9 +380,9 @@ STARVATION_CEILING_MS = 25000
 #: **ONE HOUR, BY OWNER RULING 2026-08-24, and the words were:** *"can we change
 #: this to like once per hour or something? secure enough, no major network
 #: refactor. less freezes."* It was ten minutes from 2026-08-22 until then.
-#: Recorded in full as `OWNER-DECISIONS #20`; the MECHANISM did not change and
-#: must not (fresh join on cadence, refused join = terminal revoked for the boot,
-#: jitter mandatory) — only this interval and its jitter did.
+#: Recorded in full as `OWNER-DECISIONS #20`. It is superseded by #26: two
+#: unattended freezes near this deadline and a decisive five-minute reproduction
+#: showed the deliberate healthy-session rollover hanging in native TCP open.
 #:
 #: **WHAT THE INTERVAL COSTS A WEARER, which is what the ruling bought.** The
 #: only tolerant moment a badge sitting on the launcher ever reaches is
@@ -440,9 +441,14 @@ STARVATION_CEILING_MS = 25000
 #: the Data API 403 (immediate) and key rotation (§7 / OWNER-DECISIONS #7, #17),
 #: never this number. Lengthening it extends how long a revoked but HONEST badge
 #: keeps hearing its own echoes, and nothing else.
-TOKEN_REFRESH_MS = 3600000
+#: Production now keeps a healthy socket until the server, Wi-Fi, starvation
+#: guard or a real JWT/grant boundary ends it. ``None`` is deliberate rather
+#: than a long interval: no conference run can unexpectedly cross it. The
+#: constructor seam remains so a bounded diagnostic can opt in explicitly.
+TOKEN_REFRESH_MS = None
 
-#: THE CADENCE JITTER, and the reason the boot jitter is not enough on its own.
+#: HISTORICAL cadence jitter. Production has no timed healthy reconnect; zero
+#: means the diagnostic seam adds no jitter unless a caller explicitly asks.
 #:
 #: The boot jitter spreads the FIRST connect of each boot over 20 s, and this
 #: cadence's phase is that connect — so without a second draw, 800 badges spend
@@ -492,7 +498,7 @@ TOKEN_REFRESH_MS = 3600000
 #: case ``TOKEN_REFRESH_MS + REJOIN_JITTER_MS`` — **72 minutes** — plus the
 #: latency of the next tolerant moment. That is the honest bound, and it is the
 #: one the docs quote.
-REJOIN_JITTER_MS = 720000
+REJOIN_JITTER_MS = 0
 
 #: THE SLOW RE-ARM AFTER A NEVER-JOINED DEMOTION. 15-30 minutes, jittered per
 #: badge, and it is what makes "never give up until reboot" true rather than
@@ -1262,9 +1268,8 @@ class PushLink:
     through ``token_provider``.
 
     ``token_provider()`` returns ``(jwt, claims)``; claims may be ``None``. It is
-    called immediately before every socket open rather than cached, so the fresh
-    join after a cadence close carries a credential refreshed on flash without a
-    reboot.
+    called immediately before every socket open rather than cached, so every
+    recovery join carries the credential currently stored on flash.
     """
 
     # NB-0'S HELD-STRATEGY DEFAULTS LIVE ON THE CLASS so the cold OFF artifact
@@ -1274,10 +1279,9 @@ class PushLink:
     # writes too. This is the lazy-construction half of the dark-launch contract.
     _held_strategy = False
     #: OWNER RULING #22 placement (WSS side). ``False`` while the badge is in a
-    #: non-opted-in app: it defers the CADENCE reauthorization reopen (a healthy
-    #: minute-60 close with no re-open allowed would strand a mid-app command).
-    #: A true token/grant expiry ignores it and still fails closed. RAM-only and
-    #: class-defaulted ``True`` so OFF and un-gated callers keep the old cadence.
+    #: non-opted-in app. Production has no scheduled healthy reconnect; this
+    #: remains for an explicitly configured diagnostic cadence. A true
+    #: token/grant expiry ignores it and still fails closed.
     _establishment_allowed = True
     _establishing = False
     _establish_task = None
@@ -1427,7 +1431,9 @@ class PushLink:
         #: branch in this module reads a number from it, and `_note_open_trace`
         #: swallows, because an instrument may not cost a badge its socket.
         self._open_trace = open_trace
-        self.token_refresh_ms = int(token_refresh_ms)
+        self.token_refresh_ms = (
+            None if token_refresh_ms is None else int(token_refresh_ms)
+        )
         self.rejoin_jitter_ms = int(rejoin_jitter_ms)
         self.token_expiry_margin_ms = int(token_expiry_margin_ms)
         self.grant_expiry_margin_ms = int(grant_expiry_margin_ms)
@@ -1606,9 +1612,9 @@ class PushLink:
     def set_establishment_allowed(self, allowed):
         """OWNER RULING #22: whether a NEW establishment may start right now.
 
-        Placement's WSS gate. It affects only the CADENCE reauthorization in
-        :meth:`_maybe_reauthorize`; a true expiry is never gated. Synchronous
-        and I/O-free -- the caller's next pumped ``step`` reads the flag."""
+        Production has no scheduled healthy reconnect, so this only affects an
+        explicitly configured diagnostic cadence. A true expiry is never gated.
+        Synchronous and I/O-free -- the next pumped ``step`` reads the flag."""
 
         self._establishment_allowed = bool(allowed)
         return self._establishment_allowed
@@ -2404,7 +2410,10 @@ class PushLink:
             span = 0
         self._note_open_trace("join_sent", self._clock())
         self._session_open = True
-        self._token_due_ms = _ticks_add(now, self._next_cadence_ms())
+        cadence_ms = self._next_cadence_ms()
+        self._token_due_ms = (
+            None if cadence_ms is None else _ticks_add(now, cadence_ms)
+        )
         self._emit("connected", ms=span)
         return True
 
@@ -2617,10 +2626,13 @@ class PushLink:
         # interleave a stale task between ownership and `_session_open`.
         self._clear_establishment()
         self._session_open = True
-        # Cadence belongs to HANDOFF, not to the child task's earlier terminal
-        # tick. A frame barrier may delay reap; arming from that stale tick would
-        # make the same delay recur as an early hourly reconnect.
-        self._token_due_ms = _ticks_add(reap_now, self._next_cadence_ms())
+        # Production keeps a healthy socket. A diagnostic cadence, when one is
+        # explicitly supplied, belongs to HANDOFF rather than the child task's
+        # stale terminal tick.
+        cadence_ms = self._next_cadence_ms()
+        self._token_due_ms = (
+            None if cadence_ms is None else _ticks_add(reap_now, cadence_ms)
+        )
         self._emit("connected", ms=span)
         return True
 
@@ -2769,15 +2781,15 @@ class PushLink:
         return client
 
     def _next_cadence_ms(self):
-        """This session's reauthorization interval, redrawn per session.
+        """An explicitly configured diagnostic reconnect interval, or None.
 
-        Called once per socket open, not per frame — the draw is the same
-        ``_rand01`` the ring jitter uses and it costs two bytes of ``urandom``.
-        See :data:`REJOIN_JITTER_MS` for why one draw per BOOT is not enough:
-        the cadence's phase is the boot connect, so a fixed interval keeps 800
-        badges reconnecting in formation forever.
+        Production passes ``None`` and never draws randomness or arms a timer.
+        Keeping the opt-in seam made the five-minute hardware reproduction
+        possible without creating a second networking implementation.
         """
 
+        if self.token_refresh_ms is None:
+            return None
         if self.rejoin_jitter_ms <= 0:
             return self.token_refresh_ms
         try:
@@ -2793,22 +2805,12 @@ class PushLink:
         return self.token_refresh_ms + int(fraction * self.rejoin_jitter_ms)
 
     async def _maybe_reauthorize(self, now):
-        """Item 4a/4b: force a fresh authorization on cadence or a boundary.
+        """Force a fresh authorization at a real expiry boundary.
 
-        A live hosted D9 run revoked ``realtime/read``, then watched an identical
-        ``access_token`` frame succeed while the old private channel kept
-        receiving broadcasts for the full thirteen-minute observation. Token
-        refresh updates the JWT associated with a joined channel; it is not a
-        promise that Realtime re-runs that channel's RLS decision. The smallest
-        fail-closed path is therefore the one already used at expiry boundaries:
-        close the whole socket without charging demotion, then let the named
-        tolerant-moment path pay for a fresh TLS connection and ``phx_join``.
-
-        Same-socket leave/rejoin would avoid the measured ~735 ms TLS cost, but
-        this client's current dispatcher topic-routes broadcast/error/close
-        frames without filtering their old ``join_ref``. A full reconnect gives
-        every frame and ref a new transport lifetime without adding a stale-frame
-        state machine to a security correction.
+        The due-time branch exists only for an explicitly configured diagnostic
+        cadence. Production leaves ``_token_due_ms`` unset and rides a healthy
+        socket until the server, Wi-Fi, starvation guard or a credential
+        boundary ends it.
         """
 
         if not self._session_open:
@@ -2828,9 +2830,9 @@ class PushLink:
                 # unaffected: security boundaries never defer.
                 return False
             forced = "cadence"
-        # A cadence or boundary: disconnect, and let the tolerant-moment path
-        # reconnect with whatever the provider hands over next. Our own decision
-        # to rejoin is not a network failure and must never feed demotion.
+        # A diagnostic cadence or real boundary: disconnect, then let the
+        # tolerant-moment path reconnect with the current credential. Our own
+        # decision to rejoin must never feed demotion.
         self.reauthorizations += 1
         self._emit("reauthorization_forced", reason=forced)
         await self._ensure_closed(
@@ -3323,13 +3325,11 @@ class PushService:
     def set_establishment_allowed(self, allowed):
         """Whether a NEW establishment may start (OWNER RULING #22, WSS side).
 
-        The service sets this each pumped frame. It gates only the CADENCE
-        (hourly) reauthorization reopen inside `PushLink._maybe_reauthorize`: a
-        non-opted-in app must not close a healthy WSS at minute 60 with no
-        re-open allowed. A TRUE token/grant expiry is unaffected and still fails
-        closed -- that is a security boundary, not a cadence. RAM-only, like
-        `network_enabled`; the admission moments themselves are already gated at
-        the service before ever reaching admit_establishment.
+        The service sets this each pumped frame. Production has no scheduled
+        healthy reconnect, so it only gates an explicitly configured diagnostic
+        cadence. A TRUE token/grant expiry is unaffected and still fails closed.
+        RAM-only, like `network_enabled`; normal admission moments are already
+        gated before reaching `admit_establishment`.
         """
 
         return self.link.set_establishment_allowed(allowed)

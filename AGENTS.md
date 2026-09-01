@@ -49,7 +49,7 @@ It passes from this layout; a few cases skip with a printed reason because they 
 
 ## The guarded imports, in full
 
-**58 import sites across 25 files** are wrapped in a `try` that catches `ImportError`, and this list is generated from an AST walk of the tree you are holding rather than maintained by hand. `ARCHITECTURE.md` section 2 quotes these two numbers and the exporter's `doc-claims-verified` gate refuses a build where they disagree.
+**59 import sites across 25 files** are wrapped in a `try` that catches `ImportError`, and this list is generated from an AST walk of the tree you are holding rather than maintained by hand. `ARCHITECTURE.md` section 2 quotes these two numbers and the exporter's `doc-claims-verified` gate refuses a build where they disagree.
 
 A guarded import is how this tree survives its own omissions: the badge uses app-local paths for vendored UI code while `/system/lib` is added deliberately for BadgeLink, and the launcher is the app whose failure needs a USB cable. An import moved OUT of one of these guards is a reset at launch, not a tidy-up.
 
@@ -90,16 +90,17 @@ A guarded import is how this tree survives its own omissions: the badge uses app
 | `lib/aiohttp/aiohttp_ws.py` | 20 | `from time import ticks_diff` |
 | `lib/aiohttp/aiohttp_ws.py` | 21 | `from time import ticks_ms` |
 | `lib/aiohttp/aiohttp_ws.py` | 173 | `ssl` |
-| `lib/network_runtime.py` | 1412 | `machine` |
-| `lib/network_runtime.py` | 1419 | `binascii` |
-| `lib/network_runtime.py` | 2371 | `pushlink` |
-| `lib/network_runtime.py` | 4777 | `clock_boot` |
-| `lib/network_runtime.py` | 5289 | `os` |
-| `lib/network_runtime.py` | 5349 | `os` |
-| `lib/network_runtime.py` | 5594 | `scorebox` |
-| `lib/network_runtime.py` | 5705 | `postgrest` |
-| `lib/network_runtime.py` | 5994 | `hashlib` |
-| `lib/network_runtime.py` | 7311 | `schedule_store` |
+| `lib/network_runtime.py` | 1280 | `machine` |
+| `lib/network_runtime.py` | 1447 | `machine` |
+| `lib/network_runtime.py` | 1454 | `binascii` |
+| `lib/network_runtime.py` | 2406 | `pushlink` |
+| `lib/network_runtime.py` | 4806 | `clock_boot` |
+| `lib/network_runtime.py` | 5318 | `os` |
+| `lib/network_runtime.py` | 5378 | `os` |
+| `lib/network_runtime.py` | 5623 | `scorebox` |
+| `lib/network_runtime.py` | 5734 | `postgrest` |
+| `lib/network_runtime.py` | 6023 | `hashlib` |
+| `lib/network_runtime.py` | 7340 | `schedule_store` |
 | `lib/pushlink.py` | 61 | `from time import ticks_add` |
 | `lib/pushlink.py` | 62 | `from time import ticks_diff` |
 | `lib/pushlink.py` | 63 | `from time import ticks_ms` |

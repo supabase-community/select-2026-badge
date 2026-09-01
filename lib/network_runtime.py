@@ -1255,6 +1255,41 @@ def _device_reset():
     machine.reset()
 
 
+# The RP2350 accepts at most 16,777 ms. Keep a little below that boundary so
+# firmware rounding cannot reject the value. A 16,000 ms watchdog was measured
+# on the production badge on 2026-08-31: neither a full 60 s dormant sleep nor
+# indefinite button-wake sleep caused a watchdog reset, and both woke normally.
+WATCHDOG_TIMEOUT_MS = 16000
+
+
+def _start_runtime_watchdog(factory=None):
+    """Arm the one hard bound around native calls, or keep running without it.
+
+    Python deadlines cannot interrupt a native socket call once the firmware is
+    inside it. Marginal RF reproduced that exact failure: the panel and buttons
+    froze and USB vanished while WebSocket establishment never returned. The
+    hardware watchdog is recovery, not transport policy; ordinary failures
+    still use the existing retry/backoff path.
+
+    A missing watchdog must not turn an otherwise usable offline badge into a
+    boot loop. Host fixtures also have no ``machine`` module, so lookup is lazy
+    and failure leaves the existing runtime intact.
+    """
+    try:
+        if factory is None:
+            import machine
+
+            factory = machine.WDT
+        watchdog = factory(timeout=WATCHDOG_TIMEOUT_MS)
+    except Exception as error:  # noqa: BLE001 - fail open keeps the badge usable
+        print("BADGELINK_WATCHDOG armed=0 error={}".format(
+            error.__class__.__name__))
+        return None
+    print("BADGELINK_WATCHDOG armed=1 timeout_ms={}".format(
+        WATCHDOG_TIMEOUT_MS))
+    return watchdog
+
+
 #: THIS BADGE'S PHYSICAL IDENTITY, CACHED FOR THE BOOT. ``None`` until the first
 #: :func:`hardware_uid` call and on any host/fixture without ``machine``.
 _HARDWARE_UID = None
@@ -3869,15 +3904,9 @@ class NetworkService:
                 self._note_push_step(entered, moment)
                 return result
             if self._nb_connect_enabled:
-                # OWNER RULING #22: the hourly reauthorization is itself a NEW
-                # establishment (it closes the healthy WSS and reopens), so it
-                # defers out of a non-opted-in app too -- a minute-60 close with
-                # no re-open allowed would strand a mid-app command on a link
-                # that was healthy right up to the close. A TRUE token/grant
-                # expiry still fails CLOSED: that is a security boundary the
-                # push side owns and placement must not veto. Duck-typed setter,
-                # consumed inside the pumped session step; a push seam that
-                # predates it is simply never deferred.
+                # Production keeps a healthy WSS. This gate remains for the
+                # explicit diagnostic reconnect seam; a TRUE token/grant expiry
+                # still fails CLOSED and placement must not veto it.
                 reauth_gate = getattr(
                     self._push, "set_establishment_allowed", None)
                 if callable(reauth_gate):
@@ -9530,7 +9559,8 @@ def install(backend_factory=None, preference_path=network_preference.DEFAULT_PAT
             ledger_path=command_ledger.DEFAULT_PATH, run_function=None,
             badge_api=None, rtc_device=None, push_factory=None,
             card_state_path=None, open_app_path=None, display_api=None,
-            schedule_path=None, score_path=None, schedule_cache_path=None):
+            schedule_path=None, score_path=None, schedule_cache_path=None,
+            watchdog_factory=None):
     """Install once and return the singleton exposed to Settings."""
 
     global _SERVICE
@@ -9577,6 +9607,12 @@ def install(backend_factory=None, preference_path=network_preference.DEFAULT_PAT
         score_path=score_path,
         schedule_cache_path=schedule_cache_path,
     )
+    # Arm on the first rendered frame, not during early boot. The first-wake
+    # ceremony runs in the launcher's module body before `run()` and legitimately
+    # takes about nine seconds; starting a 16-second watchdog before it would
+    # leave an unnecessary narrow margin for app discovery. Index 0 distinguishes
+    # "not attempted" from a supported fail-open result of None.
+    watchdog_slot = [False, None]
     original_run = run_function
 
     def managed_run(update, *args, **kwargs):
@@ -9589,11 +9625,22 @@ def install(backend_factory=None, preference_path=network_preference.DEFAULT_PAT
         service.enter_run_context()
 
         def managed_update():
+            if not watchdog_slot[0]:
+                watchdog_slot[0] = True
+                watchdog_slot[1] = _start_runtime_watchdog(watchdog_factory)
+            watchdog = watchdog_slot[1]
+            # Feed from the frame pump, never an interrupt: the confirmed fault
+            # stops rendered frames but may leave interrupts alive. The second
+            # feed below gives networking its own full recovery window.
+            if watchdog is not None:
+                watchdog.feed()
             # Badgeware's launcher returns the selected app path from its
             # update callback. ``run`` preserves that value in ``.result`` and
             # /system/main.py launches it. Dropping the return here makes a
             # selected tile merely flash while the launcher keeps running.
             result = update()
+            if watchdog is not None:
+                watchdog.feed()
             # OWNER RULING #22 exit-frame: a non-None app result is the final
             # frame before the hard reset an app exit performs, so a parked
             # establishment may not advance or SEND into it (spec §5.3(e)). The
