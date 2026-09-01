@@ -479,11 +479,11 @@
       "sha256": "d6f59b15436fed5533f895b7e4fcf656eb3060e56423ec02af0a756ecf82f8ee"
     },
     {
-      "bytes": 28084,
+      "bytes": 28410,
       "note": "export-only",
       "origin": "docs/source-export/BUILDING.md",
       "path": "BUILDING.md",
-      "sha256": "6acb199a7a998ab929b2619b9e8bc82ef24f1f94be4a10ad6f8378c0644c2a49"
+      "sha256": "df3fcf1cf86d72127c4b9a33ca0c8bba5adba5cbb25f6bbd4a58b52a23704cb4"
     },
     {
       "bytes": 1347,
@@ -504,7 +504,7 @@
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "6aa40ef9012a4685f74744c866e2bbfad9be46667c3cf4e093da400215ed8d40"
+      "sha256": "e207c8298e315ffb7c0b7ddd54af5ad3fd113a37f3dc967408baa1930bdd6b98"
     },
     {
       "bytes": 9189,
@@ -1679,11 +1679,11 @@
       "sha256": "988d44bc0ed4e33c2dbcef30330a6906a8a6baced91e88caab36e2bfdb1b897d"
     },
     {
-      "bytes": 99338,
+      "bytes": 101689,
       "note": "export-only: the builder, not installed on the badge",
       "origin": "scripts/export-source-build.py",
       "path": "tools/build.py",
-      "sha256": "edc32c6b01b53a73b3373d5060801d763bfa78f04857a44984e9965e6c0c1c4a"
+      "sha256": "5064c7acf0e8683ad76993548121c5f63ff0dd415f97ed69e647ce7c2b223b8b"
     }
   ],
   "gates": [
@@ -1803,7 +1803,7 @@
       "ok": true
     },
     {
-      "detail": "the README's 191 payload files / 6,066,059 bytes and 192 manifest rows all match the manifest",
+      "detail": "the README's 191 payload files / 6,068,736 bytes and 192 manifest rows all match the manifest",
       "gate": "readme-matches-manifest",
       "offenders": [],
       "ok": true
@@ -1913,7 +1913,7 @@
     }
   ],
   "provenance": {
-    "commit": "16ffd872bbe68d97aa710b2b9634c198cbee81f9",
+    "commit": "ed644651afe7ed30f63280151efdc88b542e8b25",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1972,10 +1972,10 @@
     "version": "v3.0.2"
   },
   "totals": {
-    "bytes": 6095158,
+    "bytes": 6097835,
     "files": 192,
     "payload": {
-      "bytes": 6066059,
+      "bytes": 6068736,
       "excludes": [
         "README.md",
         "MANIFEST.json"
@@ -1983,7 +1983,7 @@
       "files": 191
     }
   },
-  "tree_hash": "914d2931927f1862b1a230b60bf3cb622eec0bdf005f9b8f7ff9a3293c517c50",
+  "tree_hash": "6ecd6c4572343dba2aa28812982e6dde119888a71b6175abf644bc626e844281",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",

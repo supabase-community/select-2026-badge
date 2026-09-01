@@ -1,6 +1,6 @@
 # Supabase Select 2026 badge software -- source export
 
-This is the software that would ship to the ~1,000 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `16ffd872bbe6` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
+This is the software that would ship to the ~1,000 SELECT badges today, as SOURCE, assembled by `scripts/export-source.py` from commit `ed644651afe7` (worktree clean). It targets Badgeware **v3.0.2** on the **Pimoroni Tufty 2350**.
 
 ## Status
 
@@ -110,7 +110,7 @@ We precompile the thing we hand you for three measured reasons:
 
 Full detail, pins, and troubleshooting: **`BUILDING.md`**. It carries the pins with their one open caveat, `--check` (build twice, prove byte-identical output), a build without the release clone (`--skip-menu`, `--no-stock-fonts`), firmware flashing, and the refusals the build will not budge on.
 
-It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **191 files, 6,066,059 bytes**.
+It is not a repository dump and it is not a release. It is the boot file, the launcher, 6 apps, the shared layer they all vendor, the assets they read, and the toolchain that compiles and installs them: **191 files, 6,068,736 bytes**.
 
 Those two numbers are the PAYLOAD: everything in this tree except this README and `MANIFEST.json`, the two files that cannot quote a total including themselves without changing it. `MANIFEST.json` lists 192 rows (the payload plus this README) and does not hash itself; its `totals.payload` repeats the two numbers above, and the exporter's `readme-matches-manifest` gate reads this paragraph back and fails the build if any of the three disagrees.
 

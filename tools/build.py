@@ -240,6 +240,18 @@ STOCK_FONTS = {
 SIDECAR_PREFIXES = ("._",)
 SIDECAR_NAMES = (".DS_Store", "Thumbs.db")
 
+# Filesystems create these while a volume is mounted; they are not `/system`
+# payload and the canonical handover verifier ignores the same finite set.
+# Keep this a basename allowlist rather than a "dot directory" rule: an unknown
+# extra directory is still evidence that the image and the badge disagree.
+MOUNT_RESIDUE_DIRS = (
+    ".fseventsd",
+    ".Spotlight-V100",
+    ".Trashes",
+    ".TemporaryItems",
+    "System Volume Information",
+)
+
 # THE CEILING `--install` REFUSES A VOLUME OVER, and it is a sanity bound rather
 # than a device measurement, which is why it is 20x rather than 1.1x. A badge's
 # Disk Mode volume carries the 12 MB FAT allocation `_stage` budgets against; the
@@ -1299,11 +1311,18 @@ def _stage(out, mpy_cross, checked, skip_menu=False, out_label=None, quiet=False
     return manifest
 
 
-def tree_index(root):
-    """`{relative path: (bytes, sha256)}` for a whole tree, sorted walk."""
+def tree_index(root, ignored_dirs=()):
+    """`{relative path: (bytes, sha256)}` for a whole tree, sorted walk.
+
+    ``ignored_dirs`` is opt-in because reproducibility and staged-build checks
+    must stay total. Only a mounted volume grows the finite host-residue set;
+    silently skipping the same names in source or build output would weaken a
+    different contract.
+    """
+    ignored_dirs = frozenset(ignored_dirs)
     index = {}
     for base, dirs, files in os.walk(root):
-        dirs[:] = sorted(dirs)
+        dirs[:] = sorted(name for name in dirs if name not in ignored_dirs)
         for name in sorted(files):
             path = os.path.join(base, name)
             rel = os.path.relpath(path, root).replace(os.sep, "/")
@@ -1407,7 +1426,7 @@ def verify_mount(mount, manifest_path=None):
 
     expected = {row["path"]: (row["bytes"], row["sha256"])
                 for row in manifest["files"] if row["path"] != "manifest.json"}
-    found = tree_index(mount)
+    found = tree_index(mount, ignored_dirs=MOUNT_RESIDUE_DIRS)
 
     missing = sorted(set(expected) - set(found))
     wrong = sorted(rel for rel in set(expected) & set(found)
@@ -1424,7 +1443,9 @@ def verify_mount(mount, manifest_path=None):
     build_roots = set(rel.split("/")[0] for rel in expected)
     stale_roots = sorted(
         name for name in os.listdir(mount)
-        if os.path.isdir(os.path.join(mount, name)) and name not in build_roots)
+        if os.path.isdir(os.path.join(mount, name))
+        and name not in build_roots
+        and name not in MOUNT_RESIDUE_DIRS)
     stale_apps = []
     if "apps" in build_roots and os.path.isdir(os.path.join(mount, "apps")):
         installed = set(rel.split("/")[1] for rel in expected
@@ -1432,7 +1453,8 @@ def verify_mount(mount, manifest_path=None):
         stale_apps = sorted(
             name for name in os.listdir(os.path.join(mount, "apps"))
             if os.path.isdir(os.path.join(mount, "apps", name))
-            and name not in installed)
+            and name not in installed
+            and name not in MOUNT_RESIDUE_DIRS)
 
     print("MOUNT VERIFY %s" % mount)
     print("  manifest   %s (%d files, tree hash %s)"
@@ -1581,6 +1603,39 @@ def assert_badge_volume(mount):
     return mount
 
 
+def remove_appledouble(mount):
+    """Delete AppleDouble files from one already-validated badge mount.
+
+    The first real macOS manufacturer install created sidecars even though the
+    installer used byte-only ``shutil.copyfile`` and inherited
+    ``COPYFILE_DISABLE=1``. That disproves prevention as the safety boundary:
+    Finder or the filesystem may still materialise metadata beside files on
+    FAT, and which host component did it is not observable from the sidecar.
+
+    The safe postcondition is mechanical. Walk only the validated mount, never
+    follow links, skip the canonical host-owned residue directories, and remove
+    only ``._*`` files -- a filename class the build itself refuses everywhere.
+    Real extra files remain untouched and make ``verify_mount`` fail.
+    """
+    removed = []
+    for base, dirs, files in os.walk(mount):
+        dirs[:] = sorted(name for name in dirs
+                         if name not in MOUNT_RESIDUE_DIRS)
+        for name in sorted(files):
+            if not name.startswith(SIDECAR_PREFIXES):
+                continue
+            path = os.path.join(base, name)
+            rel = os.path.relpath(path, mount).replace(os.sep, "/")
+            try:
+                os.unlink(path)
+            except OSError as error:
+                raise BuildError(
+                    "AppleDouble cleanup could not remove %s: %s\n"
+                    "The mount is not verified; do not eject it." % (rel, error))
+            removed.append(rel)
+    return removed
+
+
 def install(mount, out=None, allow_degraded=False):
     """The whole install: prove the build, prove the volume, clear, copy, verify.
 
@@ -1712,21 +1767,21 @@ def install(mount, out=None, allow_degraded=False):
         if os.path.isdir(victim):
             shutil.rmtree(victim)
 
-    # `shutil.copyfile` rather than `cp -R`, and that is the AppleDouble FIX
-    # rather than a style preference. On macOS `cp -R` carries a file's extended
-    # attributes; FAT cannot hold them, so the kernel writes them beside the file
-    # as a `._*` AppleDouble sidecar -- and a sidecar under `apps/` is a file the
-    # badge tries to IMPORT. `COPYFILE_DISABLE=1` is the documented way to
-    # suppress that, BUILDING.md said so, and neither copy command in the quick
-    # start set it. `copyfile` copies bytes and no metadata, so there is nothing
-    # left to disable. The sidecar check in `verify_mount` stays regardless: a
-    # Finder drag or an earlier hand install can have left one on the volume.
+    # `shutil.copyfile` rather than `cp -R` remains load-bearing: it copies bytes
+    # without intentionally carrying source metadata. It is NOT enough by
+    # itself. The first real macOS install still produced 182 AppleDouble files
+    # on FAT, so the post-copy cleanup below enforces the condition we need
+    # instead of assuming which host component creates them. `verify_mount`
+    # remains independently strict if a sidecar survives or appears later.
     for rel in sorted(expected):
         destination = os.path.join(mount, rel.replace("/", os.sep))
         os.makedirs(os.path.dirname(destination), exist_ok=True)
         shutil.copyfile(os.path.join(out, rel.replace("/", os.sep)), destination)
     print("  copied     %d files (manifest.json is the build's proof file and "
           "does not install)" % len(expected))
+    removed_sidecars = remove_appledouble(mount)
+    print("  AppleDouble %d sidecar(s) removed after copy" %
+          len(removed_sidecars))
 
     # THE VERIFY IS INSIDE THE INSTALL, so it cannot be the step somebody skips
     # when they are in a hurry, and its non-zero exit is what the caller's eject
