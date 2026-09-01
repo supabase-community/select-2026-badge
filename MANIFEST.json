@@ -504,7 +504,7 @@
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "f3e5a68543485ca793852123abd6064e55efdd9243551699594c7e2335fb69d2"
+      "sha256": "8780a96c9c4272d5606f919e4d8ec476a1ec72b58c7a7e31a13941933b55f32c"
     },
     {
       "bytes": 9189,
@@ -1913,7 +1913,7 @@
     }
   ],
   "provenance": {
-    "commit": "d9f7f20ec2436203188ab47dd5eb071a78ebfc76",
+    "commit": "2716102c40dfc48f8e9d4a5634317ddb36c3a3db",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1983,7 +1983,7 @@
       "files": 191
     }
   },
-  "tree_hash": "aac2601c6790ea9fdbd1e80d9a732f7471472467d2c4b5192d312b33fae49243",
+  "tree_hash": "07eb5622de27e43df0b8e4244c2475f4abc15e249d473a246e346b80569e2754",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",
