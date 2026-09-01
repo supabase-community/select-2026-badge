@@ -483,7 +483,7 @@
       "note": "export-only",
       "origin": "docs/source-export/BUILDING.md",
       "path": "BUILDING.md",
-      "sha256": "df3fcf1cf86d72127c4b9a33ca0c8bba5adba5cbb25f6bbd4a58b52a23704cb4"
+      "sha256": "5e2b12e85a68b48163ebb226699eafc00d29b20770cdd6a636e9d9a2ee62568a"
     },
     {
       "bytes": 1347,
@@ -504,7 +504,7 @@
       "generated": true,
       "note": "export-only",
       "path": "README.md",
-      "sha256": "e207c8298e315ffb7c0b7ddd54af5ad3fd113a37f3dc967408baa1930bdd6b98"
+      "sha256": "764a140cd96e4cf6b73d733ccebd3c44d3a60b631ad3eba214a867b75d4f52d2"
     },
     {
       "bytes": 9189,
@@ -940,16 +940,16 @@
       "sha256": "243f95d698b49137f2459332af2729240d282f86b1b76ca7b71a3363c55daac0"
     },
     {
-      "bytes": 6867,
+      "bytes": 6612,
       "origin": "schedule/badge/schedule/schedule.json",
       "path": "apps/schedule/schedule.json",
-      "sha256": "8058fa9fdde6d8852543364f015598a86273345baedbfb98272fd400d888f2d1"
+      "sha256": "8c412019426a84403d670cfc2c44ec02142c2aff2d7999fe4ad302bceb57e497"
     },
     {
-      "bytes": 74283,
+      "bytes": 74818,
       "origin": "schedule/badge/schedule/schedule_model.py",
       "path": "apps/schedule/schedule_model.py",
-      "sha256": "e689f1445b15d233bfc316fbccd30d93f307cd8fdb4d8db56fa76b3d7a3feb99"
+      "sha256": "e968cb01dacab13e19550a101f85e965b2bcaa39ff03c653d01090a90a9b9971"
     },
     {
       "bytes": 9904,
@@ -958,10 +958,10 @@
       "sha256": "c92c3400981f7b35169929f9bce3909da2162547512cf6a2a55784d8e7ab7510"
     },
     {
-      "bytes": 67931,
+      "bytes": 68118,
       "origin": "schedule/badge/schedule/schedule_view.py",
       "path": "apps/schedule/schedule_view.py",
-      "sha256": "170584251dd1a4e05b725ad76567c5d9e9fed4e75a23ec340562117b390c57ea"
+      "sha256": "58393f17967880bd6242a4defcd8091c260e56dfb9e3734de46216c2bfea7d61"
     },
     {
       "bytes": 2373,
@@ -1803,7 +1803,7 @@
       "ok": true
     },
     {
-      "detail": "the README's 191 payload files / 6,068,736 bytes and 192 manifest rows all match the manifest",
+      "detail": "the README's 191 payload files / 6,069,203 bytes and 192 manifest rows all match the manifest",
       "gate": "readme-matches-manifest",
       "offenders": [],
       "ok": true
@@ -1838,7 +1838,7 @@
     },
     {
       "bytecode_verified": true,
-      "detail": "36 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 59 guarded import sites across 25 files, 3 launcher `badge.mode` call site(s), nothing debounced, one install procedure, a 1,483,941 B staged /system, no automation-enforcement claim, 503,629 B of bytecode measured from 90 modules, within 128 B of the pin",
+      "detail": "36 machine-checkable claim(s) in the generated docs agree with this tree: 5 patches in 2 file(s), 59 guarded import sites across 25 files, 3 launcher `badge.mode` call site(s), nothing debounced, one install procedure, a 1,483,686 B staged /system, no automation-enforcement claim, 503,591 B of bytecode measured from 90 modules, within 128 B of the pin",
       "gate": "doc-claims-verified",
       "offenders": [],
       "ok": true
@@ -1913,7 +1913,7 @@
     }
   ],
   "provenance": {
-    "commit": "ed644651afe7ed30f63280151efdc88b542e8b25",
+    "commit": "bd04175ec04388b6be9fa47eb8f6c6534fed4861",
     "panel": "Pimoroni Tufty 2350",
     "target_firmware": "v3.0.2",
     "worktree": "clean"
@@ -1972,10 +1972,10 @@
     "version": "v3.0.2"
   },
   "totals": {
-    "bytes": 6097835,
+    "bytes": 6098302,
     "files": 192,
     "payload": {
-      "bytes": 6068736,
+      "bytes": 6069203,
       "excludes": [
         "README.md",
         "MANIFEST.json"
@@ -1983,7 +1983,7 @@
       "files": 191
     }
   },
-  "tree_hash": "6ecd6c4572343dba2aa28812982e6dde119888a71b6175abf644bc626e844281",
+  "tree_hash": "e279372d649ce3c9b936729384660ded7c59a0016d0ff4cb44f63b79f63905ab",
   "vendored_modules": [
     {
       "canonical": "shared/ui.py",

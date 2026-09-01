@@ -17,9 +17,9 @@ SCHEMA = 2
 # every agenda file already on a badge and every day-of override built from an
 # older example. Adding an optional field old files may omit is not a break;
 # bumping the version would have been one.
-KIND_TALK = "talk"           # speakers, or TO BE ANNOUNCED when the list is empty
-KIND_LOGISTICS = "logistics"  # normal row, no speaker line at all
-KIND_BREAK = "break"         # muted and hatched, no speaker line
+KIND_TALK = "talk"           # optional subtitle line below the title
+KIND_LOGISTICS = "logistics"  # normal row; optional subtitle still renders
+KIND_BREAK = "break"         # muted and hatched; optional subtitle still renders
 KINDS = (KIND_TALK, KIND_LOGISTICS, KIND_BREAK)
 
 # ASCII remains the truncation marker so the bitmap fallback draws the same
@@ -67,8 +67,17 @@ def parse_time(value):
 
 
 def format_time(minutes):
+    """Format one event-local minute for the wearer, without changing storage.
+
+    Schedule files and the wire stay strict 24-hour ``HH:MM`` so ordering and
+    NOW comparisons remain unambiguous.  The panel has the event timezone in
+    its header and the day runs 09:00-20:00, so a suffix would spend width on
+    every row without resolving an ambiguity for this event.
+    """
     minutes = int(minutes) % (24 * 60)
-    return "{:02d}:{:02d}".format(minutes // 60, minutes % 60)
+    hour = minutes // 60
+    display_hour = hour % 12 or 12
+    return "{}:{:02d}".format(display_hour, minutes % 60)
 
 
 def _leap(year):
@@ -353,9 +362,11 @@ class ScheduleNormalizer:
         for speaker in raw_speakers:
             _require(isinstance(speaker, str) and speaker.strip(), "speaker name required")
             speakers.append(sanitize_title(speaker.strip()))
-        # A break or a logistics row draws no speaker line, so carrying names on
-        # one would silently drop them rather than render them somewhere.
-        _require(kind == KIND_TALK or not speakers, "only a talk may list speakers")
+        # SCHEMA 2 CALLED THIS ARRAY `speakers`, but the source tables supply one
+        # company/role subtitle for any visual treatment. Keeping zero-or-one
+        # here preserves the wire schema while making breaks and logistics obey
+        # the same simple title/subtitle/location hierarchy as talks.
+        _require(len(speakers) <= 1, "session may have at most one subtitle")
         # THE SESSION'S OPTIONAL LABEL LINE (BADGE_FREEZE_ADDENDUM §C, 2026-08-26).
         # It is allowed on EVERY kind, unlike `speakers`: the rule above exists
         # because a break draws no speaker slot at all, while every block has a
@@ -672,26 +683,19 @@ def save_network_cache(payload, artifact_id, path=CACHE_PATH, open_fn=open,
     return normalized
 
 
-TBA = "TO BE ANNOUNCED"
-
-
 def format_range(session):
     return "{} - {}".format(format_time(session["start"]), format_time(session["end"]))
 
 
-def speaker_lines(session):
-    """The lines drawn under a title: the names, the placeholder, or nothing.
+def subtitle_lines(session):
+    """Return the zero-or-one authored subtitle under any session title.
 
-    The agenda page draws the placeholder in the speakers slot of a talk whose
-    line-up is not announced, and draws no slot at all on a break or a
-    logistics row. Both are data, so both are decided here rather than in the
-    renderer.
+    Empty is deliberately empty.  The agenda authority owns whether a row has
+    a subtitle; the renderer must not invent ``TO BE ANNOUNCED`` or allocate an
+    unexplained detail line.  Schema 2 retains the historical ``speakers`` wire
+    key, but kind affects visual treatment rather than subtitle eligibility.
     """
-    if session["kind"] != KIND_TALK:
-        return ()
-    if session["speakers"]:
-        return tuple(session["speakers"])
-    return (TBA,)
+    return tuple(session["speakers"])
 
 
 # ── THE FRAME SEAM: ONE CONVERSION, AT THE POINT THE CLOCK IS READ ───────────

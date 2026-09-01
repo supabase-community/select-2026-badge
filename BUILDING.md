@@ -175,9 +175,9 @@ The guardrails are mechanical:
 
 | | source form | bytecode form |
 |---|---:|---:|
-| the modules | 2,937,792 B | 503,629 B (17%) |
-| plus assets and the two files that stay source | +980,312 B | +980,312 B |
-| **staged `/system`** | **3,918,104 B** | **1,483,941 B** |
+| the modules | 2,938,514 B | 503,629 B (17%) |
+| plus assets and the two files that stay source | +980,057 B | +980,057 B |
+| **staged `/system`** | **3,918,571 B** | **1,483,686 B** |
 | of the 12 MB FAT allocation | 31% | 12% |
 
 1. **Headroom.** Source form fits today. It fits with 8.3 MB in hand against 0.9 MB, and the assets are the part that grows, so the compile is what keeps the artwork budget rather than the code budget the binding constraint.

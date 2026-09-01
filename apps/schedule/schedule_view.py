@@ -42,7 +42,7 @@ from schedule_model import (
     format_gap,
     format_range,
     format_time,
-    speaker_lines,
+    subtitle_lines,
     strip_state,
 )
 
@@ -98,7 +98,7 @@ MAX_WRAP_LINES = 2
 # 2026-08-27 sweep is `schedule/host/description_density.mjs`.
 #
 # Charged ONLY to rows that carry a description. The real agenda uses it for
-# Atrium/location and the Main party's `Atrium · Supabase` label, so this is live
+# Atrium/location labels, so this is live
 # density now rather than a future-schema allowance.
 #
 # It is a bound on the BLOCK, not on the data: the string is ellipsized here and
@@ -346,7 +346,10 @@ class ScheduleView:
         self.timezone = self.event.get("timezone") or ""
         self.clock_w = int(
             self._measure(
-                "00:00 " + self.timezone if self.timezone else "00:00",
+                # 12-hour presentation has no leading zero or suffix. ``12``
+                # is the only two-digit hour and therefore the safe width
+                # exemplar; the timezone remains the disambiguating header.
+                "12:00 " + self.timezone if self.timezone else "12:00",
                 font_size=self.meta_size,
             )[0] + 0.5
         )
@@ -537,7 +540,7 @@ class ScheduleView:
         title_h = self._wrapped_height(session["title"], self.content_w)
         speakers = []
         total = title_h
-        for line in speaker_lines(session):
+        for line in subtitle_lines(session):
             height = self._wrapped_height(line, self.detail_w, metadata=True)
             speakers.append((line, height))
             total += height + self.pad // 2
@@ -838,7 +841,7 @@ class ScheduleView:
         )
 
     def _clock_reading(self):
-        """`HH:MM TZ`, or NOTHING. Two answers since 2026-08-24, and that is the
+        """`H:MM TZ`, or NOTHING. Two answers since 2026-08-24, and that is the
         whole clock ruling on one screen.
 
         The owner's words are "we either get a real time from a server or don't
@@ -1160,9 +1163,9 @@ class ScheduleView:
             description_pen = self.past_muted
         else:
             time_pen = self.muted
-            # The source's hyphen-only unscheduled row stays exactly a hyphen:
-            # no invented TBA, session type or explanation. Muted ink makes the
-            # placeholder intentional without promoting it over named sessions.
+            # A literal hyphen remains a quiet placeholder for older/manual
+            # artifacts. Current `Final Speaker` is authored text and therefore
+            # uses normal ink; status never invents a subtitle in the renderer.
             title_pen = (
                 self.muted
                 if session["kind"] == KIND_BREAK or cached["title"] == "-"
@@ -1170,14 +1173,14 @@ class ScheduleView:
             )
             speaker_pen = self.muted
             # THREE STEPS OF INK FOR THE BLOCK'S THREE LEVELS: what it is
-            # (`text`), who is on it (`muted`), the detail an eye may skip
+            # (`text`), its subtitle (`muted`), the detail an eye may skip
             # (`dim`). The label is the only line here a wearer can ignore
             # without losing the agenda, so it is the quietest.
             # `dim` is a third readable step on the near-black list, but it
             # loses too much contrast on the green current fill. The live row
             # collapses speaker/description to one metadata ink just as the
             # past row collapses its lower tiers: hierarchy survives in size
-            # and order, while `Atrium · Supabase` remains legible at the party.
+            # and order, while the party's location remains legible.
             description_pen = self.muted if index in self.current else self.dim
         self._text(
             cached["time"], self.pad, y, self.time_w + 1, self.meta_h, time_pen,
@@ -1191,8 +1194,8 @@ class ScheduleView:
                 metadata=True,
             )
             line_y += line_h + self.pad // 2
-        # LAST, UNDER THE NAMES, and the order is the block's reading order:
-        # what, who, then the detail. An empty description draws nothing at all
+        # LAST, UNDER THE SUBTITLE, and the order is the block's reading order:
+        # what, supporting label, then the detail. An empty description draws nothing at all
         # -- never an empty rect, which on a hatched break row would read as a
         # rendering fault rather than as an absent field.
         if cached["description"]:
